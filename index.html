@@ -288,6 +288,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   #portal-history-nav { top:24px; transform:none; width:150px; }
   #portal-history-nav button { writing-mode:horizontal-tb; width:100%; border-left:1.2px solid var(--gold-dark); border-radius:10px; padding:11px 10px; text-align:left; box-shadow:0 2px 8px rgba(0,0,0,0.12); }
 }
+/* 要望：「精算をしたら表示される『ご連絡内容を確認中です』の項目は、スクロールすると
+   見えなくなってしまうので、常に表示されるようにしてほしい」への対応。まとめて精算の
+   バー（#portal-grand-total）と同様に、画面上部に常時見える位置へ固定する。
+   #portal-grand-total 側のtop位置は、この欄の高さぶんだけJS（syncPortalStickyOffset）で
+   ずらし、2つが重ならないようにする。 */
+#portal-pending-wrap { position:sticky; top:0; z-index:6; }
 </style>
 <div id="portal-screen" style="display:none;position:fixed;inset:0;z-index:550;background:var(--bg,#f6f5f2);overflow-y:auto;padding:max(24px,env(safe-area-inset-top)) 16px max(40px,env(safe-area-inset-bottom))" onscroll="updatePortalHistoryNavLabel()">
   <!-- 要望：「何を預けているか瞬時に分からないと言われた。一覧を表示させたい」への対応。
@@ -13231,7 +13237,7 @@ function renderPortalPendingRequests(pendingRequests) {
   const totalEl = document.getElementById('portal-pending-total');
   if (!wrapEl || !listEl) return;
   const list = window._portalPendingRequests;
-  if (!list.length) { wrapEl.style.display = 'none'; listEl.innerHTML = ''; if (totalEl) totalEl.style.display = 'none'; return; }
+  if (!list.length) { wrapEl.style.display = 'none'; listEl.innerHTML = ''; if (totalEl) totalEl.style.display = 'none'; syncPortalStickyOffset(); return; }
   wrapEl.style.display = 'block';
   if (countEl) countEl.textContent = list.length + '件';
   // 要望：「委託リストのところで、売れた商品が黄色く表示されますが、その合計が分からない
@@ -13277,6 +13283,24 @@ function renderPortalPendingRequests(pendingRequests) {
         <div>${editBtn}${cancelBtn}</div>
       </div>`;
   }).join('');
+  syncPortalStickyOffset();
+}
+
+// 「ご連絡内容を確認中です」欄（#portal-pending-wrap）を画面上部に固定表示（sticky）する際、
+// 同じく上部に固定表示される「まとめて精算」バー（#portal-grand-total）と重なってしまわない
+// よう、確認中欄が表示されている間はその高さぶんだけ精算バーのtop位置をずらす。確認中欄が
+// 無い（非表示の）ときは0に戻す。内容（件数）が変わって高さが変化した時・画面回転や
+// リサイズで折り返しが変わった時にも呼び直して追従させる。
+function syncPortalStickyOffset() {
+  const wrapEl = document.getElementById('portal-pending-wrap');
+  const grandEl = document.getElementById('portal-grand-total');
+  if (!wrapEl || !grandEl) return;
+  const visible = getComputedStyle(wrapEl).display !== 'none';
+  grandEl.style.top = visible ? wrapEl.offsetHeight + 'px' : '0px';
+  if (!window._portalStickyResizeBound) {
+    window.addEventListener('resize', syncPortalStickyOffset);
+    window._portalStickyResizeBound = true;
+  }
 }
 
 // 要望：「取引先が自分で取消せるようにしてほしい」への対応。店舗がまだ承認・却下していない
@@ -13894,7 +13918,7 @@ function getPortalSettleCandidates() {
     const memo = (saved && saved.memo) || '';
     const validEntries = [];
     let sumQty = 0;
-    entries.forEach(entry => {
+    entries.forEach((entry, entryIdx) => {
       const qty = parseInt(entry.qty, 10);
       const rawPrice = (entry.price != null ? entry.price : '').toString().trim();
       const price = rawPrice !== '' ? parseInt(rawPrice, 10) : NaN;
@@ -13903,12 +13927,15 @@ function getPortalSettleCandidates() {
       // （他の組の送信を妨げない）
       if (!date || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price) || price < 0) return;
       sumQty += qty;
-      validEntries.push({ qty, price, date });
+      // entryIdx：要望「まとめて精算のボタンは一度押したら消えるようにしてほしい（二重の
+      // 申請になってしまう可能性を避けたい）」への対応。送信に成功した組をこの後
+      // submitBatchSettle側で正しく特定して消せるよう、元のentries配列上の位置を持たせておく。
+      validEntries.push({ qty, price, date, entryIdx });
     });
     if (!validEntries.length) return;
     if (sumQty > it.qty) return;
     validEntries.forEach(entry => {
-      candidates.push({ idx, it, qty: entry.qty, price: entry.price, date: entry.date, memo });
+      candidates.push({ idx, it, qty: entry.qty, price: entry.price, date: entry.date, memo, entryIdx: entry.entryIdx });
     });
   });
   return candidates;
@@ -14156,6 +14183,13 @@ async function submitBatchSettle() {
   const itemMessages = {};
   const itemHadFailure = {};
   const newlyCreated = [];
+  // 要望：「まとめて精算のボタンは一度押したら消えるようにしてほしい。取引先の方がちゃんと
+  // できていないのかなと、二重の申請になってしまう可能性があるので、そうなる可能性を避けたい」
+  // への対応。送信できた（日付・数量・売値の）組を、商品（idx）ごとにここへ記録しておき、
+  // 送信後にその組だけを入力欄から消す（updatePortalGrandTotal参照）。以前は送信に成功しても
+  // 入力欄の内容が残ったままだったため、画面右上の「まとめて精算」ボタン・金額表示が消えず、
+  // 同じ内容をもう一度送れてしまう（二重送信に見える）状態になっていた。
+  const succeededEntriesByIdx = {};
   // このバッチ内の全リクエストに共通で持たせるID。通知メールを1通に集約するための目印
   // （詳しくはpostConsignRequestsForItemの説明コメントを参照）。
   const batchId = 'b' + Date.now();
@@ -14167,6 +14201,7 @@ async function submitBatchSettle() {
       succeeded++;
       grandTotal += c.qty * c.price;
       itemMessages[c.idx].push(`✓ ${fmtDateJP(c.date)}／${c.qty}個（売値¥${c.price.toLocaleString('ja-JP')}／合計¥${(c.qty * c.price).toLocaleString('ja-JP')}）の精算のご連絡を送信しました`);
+      (succeededEntriesByIdx[c.idx] = succeededEntriesByIdx[c.idx] || []).push(c.entryIdx);
     } catch (e) {
       console.error('submitBatchSettle failed for', c.it.model, e);
       failedModels.push(`${c.it.model || '商品'}（${fmtDateJP(c.date)}）`);
@@ -14180,6 +14215,17 @@ async function submitBatchSettle() {
     itemStatusEl.innerHTML = itemMessages[idx].join('<br>') + '<br>店舗からの確認をお待ちください。';
     itemStatusEl.style.color = itemHadFailure[idx] ? '#b33' : '#2f6b2f';
     itemStatusEl.style.display = 'block';
+  });
+  // 送信に成功した組だけを入力欄から取り除く（失敗した組は、再送信できるようそのまま残す）。
+  // 元の配列の後ろの位置から削除することで、他の組のentryIdxがずれないようにする。
+  Object.keys(succeededEntriesByIdx).forEach(idxStr => {
+    const idx = Number(idxStr);
+    const it = (window._portalItems || [])[idx];
+    const entries = getPortalEntries(idx, it);
+    const doneEntryIdxs = succeededEntriesByIdx[idxStr].slice().sort((a, b) => b - a);
+    doneEntryIdxs.forEach(entryIdx => { entries.splice(entryIdx, 1); });
+    if (!entries.length) entries.push({ date: todayStr(), qty: (it && it.qty != null) ? String(it.qty) : '', price: '' });
+    renderPortalItemEntries(idx);
   });
   // 要望「取引先が自分で取消せるようにしてほしい」への対応。店舗側の確認・スナップショット
   // 再同期を待たず、送信できた時点でその場で「確認中」欄に反映し、取り消せるようにする
