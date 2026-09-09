@@ -5617,8 +5617,29 @@ function whConsignItemRowHtml(m) {
   // 意図的に含めていない（そちらはmodel・qty・moveKeys・date・memoしか渡さない作りのため、
   // 何もしなくても取引先側には元々渡らない）。
   const costVal = m.costPrice != null ? m.costPrice : '';
+  // 要望：「取引先が精算などの申請をしたら、その数だけ減るようにできますか？在庫が減った
+  // 型番のところだけ色をつけて、何個減るか表示されたら見やすい。その後こちらで確認したら
+  // 正式に数が減り、色がついてたのも元に戻るようにしてほしい」への対応。
+  // 実際の預かり数量（m.qty）は店舗が確認（承認）するまでは一切変更しない。その代わり、
+  // このレコード（moveKey）に対して店舗未確認（pending）の精算・返却の申請があれば、
+  // その合計数量を「申請中」として行を色付き表示するだけにとどめる。店舗が確認（承認・却下）
+  // すると、対象のconsignRequestsがpendingでなくなり（clearConsignRequestで消去される）、
+  // 以後renderWhConsignList()が再描画されるたびにここが再計算されるため、承認・却下どちらの
+  // 場合も自動的に元の色（ハイライト無し）に戻る。
+  const pendingForItem = (consignRequests || []).filter(r => r.status === 'pending' && r.moveKey === m._key);
+  const pendingQty = pendingForItem.reduce((s, r) => s + (r.qty || 0), 0);
+  const hasSettlePending = pendingForItem.some(r => r.type === 'settle');
+  const hasReturnPending = pendingForItem.some(r => r.type === 'return');
+  const pendingLabel = hasSettlePending && hasReturnPending ? '精算・返却'
+    : hasSettlePending ? '精算' : '返却';
+  const rowStyle = pendingQty > 0
+    ? 'padding:10px 8px;margin:2px 0;border-bottom:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff8e1;border:1.2px solid #e0c56a'
+    : 'padding:10px 0;border-bottom:1px solid var(--border);font-size:13px';
+  const pendingNote = pendingQty > 0
+    ? `<div style="margin-top:6px;font-size:11.5px;font-weight:700;color:#b8860b">⏳ このうち${pendingQty}個は取引先から${pendingLabel}の申請中です（確認すると正式にお預かり数から引かれます）</div>`
+    : '';
   return `
-    <div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:13px">
+    <div style="${rowStyle}">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
         <div style="min-width:0;flex:1">
           <div style="color:var(--text);font-weight:600">${escapeHtmlMain(consignItemModel(m))}</div>
@@ -5630,6 +5651,7 @@ function whConsignItemRowHtml(m) {
           <div style="font-size:9px;color:var(--text-muted);margin-top:2px">取引先には非表示</div>
         </div>
       </div>
+      ${pendingNote}
       <div style="display:flex;gap:8px;margin-top:8px">
         <button onclick="openSettleConsign('${m._key}')" style="flex:1;padding:6px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">精算（売れた）</button>
         <button onclick="returnConsign('${m._key}')" style="flex:1;padding:6px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">返却（在庫に戻す）</button>
@@ -6374,7 +6396,10 @@ async function rejectConsignRequest(portalId, requestId) {
   showConfirm('このリクエストを却下しますか？（取引先には自動で通知されません）').then(async ok => {
     if (!ok) return;
     await clearConsignRequest(portalId, requestId);
-    renderConsignRequestsPanel();
+    // 却下すると、この申請ぶんの「申請中」ハイライト（whConsignItemRowHtml）も解除する必要が
+    // あるため、確認待ち一覧だけでなく委託リスト全体（renderWhConsignList）を再描画する
+    // （renderWhConsignList内でrenderConsignRequestsPanelも呼ばれる）
+    renderWhConsignList();
     showToast('却下しました');
   });
 }
