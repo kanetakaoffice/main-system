@@ -284,15 +284,23 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 #portal-history-nav { display:none; position:fixed; left:0; top:50%; transform:translateY(-50%); z-index:6; }
 #portal-history-nav button { writing-mode:vertical-rl; letter-spacing:0.05em; padding:14px 7px; border:1.2px solid var(--gold-dark); border-left:none; border-radius:0 10px 10px 0; background:var(--white); color:var(--gold-dark); font-size:12px; font-weight:700; cursor:pointer; box-shadow:2px 2px 8px rgba(0,0,0,0.12); }
 @media (min-width: 860px) {
-  #portal-grand-total { position:fixed !important; top:24px !important; right:24px !important; left:auto !important; width:230px !important; margin-bottom:0 !important; max-height:calc(100vh - 48px); overflow-y:auto; }
+  /* 要望：「委託リスト（取引先ポータル）の『ご連絡内容を確認中です』欄が、パソコン幅でも
+     画面上部に固定表示されたままだと、件数が多いときに縦に長くなって検索欄を覆ってしまう。
+     画面右側に表示できないか」への対応。パソコン幅では、まとめて精算バー（#portal-grand-total）
+     と同じく画面右側に固定表示する専用パネルに切り替える（携帯幅ではこれまで通り画面上部への
+     sticky表示のまま）。#portal-grand-total側のtop位置（この欄の下に来るよう）と、この欄自体の
+     縦方向の収まりきらない分のスクロールは、JS（syncPortalStickyOffset）で調整する。 */
+  #portal-pending-wrap { position:fixed !important; right:24px !important; left:auto !important; width:230px !important; margin-bottom:0 !important; max-height:45vh; overflow-y:auto; }
+  #portal-grand-total { position:fixed !important; right:24px !important; left:auto !important; width:230px !important; margin-bottom:0 !important; max-height:calc(100vh - 48px); overflow-y:auto; }
   #portal-history-nav { top:24px; transform:none; width:150px; }
   #portal-history-nav button { writing-mode:horizontal-tb; width:100%; border-left:1.2px solid var(--gold-dark); border-radius:10px; padding:11px 10px; text-align:left; box-shadow:0 2px 8px rgba(0,0,0,0.12); }
 }
 /* 要望：「精算をしたら表示される『ご連絡内容を確認中です』の項目は、スクロールすると
    見えなくなってしまうので、常に表示されるようにしてほしい」への対応。まとめて精算の
-   バー（#portal-grand-total）と同様に、画面上部に常時見える位置へ固定する。
+   バー（#portal-grand-total）と同様に、画面上部に常時見える位置へ固定する（携帯幅の場合）。
    #portal-grand-total 側のtop位置は、この欄の高さぶんだけJS（syncPortalStickyOffset）で
-   ずらし、2つが重ならないようにする。 */
+   ずらし、2つが重ならないようにする。パソコン幅でのtop位置（24pxを基準に、この欄の高さぶん
+   ずらす）も同じ関数の中でまとめて計算する。 */
 #portal-pending-wrap { position:sticky; top:0; z-index:6; }
 </style>
 <div id="portal-screen" style="display:none;position:fixed;inset:0;z-index:550;background:var(--bg,#f6f5f2);overflow-y:auto;padding:max(24px,env(safe-area-inset-top)) 16px max(40px,env(safe-area-inset-bottom))" onscroll="updatePortalHistoryNavLabel()">
@@ -13311,17 +13319,24 @@ function renderPortalPendingRequests(pendingRequests) {
   syncPortalStickyOffset();
 }
 
-// 「ご連絡内容を確認中です」欄（#portal-pending-wrap）を画面上部に固定表示（sticky）する際、
-// 同じく上部に固定表示される「まとめて精算」バー（#portal-grand-total）と重なってしまわない
-// よう、確認中欄が表示されている間はその高さぶんだけ精算バーのtop位置をずらす。確認中欄が
-// 無い（非表示の）ときは0に戻す。内容（件数）が変わって高さが変化した時・画面回転や
-// リサイズで折り返しが変わった時にも呼び直して追従させる。
+// 「ご連絡内容を確認中です」欄（#portal-pending-wrap）を画面上部（パソコン幅では画面右側）に
+// 固定表示する際、同じく固定表示される「まとめて精算」バー（#portal-grand-total）と重なって
+// しまわないよう、確認中欄が表示されている間はその高さぶんだけ精算バーのtop位置をずらす。
+// 携帯幅（sticky・画面上部）では基準位置が0、パソコン幅（fixed・画面右側、860px以上）では
+// 基準位置が24px（#portal-pending-wrap自体の初期top位置と合わせる）になるよう、画面幅に応じて
+// 基準を切り替える。確認中欄が無い（非表示の）ときはその基準位置のまま。内容（件数）が変わって
+// 高さが変化した時・画面回転やリサイズで折り返しが変わった時、パソコン幅⇔携帯幅を切り替えた
+// 時にも呼び直して追従させる。
 function syncPortalStickyOffset() {
   const wrapEl = document.getElementById('portal-pending-wrap');
   const grandEl = document.getElementById('portal-grand-total');
   if (!wrapEl || !grandEl) return;
+  const isDesktopLayout = window.innerWidth >= 860;
+  const baseTop = isDesktopLayout ? 24 : 0;
+  const gap = isDesktopLayout ? 14 : 0;
+  wrapEl.style.top = baseTop + 'px';
   const visible = getComputedStyle(wrapEl).display !== 'none';
-  grandEl.style.top = visible ? wrapEl.offsetHeight + 'px' : '0px';
+  grandEl.style.top = (visible ? baseTop + wrapEl.offsetHeight + gap : baseTop) + 'px';
   if (!window._portalStickyResizeBound) {
     window.addEventListener('resize', syncPortalStickyOffset);
     window._portalStickyResizeBound = true;
