@@ -303,11 +303,16 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
    1280px以上（画面を目一杯広げた場合を想定）でのみ、左側に現在お預かり中の商品一覧
    （#portal-main-col）、右側に確認中欄・まとめて精算バーを幅広に表示する、真の左右
    二カラムレイアウトに切り替える。#portal-history-nav（幅150px、左端固定）と重ならない
-   よう、左カラムの左マージンを160pxに広げてある。 */
+   よう、左カラムの左マージンを160pxに広げてある。
+   さらに「右側の確認中欄が小さいので、左側の預かり一覧と同じくらいの大きさにしてほしい」
+   への対応として、左右のカラムが同じ幅（最大680px）になるよう、共通のCSS変数
+   --portal-col-w（画面幅から左マージン160px・カラム間の余白24px・右マージン24pxを
+   差し引いた残りを2等分）で幅を揃えている。 */
 @media (min-width: 1280px) {
-  #portal-main-col { margin:0 !important; margin-left:160px !important; max-width:min(680px, calc(100vw - 580px)) !important; }
-  #portal-pending-wrap { width:340px !important; }
-  #portal-grand-total { width:340px !important; }
+  #portal-screen { --portal-col-w: min(680px, calc((100vw - 208px) / 2)); }
+  #portal-main-col { margin:0 !important; margin-left:160px !important; max-width:var(--portal-col-w) !important; }
+  #portal-pending-wrap { width:var(--portal-col-w) !important; }
+  #portal-grand-total { width:var(--portal-col-w) !important; }
 }
 /* 要望：「精算をしたら表示される『ご連絡内容を確認中です』の項目は、スクロールすると
    見えなくなってしまうので、常に表示されるようにしてほしい」への対応。まとめて精算の
