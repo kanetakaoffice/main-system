@@ -295,6 +295,20 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   #portal-history-nav { top:24px; transform:none; width:150px; }
   #portal-history-nav button { writing-mode:horizontal-tb; width:100%; border-left:1.2px solid var(--gold-dark); border-radius:10px; padding:11px 10px; text-align:left; box-shadow:0 2px 8px rgba(0,0,0,0.12); }
 }
+/* 要望：「先ほど右側にと言ったが、パソコンの画面がいっぱいのとき（画面を広く使えるとき）は
+   見やすいように左右に分けてほしい。ただ画面を半分にした（狭くした）ときは、右側の
+   『ご連絡内容を確認中です』が隠れてしまうと思うので、その場合は今まで通り小さく右側に
+   表示させてほしい」への対応。860px〜1279px（画面を半分にした程度の幅を想定）では、
+   直前の@media (min-width: 860px)ブロックの「小さく右側に固定」のままにしておき、
+   1280px以上（画面を目一杯広げた場合を想定）でのみ、左側に現在お預かり中の商品一覧
+   （#portal-main-col）、右側に確認中欄・まとめて精算バーを幅広に表示する、真の左右
+   二カラムレイアウトに切り替える。#portal-history-nav（幅150px、左端固定）と重ならない
+   よう、左カラムの左マージンを160pxに広げてある。 */
+@media (min-width: 1280px) {
+  #portal-main-col { margin:0 !important; margin-left:160px !important; max-width:min(680px, calc(100vw - 580px)) !important; }
+  #portal-pending-wrap { width:340px !important; }
+  #portal-grand-total { width:340px !important; }
+}
 /* 要望：「精算をしたら表示される『ご連絡内容を確認中です』の項目は、スクロールすると
    見えなくなってしまうので、常に表示されるようにしてほしい」への対応。まとめて精算の
    バー（#portal-grand-total）と同様に、画面上部に常時見える位置へ固定する（携帯幅の場合）。
@@ -322,7 +336,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   <div id="portal-history-nav">
     <button type="button" onclick="portalHistoryNavClick()">📋 過去の履歴を見る</button>
   </div>
-  <div style="max-width:480px;margin:0 auto">
+  <div id="portal-main-col" style="max-width:480px;margin:0 auto">
     <div style="text-align:center;margin-bottom:18px">
       <div style="font-size:13px;color:var(--text-muted)">株式会社KANETAKA</div>
       <div id="portal-client-name" style="font-size:19px;font-weight:800;color:var(--text);margin-top:2px"></div>
@@ -1744,6 +1758,15 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div class="field-label">確定価格（円） <span class="req">*</span></div>
       <input type="number" id="wh-settle-final-price" placeholder="0" min="0" oninput="markSettleFinalPriceEdited()">
       <div style="font-size:11px;color:var(--text-muted);margin-top:4px">実際に精算・記録する金額です。売値と異なる場合はこちらを修正してください</div>
+    </div>
+    <!-- 要望：「取引先から精算の連絡が来て、確認して精算する時に確定金額を入力するが、
+         その時に原価を入力できるようにしてほしい」への対応。委託リストの行にすでにある
+         「原価（円）」の入力欄（updateWhConsignCostPrice）と同じ値を、精算の確定操作と
+         同じタイミングでここからも入力・修正できるようにする（任意項目、取引先には非表示）。 -->
+    <div class="field" style="padding-top:16px">
+      <div class="field-label">原価（円）</div>
+      <input type="number" id="wh-settle-cost-price" placeholder="任意" min="0">
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">分かっていれば入力してください（取引先には表示されません）</div>
     </div>
     <div style="display:flex;gap:10px;margin-top:18px">
       <button onclick="confirmSettleConsign()" style="flex:1;padding:13px;background:linear-gradient(135deg,#d8d8d8,#a8a8a8);color:#1a1a1a;border:none;border-radius:var(--radius-sm);font-size:15px;font-weight:700;cursor:pointer">精算する</button>
@@ -6805,6 +6828,9 @@ function openSettleConsign(key) {
   if (priceInput) priceInput.value = suggested != null ? suggested : '';
   if (hint) hint.textContent = suggested != null ? `前回この取引先に販売した価格: ¥${suggested.toLocaleString('ja-JP')}（必要なら修正してください）` : '';
   if (finalInput) finalInput.value = suggested != null ? suggested : '';
+  // 委託リストの行にすでに原価が入力済みなら、精算モーダルにもその値を引き継ぐ
+  const costInput = document.getElementById('wh-settle-cost-price');
+  if (costInput) costInput.value = m.costPrice != null ? m.costPrice : '';
   const modal = document.getElementById('wh-settle-modal');
   if (modal) modal.style.display = 'flex';
 }
@@ -6964,6 +6990,13 @@ async function confirmSettleConsign() {
   const settleQty = parseInt(document.getElementById('wh-settle-qty').value);
   const unitPrice = parseInt(document.getElementById('wh-settle-final-price').value);
   const settleDateStr = document.getElementById('wh-settle-date')?.value || '';
+  // 要望：「確認して精算する時に確定金額を入力するが、その時に原価を入力できるように
+  // してほしい」への対応。委託リストの行にある原価入力（updateWhConsignCostPrice）と同じ
+  // 任意項目として扱う（空欄＝原価なし、の意味でnullを保存する）。
+  const costPriceRaw = document.getElementById('wh-settle-cost-price')?.value ?? '';
+  const costPriceTrimmed = String(costPriceRaw).trim();
+  const costPriceNum = costPriceTrimmed === '' ? null : parseInt(costPriceTrimmed, 10);
+  const costPriceToSave = (costPriceNum != null && !isNaN(costPriceNum) && costPriceNum >= 0) ? costPriceNum : null;
   if (!settleQty || settleQty < 1) { showToast('精算する数量を入力してください'); return; }
   if (settleQty > m.qty) { showToast('預けている数量（' + m.qty + '個）を超えています'); return; }
   if (!settleDateStr) { showToast('売れた日を入力してください'); return; }
@@ -6979,16 +7012,18 @@ async function confirmSettleConsign() {
     if (settleQty === m.qty) {
       // 全数量を精算
       await fetch(authedUrl('/stockMoves/' + key + '.json'), { method: 'PATCH', body: JSON.stringify({
-        status: 'settled', unitPrice, amount, settledAt
+        status: 'settled', unitPrice, amount, settledAt, costPrice: costPriceToSave
       })});
     } else {
-      // 一部だけ精算：残りは引き続き「預け中」として数量を減らして残す
+      // 一部だけ精算：残りは引き続き「預け中」として数量を減らして残す。原価はこの商品
+      // （このレコード）全体の属性として扱っているため、精算した分の新しいレコードにも、
+      // 残った預け中のレコードにも同じ値を反映する（委託リストの行の原価表示ともずれないように）。
       const newMoveResp = await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
         productKey: m.productKey, productName: m.productName, jan: m.jan,
         type: 'consign', status: 'settled', client: m.client, qty: settleQty, unitPrice, amount,
-        date: m.date, memo: m.memo || '', createdAt: Date.now(), settledAt
+        date: m.date, memo: m.memo || '', createdAt: Date.now(), settledAt, costPrice: costPriceToSave
       })});
-      await fetch(authedUrl('/stockMoves/' + key + '.json'), { method: 'PATCH', body: JSON.stringify({ qty: m.qty - settleQty }) });
+      await fetch(authedUrl('/stockMoves/' + key + '.json'), { method: 'PATCH', body: JSON.stringify({ qty: m.qty - settleQty, costPrice: costPriceToSave }) });
     }
     // 要望：「業務の一覧の売上に、預かり精算を自動で反映しないでほしい」への対応。
     // 以前はここで精算金額を業務の売上（sales）に自動登録していたが、これをやめ、通常の
