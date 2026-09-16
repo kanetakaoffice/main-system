@@ -998,6 +998,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
           </div>
           <input type="hidden" id="inv-existing-key">
           <div id="jan-lookup-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
+          <!-- 要望：「買取スキャナーのCSVを取り込んで、他社の買取価格を参考にできるように
+               してほしい」への対応。JANコード欄に入力・スキャンされた時点で、取り込み済みの
+               他社買取価格データ（あれば）をここに表示する（renderBuybackJanRef参照）。 -->
+          <div id="buyback-jan-ref" style="display:none;margin-top:8px"></div>
         </div>
       </div>
       <div class="card">
@@ -1477,6 +1481,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         </div>
         <input type="text" id="wh-item-jan" placeholder="または手入力" oninput="lookupWhItem()">
         <div id="wh-item-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
+        <div id="wh-jan-buyback-ref" style="display:none;margin-top:6px"></div>
         <div style="margin-top:14px">
           <div class="field-label">型番・商品名で検索して追加</div>
           <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">JANコードが手元になくても、登録済みの商品から型番や商品名の一部で探せます</div>
@@ -1490,6 +1495,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
             <button onclick="searchWhQuickRegister()" style="padding:8px 12px;background:var(--gold);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">型番で再検索</button>
           </div>
           <div id="wh-qr-status" style="font-size:11px;color:var(--text-muted);margin-bottom:8px"></div>
+          <div id="wh-qr-buyback-ref" style="display:none;margin-bottom:8px"></div>
           <div class="field" style="margin-bottom:8px">
             <div class="field-label" style="font-size:11px">商品名 <span class="req">*</span></div>
             <input type="text" id="wh-qr-name" placeholder="商品名">
@@ -1710,6 +1716,40 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   </div>
   </div>
   </div>
+</div>
+
+<!-- 買取価格チェック：要望「買取スキャナーのCSVをこのシステムに組み込めるか」への対応。
+     買取スキャナー（複数の同業他社の買取価格を横断的に取得してくれる外部ツール）から
+     ダウンロードしたCSV（JANコードごとに各社の買取価格が並んでいる）を取り込み、
+     JANコードを検索して他社の買取価格を参考に自分たちの買取価格を判断できるようにする。
+     取り込み（CSVアップロード）は管理者のみ、検索・閲覧は全員が利用できる。
+     同じJANコードのデータは、取り込むたびに/buybackPriceRef/{JAN}を上書きするだけなので、
+     何度取り込んでも二重に登録されることはない（元々の商品登録・在庫（products／
+     stockMoves）とは完全に別の場所に保存しており、そちらには一切影響しない）。 -->
+<div id="screen-inv-buyback" class="screen" style="display:none;padding-top:8px">
+  <div class="card" id="buyback-import-card" style="display:none">
+    <div class="card-title">買取価格データの取り込み（管理者のみ）</div>
+    <div class="field">
+      <div class="field-label">買取スキャナーのCSVファイル</div>
+      <input type="file" id="buyback-csv-input" accept=".csv" onchange="handleBuybackCsvSelected(event)">
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px">JANコードごとに他社の買取価格が入ったCSVファイルを選択してください。価格は日々変わるため、新しくダウンロードするたびに何度でも取り込み直せます。同じJANコードのデータは最新の内容で置き換わるだけなので、二重に登録されることはありません。</div>
+    </div>
+    <div id="buyback-import-status" style="font-size:12.5px;color:var(--text-muted);margin-top:10px"></div>
+    <div id="buyback-import-progress-wrap" style="display:none;margin-top:8px">
+      <div style="background:var(--surface);border-radius:6px;overflow:hidden;height:8px">
+        <div id="buyback-import-progress-bar" style="height:100%;width:0%;background:var(--gold-dark);transition:width .2s"></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">買取価格を調べる</div>
+    <div class="field">
+      <div class="field-label">JANコードまたは商品名で検索</div>
+      <input type="text" id="buyback-search-input" placeholder="JANコード・商品名を入力" oninput="renderBuybackSearchResults()">
+    </div>
+    <div id="buyback-search-status" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
+  </div>
+  <div id="buyback-search-results" style="padding:0 16px 16px"></div>
 </div>
 
 <!-- 請求書（freee）としてまとめるモーダル：選択した納品書（通常／精算分を問わない）の一覧と
@@ -2055,6 +2095,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       卸売管理
     </button>
     <span class="nav-badge" id="wh-nav-badge"></span>
+  </div>
+  <div class="nav-btn-wrap">
+    <button class="nav-btn" id="nav-inv-buyback" onclick="showInvScreen('inv-buyback')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      買取価格
+    </button>
   </div>
 
 
@@ -2948,7 +2994,7 @@ function switchMode(mode) {
     bizNav.style.display = isAdmin() ? 'flex' : 'none';
     invNav.style.display = 'none';
     document.querySelector('.main').style.paddingTop = '';
-    ['inv-add','inv-move','inv-list','inv-packec','inv-wholesale'].forEach(s => {
+    ['inv-add','inv-move','inv-list','inv-packec','inv-wholesale','inv-buyback'].forEach(s => {
       const el = document.getElementById('screen-' + s);
       if (el) { el.style.display = 'none'; el.classList.remove('active'); }
     });
@@ -2970,7 +3016,7 @@ function switchMode(mode) {
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
     // 全在庫画面を一旦非表示
-    ['inv-add','inv-move','inv-list','inv-packec','inv-wholesale'].forEach(s => {
+    ['inv-add','inv-move','inv-list','inv-packec','inv-wholesale','inv-buyback'].forEach(s => {
       const el = document.getElementById('screen-' + s);
       if (el) el.style.display = 'none';
     });
@@ -2986,7 +3032,7 @@ function showInvScreen(name) {
     showToast('この機能は管理者のみ利用できます');
     name = 'inv-add';
   }
-  ['inv-add','inv-move','inv-list','inv-packec','inv-wholesale'].forEach(s => {
+  ['inv-add','inv-move','inv-list','inv-packec','inv-wholesale','inv-buyback'].forEach(s => {
     const el = document.getElementById('screen-' + s);
     if (el) { el.style.cssText = 'display:none !important; padding-top:8px;'; el.classList.remove('active'); }
   });
@@ -3049,6 +3095,17 @@ function showInvScreen(name) {
   if (name === 'inv-wholesale') {
     switchWhTab('deliv');
     loadInventory();
+  }
+  if (name === 'inv-buyback') {
+    // CSV取り込みは管理者のみ（検索・閲覧は倉庫作業員も含め全員が利用できる）
+    const importCard = document.getElementById('buyback-import-card');
+    if (importCard) importCard.style.display = isAdmin() ? 'block' : 'none';
+    const searchInput = document.getElementById('buyback-search-input');
+    if (searchInput) searchInput.value = '';
+    const resultsEl = document.getElementById('buyback-search-results');
+    if (resultsEl) resultsEl.innerHTML = '';
+    const statusEl = document.getElementById('buyback-search-status');
+    if (statusEl) statusEl.textContent = '';
   }
 }
 
@@ -3299,15 +3356,26 @@ function lookupWhItem() {
   const status = document.getElementById('wh-item-status');
   const jan = input.value.trim();
   if (_whAutoSearchTimer) { clearTimeout(_whAutoSearchTimer); _whAutoSearchTimer = null; }
-  if (!jan) { if (status) status.textContent = ''; hideWhQuickRegister(); return; }
+  if (!jan) {
+    if (status) status.textContent = '';
+    hideWhQuickRegister();
+    _whFoundBuybackSeq++; // 表示中に照会中だった古い結果が後から来ても上書きしないようにする
+    const bref0 = document.getElementById('wh-jan-buyback-ref');
+    if (bref0) { bref0.innerHTML = ''; bref0.style.display = 'none'; }
+    return;
+  }
   const found = products.find(p => p.jan === jan);
   if (found) {
     addWhItemRow(found);
     input.value = '';
     if (status) status.textContent = '';
     hideWhQuickRegister();
+    lookupBuybackRefForWhFound(jan);
     return;
   }
+  _whFoundBuybackSeq++; // 登録済み商品向けの参考表示は未登録扱いに切り替わったら無効化する
+  const bref1 = document.getElementById('wh-jan-buyback-ref');
+  if (bref1) { bref1.innerHTML = ''; bref1.style.display = 'none'; }
   if (status) {
     status.innerHTML = jan.length >= 8 ? `登録されていない商品です。JANコードから商品情報を自動検索します。<br><a href="https://kakaku.com/search_results/?query=${encodeURIComponent(jan)}" target="_blank" style="color:var(--gold-dark);font-size:12px">📦 価格.comで直接確認する</a>` : '';
     status.style.color = 'var(--text-muted)';
@@ -3320,6 +3388,7 @@ function lookupWhItem() {
       const current = document.getElementById('wh-item-jan');
       if (current && current.value.trim() === jan) autoSearchWhQuickRegisterByJan(jan);
     }, 400);
+    lookupBuybackRefForWhQr(jan);
   } else {
     hideWhQuickRegister();
   }
@@ -3347,6 +3416,7 @@ function hideWhQuickRegister() {
   if (catEl) catEl.selectedIndex = 0;
   populateSubcatSelect('wh-qr-subcategory', CATEGORY_LIST[0]);
   const st = document.getElementById('wh-qr-status'); if (st) st.textContent = '';
+  const bref = document.getElementById('wh-qr-buyback-ref'); if (bref) { bref.innerHTML = ''; bref.style.display = 'none'; }
 }
 function cancelWhQuickRegister() {
   hideWhQuickRegister();
@@ -7374,35 +7444,43 @@ function guessMaker(name) {
 // 入力が一段落してから検索するようデバウンスし、検索開始時点で値が変わっていないかも
 // 確認するようにした（手入力・カメラスキャン・買取スキャナーのいずれでも同じ挙動になる）。
 let _janLookupTimer = null;
+let _janBuybackLookupTimer = null;
 function lookupJan() {
   const jan = document.getElementById('inv-jan').value.trim();
   const status = document.getElementById('jan-lookup-status');
   clearTimeout(_janLookupTimer);
-  if (!jan) { status.textContent = ''; clearInvAddExistingMode(); return; }
+  clearTimeout(_janBuybackLookupTimer);
+  if (!jan) { status.textContent = ''; clearInvAddExistingMode(); renderBuybackJanRef(null); return; }
 
   const found = products.find(p => p.jan === jan);
   if (found) {
     setInvAddExistingMode(found);
     status.innerHTML = `✅ 登録済み商品です（現在庫: ${found.stock}個）。入力した数量がそのまま入荷として追加されます。`;
     status.style.color = 'var(--success)';
-    return;
+  } else {
+    clearInvAddExistingMode();
+    status.innerHTML = '入力が終わると自動で商品名・型番・メーカーを検索します…';
+    status.style.color = 'var(--text-muted)';
+    _janLookupTimer = setTimeout(() => { runJanPriceSearch(jan); }, 600);
   }
-  clearInvAddExistingMode();
-
-  status.innerHTML = '入力が終わると自動で商品名・型番・メーカーを検索します…';
-  status.style.color = 'var(--text-muted)';
-  _janLookupTimer = setTimeout(() => { runJanPriceSearch(jan); }, 600);
+  // 要望：「買取スキャナーのCSVを取り込んで、他社の買取価格を参考にできるようにしてほしい」
+  // への対応。登録済み・未登録のどちらの場合でも、このJANコードに他社買取価格の参考データが
+  // 取り込まれていれば表示する。買取スキャナー（キーボードウェッジ方式）で1桁ずつ猛スピードで
+  // 入力される場合に備え、型番・JAN欄の検索と同じくデバウンスしてから照会する。
+  _janBuybackLookupTimer = setTimeout(() => { lookupBuybackRefForJanField(jan); }, 600);
 }
 
 // 買取スキャナーなど、バーコードを読み取ったあとに確定のEnterキーを送ってくるタイプの
 // キーボードウェッジ機器向け：Enterが来た時点で600msのデバウンスを待たず即座に検索を始める
 // （lookupJan()のoninputで既にローカルの登録済み商品との一致確認は済んでいるはずのため、
-// ここでは価格.com検索の即時実行のみを担当する）
+// ここでは価格.com検索・他社買取価格照会の即時実行のみを担当する）
 function lookupJanImmediate() {
   clearTimeout(_janLookupTimer);
+  clearTimeout(_janBuybackLookupTimer);
   const jan = document.getElementById('inv-jan').value.trim();
-  if (!jan || document.getElementById('inv-existing-key').value) return;
-  runJanPriceSearch(jan);
+  if (!jan) return;
+  if (!document.getElementById('inv-existing-key').value) runJanPriceSearch(jan);
+  lookupBuybackRefForJanField(jan);
 }
 
 async function runJanPriceSearch(jan) {
@@ -7479,6 +7557,329 @@ async function runJanPriceSearch(jan) {
     status.innerHTML = `商品情報の検索に失敗しました（通信エラーの可能性があります）。お手数ですが商品名・型番・メーカーは手入力をお願いします。<br>${kakakuLinkHtml(jan, null, '価格.comで手動検索する')}`;
     status.style.color = 'var(--danger)';
   }
+}
+
+// ============================================================
+// 買取価格チェック（買取スキャナーのCSV取り込み・他社買取価格の参考表示）
+// 要望：「買取スキャナーのCSVをダウンロードした。このシステムに組み込めるか。すでに自分
+// たちで登録したものはどうなるか。二重に登録されてしまうか」への対応。
+//
+// 買取スキャナーのCSVは、JANコードごとに約30社の買取価格・Amazon相場などが横に並んだ
+// 「価格比較の参考データ」であり、こちらの商品マスタ（products）や在庫（stockMoves）とは
+// 全く別物。取り込んだデータは専用の場所（/buybackPriceRef/{JAN}）にJANコードをキーとして
+// 保存するだけなので、既存の商品登録・在庫データには一切触れず、影響もしない。
+// 同じJANコードを含むCSVを何度取り込んでも、そのJANコードの内容が最新の値で上書きされる
+// だけ（Firebaseの複数箇所同時更新＝PATCHを使用）なので、二重に登録されることもない。
+//
+// データ量が多い（数万件規模）ため、アプリ本体（このHTMLファイル）には埋め込まず、
+// 都度Firebaseから必要な分だけ取得する：
+//   ・商品登録画面でJANコードを1件照会する時は、そのJANだけを個別に取得（軽い）
+//   ・買取価格チェック画面で検索する時は、一覧をまとめて1回だけ取得してその場で絞り込む
+// ============================================================
+
+// 引用符で囲まれたフィールド内のカンマ・改行にも対応する簡易CSVパーサー（RFC4180準拠）。
+// 買取スキャナーのCSVは商品名にカンマを含むことがあるため、単純な文字列分割では壊れる。
+function parseCsvText(text) {
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // 先頭のBOMを除去
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        field += c;
+      }
+      continue;
+    }
+    if (c === '"') { inQuotes = true; }
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\r') { /* 改行の一部として無視（\nと合わせて処理） */ }
+    else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+    else { field += c; }
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.length > 1 || (r.length === 1 && r[0] !== ''));
+}
+
+// パース済みのCSV行から、JANコードごとの買取価格比較レコードを組み立てる。
+// 各社の買取価格が0円（＝その会社では取り扱っていない）の列は保存せず、0円より大きい
+// 価格が付いた会社だけを、価格が高い順に並べて保持することでデータ量を大きく減らしている。
+function buildBuybackRecordsFromCsv(rows) {
+  if (!rows || !rows.length) return {};
+  const header = rows[0].map(h => (h || '').trim());
+  const idx = {};
+  header.forEach((h, i) => { if (!(h in idx)) idx[h] = i; });
+  const janIdx = idx['JAN'];
+  if (janIdx == null) throw new Error('CSVに「JAN」列が見つかりません');
+  const compNames = [];
+  header.forEach(h => {
+    if (h.endsWith('_買取価格')) compNames.push(h.slice(0, -('_買取価格'.length)));
+  });
+  const nameColIdx = {};
+  compNames.forEach(name => {
+    const col = name + '_商品名';
+    if (idx[col] != null) nameColIdx[name] = idx[col];
+  });
+  const retailIdx = idx['小売希望価格'];
+  const amazonIdx = idx['amazon_最低価格'];
+  const toInt = v => {
+    const n = parseInt(String(v == null ? '' : v).trim(), 10);
+    return isNaN(n) ? 0 : n;
+  };
+  const out = {};
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row.length) continue;
+    const jan = (row[janIdx] || '').trim();
+    if (!jan) continue;
+    const quotes = [];
+    compNames.forEach(name => {
+      const ci = idx[name + '_買取価格'];
+      if (ci == null) return;
+      const price = toInt(row[ci]);
+      if (price > 0) quotes.push([name, price]);
+    });
+    quotes.sort((a, b) => b[1] - a[1]);
+    const rec = { q: quotes };
+    for (const name of compNames) {
+      const ci = nameColIdx[name];
+      if (ci == null) continue;
+      const v = (row[ci] || '').trim();
+      if (v) { rec.n = v; break; }
+    }
+    if (retailIdx != null) {
+      const rv = toInt(row[retailIdx]);
+      if (rv > 0) rec.r = rv;
+    }
+    if (amazonIdx != null) {
+      const av = toInt(row[amazonIdx]);
+      if (av > 0) rec.a = av;
+    }
+    out[jan] = rec;
+  }
+  return out;
+}
+
+// JANコードごとのレコードを、Firebaseの複数箇所同時更新（PATCH）でまとめて書き込む。
+// 1回のリクエストで大量のJANコードを送ろうとすると重くなるため、一定件数ずつ分割して
+// 送信し、進捗（何件中何件が完了したか）を画面に表示する。
+async function importBuybackRecords(records) {
+  const jans = Object.keys(records);
+  const total = jans.length;
+  const batchSize = 300;
+  const importedAt = Date.now();
+  const progressWrap = document.getElementById('buyback-import-progress-wrap');
+  const progressBar = document.getElementById('buyback-import-progress-bar');
+  const statusEl = document.getElementById('buyback-import-status');
+  if (progressWrap) progressWrap.style.display = 'block';
+  let done = 0;
+  for (let i = 0; i < total; i += batchSize) {
+    const chunkJans = jans.slice(i, i + batchSize);
+    const body = {};
+    chunkJans.forEach(jan => { body[jan] = Object.assign({ u: importedAt }, records[jan]); });
+    await fetch(authedUrl('/buybackPriceRef.json'), { method: 'PATCH', body: JSON.stringify(body) });
+    done += chunkJans.length;
+    if (progressBar) progressBar.style.width = Math.round(done / total * 100) + '%';
+    if (statusEl) statusEl.textContent = `取り込み中… ${done}/${total}件`;
+  }
+  window._buybackPriceRef = null; // 一覧検索用のキャッシュを無効化（次回開いた時に最新を取得し直す）
+  if (statusEl) statusEl.textContent = `取り込みが完了しました（${total}件、${new Date(importedAt).toLocaleString('ja-JP')} 時点のデータ）`;
+  if (progressWrap) setTimeout(() => { progressWrap.style.display = 'none'; }, 1500);
+}
+
+// CSVファイル選択時のハンドラ（買取価格チェック画面の管理者用アップロード欄から呼ばれる）
+function handleBuybackCsvSelected(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = ''; // 同じファイルを選び直した時にもonchangeが発火するようにする
+  if (!file) return;
+  const statusEl = document.getElementById('buyback-import-status');
+  if (statusEl) statusEl.textContent = 'ファイルを読み込んでいます…';
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const rows = parseCsvText(String(reader.result || ''));
+      const records = buildBuybackRecordsFromCsv(rows);
+      const count = Object.keys(records).length;
+      if (!count) {
+        if (statusEl) statusEl.textContent = '取り込める行が見つかりませんでした。CSVの形式をご確認ください。';
+        return;
+      }
+      if (statusEl) statusEl.textContent = `${count}件のデータを取り込みます…`;
+      await importBuybackRecords(records);
+    } catch (e) {
+      console.error('買取価格CSV取り込みエラー', e);
+      if (statusEl) statusEl.textContent = '取り込みに失敗しました：' + (e && e.message ? e.message : e);
+    }
+  };
+  reader.onerror = () => { if (statusEl) statusEl.textContent = 'ファイルの読み込みに失敗しました'; };
+  reader.readAsText(file, 'UTF-8');
+}
+
+// 買取価格チェック画面用：一覧をまとめて1回だけ取得し、その場で絞り込めるようキャッシュする
+async function loadBuybackPriceRefIfNeeded() {
+  if (window._buybackPriceRef) return window._buybackPriceRef;
+  try {
+    const res = await fetch(authedUrl('/buybackPriceRef.json'));
+    const data = await res.json();
+    window._buybackPriceRef = data || {};
+  } catch (e) {
+    console.error('買取価格データの取得に失敗', e);
+    window._buybackPriceRef = {};
+  }
+  return window._buybackPriceRef;
+}
+
+// 商品登録画面用：JANコード1件だけを個別に照会する（一覧をまるごと取得しない軽い問い合わせ）
+async function fetchBuybackRefForJan(jan) {
+  try {
+    const res = await fetch(authedUrl('/buybackPriceRef/' + encodeURIComponent(jan) + '.json'));
+    return await res.json();
+  } catch (e) {
+    console.error('買取価格データの個別照会に失敗', e);
+    return null;
+  }
+}
+
+// 要望：「商品を新しく登録する時や、納品書などの作成でJANコードをスキャンする際に、
+// 買取スキャナーで出る商品の型番や商品名を表示させたい」への対応。価格.com検索の自動入力
+// （guessModelNumber・guessMaker）と同じ考え方で、買取スキャナーの商品名（rec.n）からも
+// 型番・メーカーを推定し、まだ空欄の項目にだけ自動入力する（すでに入力済みの項目は
+// 上書きしない）。ids.name／ids.model／ids.maker に、商品名・型番・メーカーの各input要素の
+// idを渡す（商品登録画面ならinv-name等、納品書作成のその場登録欄ならwh-qr-name等）。
+function applyBuybackRefAutoFill(rec, ids) {
+  const filled = [];
+  if (!rec || !rec.n) return filled;
+  const nameField = ids.name ? document.getElementById(ids.name) : null;
+  if (nameField && !nameField.value) { nameField.value = rec.n; filled.push('商品名'); }
+  const guessedModel = guessModelNumber(rec.n);
+  const modelField = ids.model ? document.getElementById(ids.model) : null;
+  if (guessedModel && modelField && !modelField.value) { modelField.value = guessedModel; filled.push('型番'); }
+  const guessedMaker = guessMaker(rec.n);
+  const makerField = ids.maker ? document.getElementById(ids.maker) : null;
+  if (guessedMaker && makerField && !makerField.value) {
+    makerField.value = guessedMaker;
+    filled.push('メーカー');
+    if (ids.makerPrefix) renderMakerSelectUI(ids.makerPrefix);
+  }
+  return filled;
+}
+
+async function lookupBuybackRefForJanField(jan) {
+  if (!jan) { renderBuybackJanRef(null); return; }
+  const rec = await fetchBuybackRefForJan(jan);
+  // 照会中にJAN欄の内容が変わっていれば（入力継続中など）、古い結果で上書きしない
+  const currentJan = document.getElementById('inv-jan') ? document.getElementById('inv-jan').value.trim() : null;
+  if (currentJan !== jan) return;
+  const filled = applyBuybackRefAutoFill(rec, { name: 'inv-name', model: 'inv-model', maker: 'inv-maker', makerPrefix: 'inv' });
+  renderBuybackJanRef(rec, jan, filled);
+}
+
+// 納品書作成画面の「その場で登録」欄（#wh-quick-register）向け。未登録のJANをスキャンした
+// 際、価格.com検索（autoSearchWhQuickRegisterByJan）と並行して、買取スキャナーの参考データ
+// からも商品名・型番・メーカーを自動入力する（どちらが先に完了しても、すでに埋まっている
+// 項目は上書きしない）。
+async function lookupBuybackRefForWhQr(jan) {
+  const rec = await fetchBuybackRefForJan(jan);
+  const current = document.getElementById('wh-item-jan');
+  if (!current || current.value.trim() !== jan) return; // 照会中にJANが変わっていれば古い結果を捨てる
+  const filled = applyBuybackRefAutoFill(rec, { name: 'wh-qr-name', model: 'wh-qr-model', maker: 'wh-qr-maker', makerPrefix: 'wh-qr' });
+  renderBuybackRefBox('wh-qr-buyback-ref', rec, jan, filled);
+}
+
+// 納品書作成画面で、すでに登録済みの商品のJANをスキャンした場合向け。この場合は
+// その場で登録欄（quick register）を開かずそのまま明細に追加するため、自動入力は不要だが、
+// 直近にスキャンした商品の他社買取価格（参考）はJAN欄の下に引き続き表示する
+// （要望：登録済み商品をスキャンした場合にも参考価格を見たい、への対応）。
+let _whFoundBuybackSeq = 0;
+async function lookupBuybackRefForWhFound(jan) {
+  const seq = ++_whFoundBuybackSeq;
+  const rec = await fetchBuybackRefForJan(jan);
+  if (seq !== _whFoundBuybackSeq) return; // 表示中に次のスキャンが行われていれば古い結果は捨てる
+  renderBuybackRefBox('wh-jan-buyback-ref', rec, jan, []);
+}
+
+// 1件分の買取価格比較レコードをHTMLに整形する（商品登録画面のインライン表示・
+// 買取価格チェック画面の検索結果の両方で共通して使う）
+function formatBuybackRecordHtml(jan, rec, opts) {
+  opts = opts || {};
+  if (!rec) return '';
+  const quotes = rec.q || [];
+  const rowsHtml = quotes.length
+    ? quotes.map(([shop, price]) => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12.5px"><span>${escapeHtmlMain(shop)}</span><span style="font-weight:700">¥${Number(price).toLocaleString('ja-JP')}</span></div>`).join('')
+    : `<div style="font-size:12px;color:var(--text-muted)">他社の買取価格データはありません</div>`;
+  const refs = [];
+  if (rec.r) refs.push(`小売希望価格 ¥${Number(rec.r).toLocaleString('ja-JP')}`);
+  if (rec.a) refs.push(`Amazon最安値 ¥${Number(rec.a).toLocaleString('ja-JP')}`);
+  const refLine = refs.length ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">参考：${refs.join('／')}</div>` : '';
+  const updatedLine = rec.u ? `<div style="font-size:10.5px;color:var(--text-muted);margin-top:4px">データ取り込み日時: ${new Date(rec.u).toLocaleString('ja-JP')}</div>` : '';
+  const nameLine = rec.n ? `<div style="font-size:12.5px;font-weight:700;color:var(--text);margin-bottom:4px">${escapeHtmlMain(rec.n)}</div>` : '';
+  const janLine = opts.hideJan ? '' : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">JAN: ${escapeHtmlMain(jan)}</div>`;
+  return `
+    <div style="border:1.2px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:6px;background:var(--surface)">
+      ${janLine}
+      ${nameLine}
+      ${rowsHtml}
+      ${refLine}
+      ${updatedLine}
+    </div>`;
+}
+
+// 買取スキャナーの参考データ表示欄を共通で組み立てる（商品登録画面・納品書作成のその場
+// 登録欄の両方から呼ばれる）。filledFieldsが渡された場合は、商品名・型番・メーカーの
+// どれを自動入力したかの案内も添える。
+function renderBuybackRefBox(containerId, rec, jan, filledFields) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  if (!rec || !((rec.q && rec.q.length) || rec.r || rec.a || rec.n)) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  const filledNote = (filledFields && filledFields.length)
+    ? `<div style="font-size:11px;color:var(--gold-dark);font-weight:700;margin-top:4px">✅ ${filledFields.join('・')}を自動入力しました（買取スキャナーのデータより。自動推定のため必ずご確認ください）</div>`
+    : '';
+  wrap.innerHTML = `<div style="font-size:11.5px;font-weight:700;color:var(--text);margin-bottom:2px">📊 他社の買取価格（参考）</div>` + formatBuybackRecordHtml(jan, rec, { hideJan: true }) + filledNote;
+}
+
+// 商品登録画面のJAN欄下に、そのJANコードの他社買取価格（取り込み済みなら）を表示する
+function renderBuybackJanRef(rec, jan, filledFields) {
+  renderBuybackRefBox('buyback-jan-ref', rec, jan, filledFields);
+}
+
+// 買取価格チェック画面：JANコード（数字のみの入力）は前方一致・部分一致、それ以外は
+// 商品名の部分一致で検索する。結果は「一番高い買取価格」が高い順に並べて表示する
+async function renderBuybackSearchResults() {
+  const input = document.getElementById('buyback-search-input');
+  const resultsEl = document.getElementById('buyback-search-results');
+  const statusEl = document.getElementById('buyback-search-status');
+  if (!input || !resultsEl) return;
+  const qRaw = input.value.trim();
+  if (!qRaw) { resultsEl.innerHTML = ''; if (statusEl) statusEl.textContent = ''; return; }
+  if (statusEl) statusEl.textContent = '読み込み中…';
+  const data = await loadBuybackPriceRefIfNeeded();
+  // 読み込みを待っている間に検索語が変わっていた場合は、古い結果で上書きしない
+  if (input.value.trim() !== qRaw) return;
+  const isDigits = /^[0-9]+$/.test(qRaw);
+  const qLower = qRaw.toLowerCase();
+  const entries = Object.entries(data || {});
+  const matched = isDigits
+    ? entries.filter(([jan]) => jan.includes(qRaw))
+    : entries.filter(([, rec]) => (rec.n || '').toLowerCase().includes(qLower));
+  matched.sort((a, b) => {
+    const aMax = (a[1].q && a[1].q[0]) ? a[1].q[0][1] : 0;
+    const bMax = (b[1].q && b[1].q[0]) ? b[1].q[0][1] : 0;
+    return bMax - aMax;
+  });
+  const LIMIT = 50;
+  const shown = matched.slice(0, LIMIT);
+  if (statusEl) {
+    statusEl.textContent = matched.length
+      ? `${matched.length}件見つかりました${matched.length > LIMIT ? '（上位' + LIMIT + '件を表示）' : ''}`
+      : '一致するデータが見つかりませんでした';
+  }
+  resultsEl.innerHTML = shown.map(([jan, rec]) => formatBuybackRecordHtml(jan, rec)).join('');
 }
 
 // タイトル・スニペットの文字列からJANコード（8桁または13桁の数字の並び）らしきものを推定する。
