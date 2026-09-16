@@ -983,6 +983,14 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
           <div class="field-label">型番</div>
           <input type="text" id="inv-model" placeholder="型番・品番" oninput="lookupModel()">
           <div id="model-lookup-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
+          <!-- 要望：「登録済み商品の情報を、JANスキャン画面から直接修正したい」への対応。
+               既存商品モードでは商品名・型番・メーカーが読み取り専用になるため、必要な時だけ
+               このボタンで編集できるようにする（誤って書き換えてしまわないよう、通常は
+               読み取り専用のまま）。 -->
+          <div id="inv-existing-edit-toggle" style="display:none;margin-top:6px">
+            <button type="button" onclick="enableInvExistingEdit()" style="font-size:12px;color:var(--gold-dark);background:none;border:none;padding:0;cursor:pointer;text-decoration:underline">✏️ 商品名・型番・メーカーを修正する</button>
+          </div>
+          <div id="inv-existing-edit-note" style="display:none;margin-top:6px;font-size:11px;color:var(--gold-dark);font-weight:700">商品名・型番・メーカーを修正できます。保存すると登録済みの商品情報も更新されます。</div>
         </div>
         <div class="field-divider"></div>
         <div class="field" style="padding-top:16px">
@@ -7310,12 +7318,14 @@ function formatSearchApiError(r, d) {
 }
 
 // JANが既存商品と一致した場合、商品登録フォームを「入荷（在庫追加）」モードに切り替える
+let _invExistingEditMode = false;
 function setInvAddExistingMode(found) {
   document.getElementById('inv-existing-key').value = found._key;
   document.getElementById('inv-name').value = found.name || '';
   document.getElementById('inv-maker').value = found.maker || '';
   document.getElementById('inv-model').value = found.model || '';
   renderMakerSelectUI('inv');
+  _invExistingEditMode = false;
   ['inv-name','inv-model'].forEach(id => {
     const el = document.getElementById(id);
     el.readOnly = true;
@@ -7328,6 +7338,10 @@ function setInvAddExistingMode(found) {
     el.style.background = 'var(--surface)';
     el.style.color = 'var(--text-muted)';
   });
+  const editToggle = document.getElementById('inv-existing-edit-toggle');
+  if (editToggle) editToggle.style.display = 'block';
+  const editNote = document.getElementById('inv-existing-edit-note');
+  if (editNote) editNote.style.display = 'none';
   const stockLabel = document.getElementById('inv-stock-label');
   if (stockLabel) stockLabel.innerHTML = '入荷数（追加する数量） <span class="req">*</span>';
   const stockInput = document.getElementById('inv-stock');
@@ -7336,9 +7350,34 @@ function setInvAddExistingMode(found) {
   if (btn) btn.textContent = '入荷を記録する（既存商品）';
 }
 
+// 要望：「登録済み商品の情報を、JANスキャン画面から直接修正したい」への対応。
+// 通常は誤入力を防ぐため読み取り専用にしている商品名・型番・メーカーを、
+// このボタンを押した時だけ編集できるようにする。
+function enableInvExistingEdit() {
+  if (!document.getElementById('inv-existing-key').value) return;
+  _invExistingEditMode = true;
+  ['inv-name','inv-model'].forEach(id => {
+    const el = document.getElementById(id);
+    el.readOnly = false;
+    el.style.background = '';
+    el.style.color = '';
+  });
+  [document.getElementById('inv-maker-select'), document.getElementById('inv-maker-other')].forEach(el => {
+    if (!el) return;
+    el.disabled = false;
+    el.style.background = '';
+    el.style.color = '';
+  });
+  const editToggle = document.getElementById('inv-existing-edit-toggle');
+  if (editToggle) editToggle.style.display = 'none';
+  const editNote = document.getElementById('inv-existing-edit-note');
+  if (editNote) editNote.style.display = 'block';
+}
+
 // 新規商品モードに戻す（JAN欄を空にした・一致しなくなった場合）
 function clearInvAddExistingMode() {
   document.getElementById('inv-existing-key').value = '';
+  _invExistingEditMode = false;
   ['inv-name','inv-model'].forEach(id => {
     const el = document.getElementById(id);
     el.readOnly = false;
@@ -7352,6 +7391,10 @@ function clearInvAddExistingMode() {
     el.style.color = '';
   });
   renderMakerSelectUI('inv');
+  const editToggle = document.getElementById('inv-existing-edit-toggle');
+  if (editToggle) editToggle.style.display = 'none';
+  const editNote = document.getElementById('inv-existing-edit-note');
+  if (editNote) editNote.style.display = 'none';
   const stockLabel = document.getElementById('inv-stock-label');
   if (stockLabel) stockLabel.innerHTML = '初期在庫数';
   const stockInput = document.getElementById('inv-stock');
@@ -7769,12 +7812,14 @@ function applyBuybackRefAutoFill(rec, ids) {
   return filled;
 }
 
+let _lastInvBuybackRec = null;
 async function lookupBuybackRefForJanField(jan) {
-  if (!jan) { renderBuybackJanRef(null); return; }
+  if (!jan) { _lastInvBuybackRec = null; renderBuybackJanRef(null); return; }
   const rec = await fetchBuybackRefForJan(jan);
   // 照会中にJAN欄の内容が変わっていれば（入力継続中など）、古い結果で上書きしない
   const currentJan = document.getElementById('inv-jan') ? document.getElementById('inv-jan').value.trim() : null;
   if (currentJan !== jan) return;
+  _lastInvBuybackRec = rec;
   const filled = applyBuybackRefAutoFill(rec, { name: 'inv-name', model: 'inv-model', maker: 'inv-maker', makerPrefix: 'inv' });
   renderBuybackJanRef(rec, jan, filled);
 }
@@ -7846,6 +7891,35 @@ function renderBuybackRefBox(containerId, rec, jan, filledFields) {
 // 商品登録画面のJAN欄下に、そのJANコードの他社買取価格（取り込み済みなら）を表示する
 function renderBuybackJanRef(rec, jan, filledFields) {
   renderBuybackRefBox('buyback-jan-ref', rec, jan, filledFields);
+  // 要望：「登録済み商品の情報を、JANスキャン画面から直接修正したい」への対応。
+  // 登録済み商品（入荷モード）で、かつ買取スキャナー側に商品名データがある場合は、
+  // その内容を使って商品名・型番・メーカーを修正できるボタンを添える。
+  const existingKey = document.getElementById('inv-existing-key') ? document.getElementById('inv-existing-key').value : '';
+  const wrap = document.getElementById('buyback-jan-ref');
+  if (wrap && existingKey && rec && rec.n) {
+    wrap.insertAdjacentHTML('beforeend', `<button type="button" onclick="applyBuybackRefToExistingProduct()" style="margin-top:8px;font-size:12px;color:var(--gold-dark);background:none;border:1.5px solid var(--gold-dark);border-radius:6px;padding:5px 10px;cursor:pointer">🔧 この買取データの内容で商品情報を修正する</button>`);
+  }
+}
+
+// 「🔧 この買取データの内容で商品情報を修正する」ボタンの処理。編集を許可した上で、
+// 買取スキャナーの商品名・そこから推定した型番・メーカーを入力欄に反映する
+// （あくまで反映するだけで、保存を押すまで登録済みデータは変わらない）。
+function applyBuybackRefToExistingProduct() {
+  const rec = _lastInvBuybackRec;
+  if (!rec || !rec.n) return;
+  enableInvExistingEdit();
+  const nameField = document.getElementById('inv-name');
+  if (nameField) nameField.value = rec.n;
+  const guessedModel = guessModelNumber(rec.n);
+  const modelField = document.getElementById('inv-model');
+  if (guessedModel && modelField) modelField.value = guessedModel;
+  const guessedMaker = guessMaker(rec.n);
+  const makerField = document.getElementById('inv-maker');
+  if (guessedMaker && makerField) {
+    makerField.value = guessedMaker;
+    renderMakerSelectUI('inv');
+  }
+  showToast('買取データの内容を反映しました。内容をご確認のうえ保存してください');
 }
 
 // 買取価格チェック画面：JANコード（数字のみの入力）は前方一致・部分一致、それ以外は
@@ -8013,15 +8087,35 @@ async function submitProduct() {
     const addQty = parseInt(stock) || 0;
     if (addQty <= 0) { showAlert('inv-alert-box','inv-alert-msg','入荷数は1以上を入力してください','error'); return; }
     const newStock = prod.stock + addQty;
+
+    // 要望：「登録済み商品の情報を、JANスキャン画面から直接修正したい」への対応。
+    // 「✏️ 修正する」で編集を許可した場合のみ商品名・型番・メーカーの入力欄が変更できる
+    // ため、既存データと差分がある項目だけを商品マスタ（products）にも反映する
+    // （入荷記録のついでに誤った登録内容を直せるようにする）。
+    const masterUpdates = {};
+    if (_invExistingEditMode) {
+      const newModel = document.getElementById('inv-model').value.trim();
+      const newMaker = document.getElementById('inv-maker').value.trim();
+      if (name && name !== prod.name) masterUpdates.name = name;
+      if (newModel !== (prod.model || '')) masterUpdates.model = newModel;
+      if (newMaker !== (prod.maker || '')) masterUpdates.maker = newMaker;
+      if (Object.keys(masterUpdates).length) rememberMakerIfNew(masterUpdates.maker || prod.maker || '');
+    }
+
     try {
-      await Promise.all([
+      const updatePromises = [
         fetch(authedUrl('/products/' + existingKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) }),
         fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
           productKey: existingKey, productName: prod.name, jan: prod.jan,
           type: 'in', qty: addQty, date: todayStr(), memo: '商品登録画面から入荷',
           stockBefore: prod.stock, stockAfter: newStock, createdAt: Date.now()
         })})
-      ]);
+      ];
+      const masterUpdated = Object.keys(masterUpdates).length > 0;
+      if (masterUpdated) {
+        updatePromises.push(fetch(authedUrl('/products/' + existingKey + '.json'), { method: 'PATCH', body: JSON.stringify(masterUpdates) }));
+      }
+      await Promise.all(updatePromises);
       ['inv-maker','inv-name','inv-model','inv-jan','inv-stock','inv-threshold','inv-cost','inv-location','inv-memo'].forEach(id => document.getElementById(id).value = '');
       const catEl = document.getElementById('inv-category'); if(catEl) catEl.selectedIndex = 0;
       populateSubcatSelect('inv-subcategory', CATEGORY_LIST[0]);
@@ -8032,7 +8126,7 @@ async function submitProduct() {
       document.getElementById('jan-lookup-status').textContent = '';
       toggleInvJanClearBtn();
       await loadInventory();
-      showToast('入荷を記録しました（在庫: ' + newStock + '個）');
+      showToast(masterUpdated ? '入荷を記録し、商品情報を修正しました（在庫: ' + newStock + '個）' : '入荷を記録しました（在庫: ' + newStock + '個）');
     } catch(e) { showAlert('inv-alert-box','inv-alert-msg','記録に失敗しました','error'); }
     return;
   }
