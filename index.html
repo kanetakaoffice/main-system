@@ -14519,6 +14519,19 @@ function getPortalAvailableQty(it) {
   return Math.max(0, (it.qty || 0) - pending);
 }
 
+// 要望：「申請中の間だけ『残り0個』に変更してほしい」への対応。見出し行・カード内の数量
+// 表示を、初回描画（renderPortalItemsList）とその場での部分更新（refreshPortalItemAvailability）
+// の両方で使えるよう、共通の組み立て関数にしておく（表示のズレを防ぐため）。実際の預かり
+// 数量（it.qty）そのものは書き換えず、あくまで表示の組み立て方だけを変えている。
+function buildPortalQtyDispHtml(it, availableQty, pendingQtyForModel, hasPendingForModel) {
+  return hasPendingForModel
+    ? `<span style="color:#c23670;font-weight:700">残り${availableQty}個</span>（預けている${it.qty}個のうち申請中${pendingQtyForModel}個）`
+    : `${it.qty}個`;
+}
+function buildPortalDetailLineHtml(it, availableQty, hasPendingForModel) {
+  return `${fmtDateJP(it.date)}／預けている数量：${it.qty}個${hasPendingForModel ? `（残り${availableQty}個）` : ''}${it.memo ? '／' + escapeHtmlMain(it.memo) : ''}`;
+}
+
 // 精算・返却の連絡を送信した直後、その商品について残り申請可能数（getPortalAvailableQty）が
 // 変わるので、一覧全体を再描画（renderPortalItemsList／filterPortalItems）せずに、その商品の
 // カードのうち影響を受ける部分（申請できる数が無くなった旨の案内・入力欄やボタンの有効／
@@ -14535,6 +14548,13 @@ function refreshPortalItemAvailability(idx) {
 
   const noticeEl = document.getElementById('portal-none-available-' + idx);
   if (noticeEl) noticeEl.style.display = noneAvailable ? 'block' : 'none';
+
+  // 要望「申請中の間だけ『残り0個』に変更してほしい」への対応。見出し行・カード内の数量表示も
+  // このタイミングで（一覧全体の再描画を待たずに）その場で更新する
+  const qtyDispEl = document.getElementById('portal-qty-disp-' + idx);
+  if (qtyDispEl) qtyDispEl.innerHTML = buildPortalQtyDispHtml(it, availableQty, pendingQtyForModel, hasPendingForModel);
+  const detailLineEl = document.getElementById('portal-detail-line-' + idx);
+  if (detailLineEl) detailLineEl.innerHTML = buildPortalDetailLineHtml(it, availableQty, hasPendingForModel);
 
   const entriesWrap = document.getElementById('portal-entries-' + idx);
   if (entriesWrap) {
@@ -14920,15 +14940,18 @@ function renderPortalItemsList(pairs) {
     const cardStyle = hasPendingForModel
       ? 'border:1.2px solid #e5a9c0;border-radius:12px;margin-bottom:10px;background:#fdeef4;overflow:hidden'
       : 'border:1.2px solid var(--border);border-radius:12px;margin-bottom:10px;background:var(--white);overflow:hidden';
-    const qtyDisp = hasPendingForModel
-      ? `${it.qty}個<span style="color:#c23670;font-weight:700">（申請中${pendingQtyForModel}個）</span>`
-      : `${it.qty}個`;
     // 要望：「取引先の方が、実際に預けている数より多い数を申請できるようになっている。預けて
     // いる数より多くの数を申請できないようにしてほしい」への対応。店舗がまだ確認していない
     // （精算・返却どちらでも）申請中の数量を差し引いた「これ以上申請できる残りの数量」
     // （getPortalAvailableQty）を、以降の入力欄の上限・初期値として使う。
     const availableQty = getPortalAvailableQty(it);
     const noneAvailable = availableQty <= 0;
+    // 要望：「申請中の間だけ『残り0個』に変更してほしい」への対応。申請中の連絡がある間は
+    // 見出し行に「残り○個」を大きく出し、預けている元の数量・申請中の数量はその横に添える
+    // 形にする（実際の預かり数量そのものは、店舗が確認するまで変更しない。あくまで見た目の
+    // 表示だけを変える。却下されれば申請中の連絡が無くなるので、次の再描画で自動的に元の
+    // 「○個」表示に戻る＝取り消し・却下時に何か別の処理をする必要はない）。
+    const qtyDisp = buildPortalQtyDispHtml(it, availableQty, pendingQtyForModel, hasPendingForModel);
     // 常にDOMには存在させ、display切り替えだけで出し分ける（refreshPortalItemAvailabilityが
     // 一覧全体を再描画せずにこの部分だけをその場で更新できるようにするため）
     const noneAvailableNoticeHtml = `<div id="portal-none-available-${idx}" style="font-size:12px;color:#8a6d1a;background:#fff8e1;border:1px solid #e0c56a;border-radius:8px;padding:8px 10px;margin-bottom:10px;${noneAvailable ? '' : 'display:none'}">預けている${it.qty}個すべてについて、すでに精算・返却のご連絡を送信済みで店舗の確認待ちです。この商品について新たに申請できる数はありません。店舗の確認をお待ちください。</div>`;
@@ -14941,12 +14964,12 @@ function renderPortalItemsList(pairs) {
       <div onclick="toggleAccordion('portal-item-${idx}')" style="display:flex;align-items:center;gap:8px;padding:12px 14px;cursor:pointer">
         <span class="accordion-arrow" id="acc-arrow-portal-item-${idx}" style="flex-shrink:0;font-size:11px">▼</span>
         <div style="flex:1.3;min-width:0;font-size:14px;font-weight:700;color:var(--text);overflow-wrap:break-word">${escapeHtmlMain(it.model || '商品')}</div>
-        <div style="flex:0 0 auto;font-size:12.5px;color:var(--text-muted);white-space:nowrap">${qtyDisp}</div>
+        <div style="flex:0 0 auto;font-size:12.5px;color:var(--text-muted);white-space:nowrap"><span id="portal-qty-disp-${idx}">${qtyDisp}</span></div>
         <div style="flex:1.1;min-width:0;font-size:11.5px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.memo ? escapeHtmlMain(it.memo) : ''}</div>
         ${pendingBadge ? '<span style="flex-shrink:0;font-size:13px" title="確認待ちのご連絡があります">⏳</span>' : ''}
       </div>
       <div class="accordion-body" id="acc-body-portal-item-${idx}" style="padding:0 14px 14px">
-        <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px">${fmtDateJP(it.date)}／預けている数量：${it.qty}個${it.memo ? '／' + escapeHtmlMain(it.memo) : ''}</div>
+        <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px" id="portal-detail-line-${idx}">${buildPortalDetailLineHtml(it, availableQty, hasPendingForModel)}</div>
         ${pendingBadge ? `<div style="margin-bottom:8px">${pendingBadge}</div>` : ''}
         ${noneAvailableNoticeHtml}
         <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">精算（売れた）を報告</div>
