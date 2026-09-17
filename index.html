@@ -1198,6 +1198,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <button type="button" id="inv-search-clear" onclick="clearInvSearch()" aria-label="検索をクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
       </div>
       <div id="inv-status-filter-bar" style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap"></div>
+      <label style="display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:12px;color:var(--text-muted);cursor:pointer;width:fit-content">
+        <input type="checkbox" id="inv-missing-info-filter" onchange="toggleInvMissingInfoFilter()" style="width:auto;margin:0">
+        ⚠️ メーカー・商品名が未入力の商品のみ表示
+      </label>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap;font-size:12px;color:var(--text-muted)">
         <div style="display:flex;align-items:center;gap:6px">
           <label for="inv-sort-order">並び順</label>
@@ -8396,12 +8400,21 @@ function buildInvCard(p, opts) {
           </div>`).join('')}
         </div>` : '';
   const editBtns = (editable && isAdmin()) ? `<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0"><button onclick="openProductEdit('${p._key}')" style="padding:5px 10px;background:#bfdbfe;color:#1e3a5f;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">編集</button><button onclick="deleteProduct('${p._key}')" class="delete-btn">削除</button></div>` : '';
+  // 要望：「JAN・型番だけで登録して、後でメーカー・商品名を一括で入力したい」への対応。
+  // 未入力の項目がひと目でわかるようバッジで示す。
+  const missingParts = [];
+  if (!p.name) missingParts.push('商品名');
+  if (!p.maker) missingParts.push('メーカー');
+  const missingBadgeHtml = missingParts.length
+    ? `<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:#fef3c7;color:#92400e;font-weight:700;white-space:nowrap;display:inline-block;margin-bottom:3px">⚠️ ${missingParts.join('・')}未入力</span>`
+    : '';
   return `
     <div class="inv-card">
       <div class="inv-card-body">
         ${p.image ? `<img class="inv-card-img" src="${p.image}">` : `<div class="inv-card-img" style="display:flex;align-items:center;justify-content:center;font-size:24px">📦</div>`}
         <div class="inv-card-info">
-          <div class="inv-name">${p.name}</div>
+          <div class="inv-name">${p.name || '（商品名未入力）'}</div>
+          ${missingBadgeHtml}
           ${(p.category && p.category!=='家電') ? `<span style="font-size:10px;padding:1px 7px;border-radius:20px;background:var(--surface);color:var(--text-muted);border:1px solid var(--border);margin-bottom:3px;display:inline-block">${p.category}</span>` : ''}
           <div class="inv-sub">${p.maker||''} ${p.model ? '/ ' + p.model : ''}</div>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -8480,12 +8493,20 @@ function buildInvRow(p) {
   const forecastHtml = forecast ? `<div style="font-size:11px;color:${forecastDays<=7?'var(--danger)':forecastDays<=14?'var(--warning)':'var(--text-muted)'}">📉 このペースだと約${forecastDays}日で在庫切れの見込み（直近30日の平均出庫 ${forecast.avgDaily.toFixed(1)}個/日）</div>` : '';
   const editBtns = isAdmin() ? `<div style="display:flex;gap:6px;margin-top:6px"><button onclick="openProductEdit('${p._key}')" style="padding:5px 10px;background:#bfdbfe;color:#1e3a5f;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">編集</button><button onclick="deleteProduct('${p._key}')" class="delete-btn" style="padding:5px 10px;font-size:11px">削除</button></div>` : '';
   // 型番を主表示にする（型番未登録の商品は代わりに商品名を主表示にする）
-  const primaryLabel = p.model || p.name;
+  const primaryLabel = p.model || p.name || '（型番・商品名未入力）';
+  // 要望：「JAN・型番だけで登録して、後でメーカー・商品名を一括で入力したい」への対応。
+  // 未入力の項目がひと目でわかるよう、行を開かなくても見える位置にバッジで示す。
+  const missingParts = [];
+  if (!p.name) missingParts.push('商品名');
+  if (!p.maker) missingParts.push('メーカー');
+  const missingBadgeHtml = missingParts.length
+    ? `<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:#fef3c7;color:#92400e;font-weight:700;white-space:nowrap;flex-shrink:0">⚠️ ${missingParts.join('・')}未入力</span>`
+    : '';
   const expanded = !!_invRowExpanded[p._key];
   const detailHtml = expanded ? `
       <div class="inv-row-detail" onclick="event.stopPropagation()">
-        <div><span class="inv-row-detail-label">商品名</span>${p.name}</div>
-        ${p.maker ? `<div><span class="inv-row-detail-label">メーカー</span>${p.maker}</div>` : ''}
+        <div><span class="inv-row-detail-label">商品名</span>${p.name || '（未入力）'}</div>
+        <div><span class="inv-row-detail-label">メーカー</span>${p.maker || '（未入力）'}</div>
         ${p.subcategory ? `<div><span class="inv-row-detail-label">サブカテゴリ</span>${p.subcategory}</div>` : ''}
         ${p.jan ? `<div><span class="inv-row-detail-label">JAN</span>${p.jan}</div>` : ''}
         ${p.location ? `<div><span class="inv-row-detail-label">保管場所</span>${p.location}</div>` : ''}
@@ -8500,6 +8521,7 @@ function buildInvRow(p) {
         <div style="min-width:0;flex:1;display:flex;align-items:center;gap:6px">
           <span class="inv-row-expand-arrow" style="${expanded?'transform:rotate(90deg)':''}">▶</span>
           <span style="font-size:14px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${primaryLabel}</span>
+          ${missingBadgeHtml}
         </div>
         <div style="text-align:right;flex-shrink:0;display:flex;align-items:center;gap:8px">
           <span style="font-size:14px;font-weight:700;color:${p.stock<=threshold?'var(--danger)':'var(--text)'}">${p.stock}個</span>
@@ -8586,6 +8608,15 @@ function setInvStatusFilter(status) {
   renderInventoryList();
 }
 
+// 要望：「型番とJANコードのみで登録し、後でメーカー・商品名を一括で入力したい」への対応。
+// メーカーまたは商品名が未入力の商品だけに絞り込むチェックボックス
+let _invMissingInfoFilter = false;
+function toggleInvMissingInfoFilter() {
+  const cb = document.getElementById('inv-missing-info-filter');
+  _invMissingInfoFilter = !!(cb && cb.checked);
+  renderInventoryList();
+}
+
 // カテゴリーの一括展開・折りたたみ
 function toggleAllInvCats(open) {
   if (!_invOpenCats) _invOpenCats = {};
@@ -8629,6 +8660,9 @@ function renderInventoryList() {
   let matched = products.filter(p => !q || p.name?.toLowerCase().includes(q) || (qModelNorm && normalizeModelStr(p.model).includes(qModelNorm)) || (p.maker||'').toLowerCase().includes(q));
   // 在庫状態（在庫あり／残りわずか／在庫切れ）での絞り込み
   if (_invStatusFilter) matched = matched.filter(p => getInvStockStatus(p) === _invStatusFilter);
+  // 要望：「型番とJANコードのみで登録し、後でメーカー・商品名をまとめて入力したい」への対応。
+  // メーカーまたは商品名が未入力の商品だけを一括で抽出できるようにする。
+  if (_invMissingInfoFilter) matched = matched.filter(p => !p.name || !p.maker);
   countEl.textContent = matched.length + '件';
 
   if (!matched.length) { container.innerHTML = ''; empty.style.display = 'block'; return; }
