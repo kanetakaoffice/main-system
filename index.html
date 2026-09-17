@@ -1461,6 +1461,46 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   </div>
 
   <div id="wh-body-deliv">
+    <div style="margin-bottom:16px;background:var(--surface);border-radius:10px;padding:10px 12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('wh-deliv-history')">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:13px;font-weight:700;color:var(--text)">発行済みの納品書</span>
+          <span id="wh-deliv-history-badge" style="display:none;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;background:var(--gold);color:#fff;font-size:11px;font-weight:700;border-radius:10px"></span>
+        </div>
+        <span class="accordion-arrow open" id="acc-arrow-wh-deliv-history" style="font-size:10px;color:var(--text-muted)">▼</span>
+      </div>
+      <div class="accordion-body open" id="acc-body-wh-deliv-history" style="margin-top:8px">
+        <!-- 要望：「ある型番をいつどこに卸したか検索をかけて引っ掛かるようにしたい。型番検索と
+             日にちの期間指定の機能を追加して、該当の型番のある納品書を抽出できるようにして
+             ほしい」への対応。委託の履歴検索（wh-consign-history）と同じ考え方で、型番
+             （部分一致・表記ゆれを吸収）と期間（開始〜終了、片方だけの指定も可）で絞り込める
+             ようにした。
+             追加要望：「型番や期間での検索はできるが、取引先の検索ができないので、取引先毎で
+             見れるようにしてほしい」への対応で、取引先名（部分一致）の検索欄も追加した -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+          <input type="text" id="wh-deliv-history-client-search" placeholder="🔍 取引先で検索" oninput="filterWhDelivHistory()" style="flex:1;min-width:130px;padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px;box-sizing:border-box">
+          <input type="text" id="wh-deliv-history-search" placeholder="🔍 型番で検索" oninput="filterWhDelivHistory()" style="flex:1;min-width:130px;padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px;box-sizing:border-box">
+          <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--text-muted);white-space:nowrap">期間
+            <input type="date" id="wh-deliv-history-date-start" onchange="filterWhDelivHistory()" aria-label="期間の開始日" style="padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px">
+            〜
+            <input type="date" id="wh-deliv-history-date-end" onchange="filterWhDelivHistory()" aria-label="期間の終了日" style="padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px">
+          </label>
+          <button type="button" id="wh-deliv-history-filter-clear" onclick="clearWhDelivHistoryFilter()" style="display:none;padding:7px 10px;border:1.2px solid var(--border);border-radius:8px;background:var(--white);color:var(--text-muted);font-size:12px;cursor:pointer;white-space:nowrap">✕ 条件をクリア</button>
+        </div>
+        <div id="wh-deliv-history-list"></div>
+      </div>
+    </div>
+  <!-- 要望：「発行済みの納品書が下にあって見にくいので上に表示してほしい。今の納品書作成の
+       項目は『新規作成』ボタンを押したら出るようにしたい」への対応。発行済みの納品書を
+       画面の一番上に移動し、常に開いた状態で見えるようにした。代わりに納品書作成フォーム
+       （取引先・商品スキャン・納品明細・右側プレビュー）は、このボタンを押すまで隠しておき、
+       押すと表示される。フォームは下書きが残っている場合や編集中の場合は自動で開く
+       （toggleWhDelivCreateSection参照） -->
+  <div id="wh-deliv-create-toggle-row" style="display:flex;justify-content:flex-end;margin-bottom:14px">
+    <button type="button" id="wh-deliv-create-toggle-btn" class="btn btn-gold" onclick="toggleWhDelivCreateSection()" style="padding:10px 18px;font-size:13px">＋ 新規作成</button>
+  </div>
+
+  <div id="wh-deliv-create-section" style="display:none">
   <div class="wh-desktop-layout">
   <div class="wh-desktop-main">
     <div class="card">
@@ -1568,35 +1608,6 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <button class="btn btn-gold" id="wh-deliv-submit-btn" style="width:100%" onclick="submitWhDeliverySlip()">発行する</button>
       </div>
     </div>
-    <div style="margin-top:16px;background:var(--surface);border-radius:10px;padding:10px 12px">
-      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('wh-deliv-history')">
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:13px;font-weight:700;color:var(--text)">発行済みの納品書</span>
-          <span id="wh-deliv-history-badge" style="display:none;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;background:var(--gold);color:#fff;font-size:11px;font-weight:700;border-radius:10px"></span>
-        </div>
-        <span class="accordion-arrow" id="acc-arrow-wh-deliv-history" style="font-size:10px;color:var(--text-muted)">▼</span>
-      </div>
-      <div class="accordion-body" id="acc-body-wh-deliv-history" style="margin-top:8px">
-        <!-- 要望：「ある型番をいつどこに卸したか検索をかけて引っ掛かるようにしたい。型番検索と
-             日にちの期間指定の機能を追加して、該当の型番のある納品書を抽出できるようにして
-             ほしい」への対応。委託の履歴検索（wh-consign-history）と同じ考え方で、型番
-             （部分一致・表記ゆれを吸収）と期間（開始〜終了、片方だけの指定も可）で絞り込める
-             ようにした。
-             追加要望：「型番や期間での検索はできるが、取引先の検索ができないので、取引先毎で
-             見れるようにしてほしい」への対応で、取引先名（部分一致）の検索欄も追加した -->
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-          <input type="text" id="wh-deliv-history-client-search" placeholder="🔍 取引先で検索" oninput="filterWhDelivHistory()" style="flex:1;min-width:130px;padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px;box-sizing:border-box">
-          <input type="text" id="wh-deliv-history-search" placeholder="🔍 型番で検索" oninput="filterWhDelivHistory()" style="flex:1;min-width:130px;padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px;box-sizing:border-box">
-          <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--text-muted);white-space:nowrap">期間
-            <input type="date" id="wh-deliv-history-date-start" onchange="filterWhDelivHistory()" aria-label="期間の開始日" style="padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px">
-            〜
-            <input type="date" id="wh-deliv-history-date-end" onchange="filterWhDelivHistory()" aria-label="期間の終了日" style="padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px">
-          </label>
-          <button type="button" id="wh-deliv-history-filter-clear" onclick="clearWhDelivHistoryFilter()" style="display:none;padding:7px 10px;border:1.2px solid var(--border);border-radius:8px;background:var(--white);color:var(--text-muted);font-size:12px;cursor:pointer;white-space:nowrap">✕ 条件をクリア</button>
-        </div>
-        <div id="wh-deliv-history-list"></div>
-      </div>
-    </div>
   </div>
   <!-- 要望：「パソコンで納品書を作成している時に、右側に作成中のプレビューがあるとやりやすい」
        への対応。#wh-deliv-live-preview-pageは、発行済み納品書のプレビュー（#ds-preview-page）と
@@ -1611,6 +1622,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div id="wh-deliv-live-preview-page" class="ds-preview-page" style="width:794px;transform-origin:top left"></div>
       </div>
     </div>
+  </div>
   </div>
   </div>
   </div>
@@ -3353,6 +3365,9 @@ function switchWhTab(tab) {
     loadWhDelivDraft();
     renderWhDelivLivePreview();
     renderWhDelivHistory();
+    // 入力中の下書きが復元された場合や、発行済み納品書の編集中の場合は、作成フォームを
+    // 自動で開いておく（それ以外は閉じたまま＝発行済みの納品書一覧を優先して見せる）
+    if (_editingSlipId || _whDelivItems.length) toggleWhDelivCreateSection(true);
   }
 }
 
@@ -4258,6 +4273,8 @@ async function submitWhDeliverySlip() {
     // 発行・編集と印刷を分けているため、ここでは自動で印刷ウィンドウを開かず、
     // 代わりに「発行済みの納品書」の履歴を開いて、そこから好きなタイミングで印刷できるようにする
     openWhDelivHistoryAccordion();
+    // 発行・更新が終わったら作成フォームは閉じ、画面の主役である「発行済みの納品書」一覧に戻す
+    toggleWhDelivCreateSection(false);
     const actionLabel = wasExplicitEdit ? '納品書を更新しました' : (mergedFromExisting ? '同じ納品書にまとめました' : '納品書を発行しました');
     const stockNote = insufficientStockNames.length
       ? `／${insufficientStockNames.join('・')}は登録在庫を超えて出庫したため在庫がマイナスになっています。入庫の記録をお忘れなく`
@@ -4273,6 +4290,28 @@ function openWhDelivHistoryAccordion() {
   if (arrow) arrow.classList.add('open');
   const section = document.getElementById('wh-deliv-history-list');
   if (section) section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// 要望：「発行済みの納品書が下にあって見にくいので上に表示してほしい。今の納品書作成の項目は
+// 『新規作成』ボタンを押したら出るようにしたい」への対応。発行済みの納品書一覧を画面の
+// 一番上に固定表示し、代わりに納品書作成フォーム（#wh-deliv-create-section：取引先・商品
+// スキャン・納品明細・右側プレビュー一式）は、このトグル関数で開閉する。
+// forceOpenを省略した場合は現在の表示状態を反転させ（ボタンクリック用）、true/falseを渡すと
+// その状態に強制する（下書き復元時・編集開始時・発行完了時などプログラム側から呼ぶ場合用）。
+function toggleWhDelivCreateSection(forceOpen) {
+  const section = document.getElementById('wh-deliv-create-section');
+  const btn = document.getElementById('wh-deliv-create-toggle-btn');
+  if (!section) return;
+  const isOpen = section.style.display !== 'none';
+  const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : !isOpen;
+  if (shouldOpen === isOpen) return;
+  section.style.display = shouldOpen ? 'block' : 'none';
+  if (btn) btn.textContent = shouldOpen ? '－ 閉じる' : '＋ 新規作成';
+  if (shouldOpen) {
+    // ボタンを押した瞬間はまだ表示が切り替わったばかりでレイアウトが確定していないことがあるため、
+    // 1フレーム待ってからスクロールする
+    requestAnimationFrame(() => section.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
 }
 
 // 納品書の見た目（取引先名・型番・数量・単価のみの簡易レイアウト）を組み立てる。
@@ -5064,8 +5103,10 @@ function editDeliverySlip(slipId) {
   const bannerText = document.getElementById('wh-deliv-edit-banner-text');
   if (bannerText) bannerText.textContent = '編集中の納品書があります';
   if (banner) banner.style.display = 'flex';
+  // 発行済みの納品書一覧が画面の一番上に表示されるようになったため、編集を始めたら
+  // 作成フォーム（#wh-deliv-create-section）を開いて、そこまでスクロールする
+  toggleWhDelivCreateSection(true);
   showToast('編集モードにしました。内容を修正して保存してください');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // 編集モードをやめて、明細を空の状態に戻す（在庫・売上には何も影響しない＝まだ保存していないため）
