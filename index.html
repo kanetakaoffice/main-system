@@ -1461,6 +1461,17 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   </div>
 
   <div id="wh-body-deliv">
+  <!-- 要望：「発行済みの納品書が下にあって見にくいので上に表示してほしい。今の納品書作成の
+       項目は『新規作成』ボタンを押したら出るようにしたい」「新規作成ボタンは1番下ではなく
+       上に欲しい」への対応。発行済みの納品書一覧は件数が多いとページ分けされて縦に長くなる
+       ため、「＋ 新規作成」ボタンは一覧より前（画面の一番上）に置き、常にスクロールなしで
+       すぐ押せるようにしている。押すと納品書作成フォーム（取引先・商品スキャン・納品明細・
+       右側プレビュー）が表示される。フォームは下書きが残っている場合や編集中の場合は自動で
+       開く（toggleWhDelivCreateSection参照） -->
+  <div id="wh-deliv-create-toggle-row" style="display:flex;justify-content:flex-end;margin-bottom:14px">
+    <button type="button" id="wh-deliv-create-toggle-btn" class="btn btn-gold" onclick="toggleWhDelivCreateSection()" style="padding:10px 18px;font-size:13px">＋ 新規作成</button>
+  </div>
+
     <div style="margin-bottom:16px;background:var(--surface);border-radius:10px;padding:10px 12px">
       <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('wh-deliv-history')">
         <div style="display:flex;align-items:center;gap:6px">
@@ -1490,15 +1501,6 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div id="wh-deliv-history-list"></div>
       </div>
     </div>
-  <!-- 要望：「発行済みの納品書が下にあって見にくいので上に表示してほしい。今の納品書作成の
-       項目は『新規作成』ボタンを押したら出るようにしたい」への対応。発行済みの納品書を
-       画面の一番上に移動し、常に開いた状態で見えるようにした。代わりに納品書作成フォーム
-       （取引先・商品スキャン・納品明細・右側プレビュー）は、このボタンを押すまで隠しておき、
-       押すと表示される。フォームは下書きが残っている場合や編集中の場合は自動で開く
-       （toggleWhDelivCreateSection参照） -->
-  <div id="wh-deliv-create-toggle-row" style="display:flex;justify-content:flex-end;margin-bottom:14px">
-    <button type="button" id="wh-deliv-create-toggle-btn" class="btn btn-gold" onclick="toggleWhDelivCreateSection()" style="padding:10px 18px;font-size:13px">＋ 新規作成</button>
-  </div>
 
   <div id="wh-deliv-create-section" style="display:none">
   <div class="wh-desktop-layout">
@@ -5306,7 +5308,69 @@ async function removeSlipFromFreeeInvoiceGroups(slipId) {
 // たびにこの内容で絞り込む
 let _whDelivHistoryFilter = { q: '', client: '', dateStart: '', dateEnd: '' };
 
-// 発行済みの納品書一覧（slipIdごとにまとめて表示。編集・取消ができる）
+// 要望：「納品書の件数が多くなるとスクロールが大変。『もっと見る』ボタンより、1ページ目・
+// 2ページ目のようにページ分けできないか」への対応。1ページあたりの件数を決めておき、
+// ページ番号ボタン（‹前へ／1・2・3…／次へ›）で切り替える方式にした（検索・絞り込み条件を
+// 変えたときは1ページ目に戻す＝新しい絞り込み結果の先頭から見せる）
+const WH_DELIV_HISTORY_PAGE_SIZE = 15;
+let _whDelivHistoryPage = 1;
+
+// 要望：「一覧の各行をタップしたときにその場でプレビュー展開できるようにしてほしい」への
+// 対応。以前は行をタップすると別画面（モーダル）のプレビューが開く仕様だったが、その場の
+// アコーディオン展開に変更した（predepositリスト画面のportal-item-アコーディオンと同じ
+// 考え方）。展開すると明細（型番・数量・金額）がその場に表示される。印刷・編集・取消など、
+// 従来のモーダルでしかできない操作は、展開した中の「詳しく見る（印刷・編集）」から開ける
+// ようにして、機能自体は変えずに残してある。
+// 展開状態（どのslipIdを開いているか）はrenderWhDelivHistory()の再描画をまたいでも保持する
+// （委託リストの_whConsignExpandedClientsと同じ考え方）
+let _whDelivHistoryExpanded = new Set();
+function toggleWhDelivHistoryRow(slipId) {
+  if (_whDelivHistoryExpanded.has(slipId)) _whDelivHistoryExpanded.delete(slipId);
+  else _whDelivHistoryExpanded.add(slipId);
+  renderWhDelivHistory();
+}
+
+// ページ番号ボタン（‹前へ／次へ›含む）から呼ばれ、表示ページを切り替えて再描画する。
+// ページを切り替えたら一覧の先頭が見えるようスクロールし、どこを見ているか分かりやすくする
+function goToWhDelivHistoryPage(page) {
+  _whDelivHistoryPage = page;
+  renderWhDelivHistory();
+  const listEl = document.getElementById('wh-deliv-history-list');
+  if (listEl) listEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ページ番号ボタンの並び（‹前へ／1・2・3…／次へ›）を組み立てる。ページ数が多いときは、
+// 最初・最後・現在ページの前後だけ表示し、間は「…」で省略する
+function whDelivHistoryPaginationHtml(currentPage, totalPages) {
+  if (totalPages <= 1) return '';
+  const numBtn = (p) => `<button type="button" onclick="goToWhDelivHistoryPage(${p})" ${p === currentPage ? 'disabled' : ''} style="min-width:30px;padding:6px 8px;border:1px solid ${p === currentPage ? 'var(--gold)' : 'var(--border)'};background:${p === currentPage ? 'var(--gold)' : 'var(--white)'};color:${p === currentPage ? '#fff' : 'var(--text)'};border-radius:6px;font-size:12px;font-weight:${p === currentPage ? '700' : '400'};cursor:${p === currentPage ? 'default' : 'pointer'}">${p}</button>`;
+  const navBtn = (p, label) => {
+    const disabled = p < 1 || p > totalPages;
+    return `<button type="button" onclick="goToWhDelivHistoryPage(${p})" ${disabled ? 'disabled' : ''} style="padding:6px 10px;border:1px solid var(--border);background:var(--white);color:${disabled ? 'var(--text-muted)' : 'var(--text)'};border-radius:6px;font-size:12px;cursor:${disabled ? 'default' : 'pointer'}">${label}</button>`;
+  };
+  let pages;
+  if (totalPages <= 7) {
+    pages = [];
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages = Array.from(new Set([1, 2, currentPage - 1, currentPage, currentPage + 1, totalPages - 1, totalPages]))
+      .filter(p => p >= 1 && p <= totalPages)
+      .sort((a, b) => a - b);
+  }
+  let html = '<div style="display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;padding:12px 0 4px">';
+  html += navBtn(currentPage - 1, '‹ 前へ');
+  let prev = 0;
+  pages.forEach(p => {
+    if (prev && p - prev > 1) html += '<span style="padding:0 4px;color:var(--text-muted);font-size:12px">…</span>';
+    html += numBtn(p);
+    prev = p;
+  });
+  html += navBtn(currentPage + 1, '次へ ›');
+  html += '</div>';
+  return html;
+}
+
+// 発行済みの納品書一覧（slipIdごとにまとめて表示。行をタップするとその場で明細を展開できる）
 // 要望：「ある型番をいつどこに卸したか検索をかけて引っ掛かるようにしたい。型番検索と
 // 日にちの期間指定の機能を追加して、該当の型番のある納品書を抽出できるようにしてほしい」
 // への対応。_whDelivHistoryFilterの型番（部分一致・normalizeModelStrで表記ゆれを吸収）と
@@ -5324,7 +5388,7 @@ function renderWhDelivHistory() {
   const bySlip = {};
   outMoves.concat(consignNoteMoves).forEach(m => { (bySlip[m.slipId] = bySlip[m.slipId] || []).push(m); });
   let slips = Object.keys(bySlip).map(slipId => {
-    const items = bySlip[slipId];
+    const items = bySlip[slipId].slice().sort(compareDeliverySlipItemOrder);
     const first = items[0];
     return {
       slipId,
@@ -5381,24 +5445,52 @@ function renderWhDelivHistory() {
     updateFreeeInvoiceSelectBar();
     return;
   }
-  // 「内容を見る」ボタンは廃止し、取引先名・日付・件名の行自体をタップすると内容（プレビュー）が
-  // 開くようにした。編集する・取り消すは、プレビュー内に共有ボタンと同じ並びのアイコンボタンとして
-  // 用意している（updateDsPreviewActionButtons／previewEditDeliverySlip／previewCancelDeliverySlip）。
-  // 請求書作成済みのチェック・まとめ表示（footer部分）は、チェックボックス／バッジ側の
-  // onclickでevent.stopPropagation()しているため、行タップ（プレビューを開く）とは干渉しない。
-  listEl.innerHTML = slips.map(s => {
+
+  const totalCount = slips.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / WH_DELIV_HISTORY_PAGE_SIZE));
+  // 絞り込みの結果ページ数が減った場合など、現在のページ番号が範囲外にならないよう調整する
+  if (_whDelivHistoryPage > totalPages) _whDelivHistoryPage = totalPages;
+  if (_whDelivHistoryPage < 1) _whDelivHistoryPage = 1;
+  const pageStart = (_whDelivHistoryPage - 1) * WH_DELIV_HISTORY_PAGE_SIZE;
+  const visibleSlips = slips.slice(pageStart, pageStart + WH_DELIV_HISTORY_PAGE_SIZE);
+
+  listEl.innerHTML = visibleSlips.map(s => {
     const matched = matchedItemsBySlip[s.slipId];
     const matchedHtml = matched ? `<div style="margin-top:4px;font-size:11px;color:var(--gold-dark)">該当：${matched.map(it => `${escapeHtmlMain(it.model || it.productName || '')} ${it.qty}個`).join('／')}</div>` : '';
+    const isOpen = _whDelivHistoryExpanded.has(s.slipId);
+    const itemsHtml = s.items.map(it => `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
+        <span style="flex:1;min-width:0;overflow-wrap:break-word;word-break:break-all;font-size:12.5px;color:var(--text)">${escapeHtmlMain(it.model || it.productName || '商品')}${it.type === 'consign' ? ' <span style="color:var(--teal);font-weight:700">📦委託</span>' : ''}</span>
+        <span style="flex-shrink:0;font-size:12px;color:var(--text-muted)">${it.qty}個${it.type !== 'consign' ? `／¥${(it.amount||0).toLocaleString('ja-JP')}` : ''}</span>
+      </div>`).join('');
     return `
-    <div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer" onclick="showDeliverySlipPreview('${s.slipId}')">
-      <div>
-        <div style="color:var(--text);font-weight:600">${s.client || ''}／${fmtDateJP(s.date)}${s.subject ? '／' + s.subject : ''}</div>
-        <div style="color:var(--text-muted);font-size:11px;margin-top:2px">${s.slipNo ? `No.${escapeHtmlMain(s.slipNo)}／` : ''}数量合計 ${s.itemQty}個／合計 ¥${s.total.toLocaleString('ja-JP')}</div>
-        ${matchedHtml}
+    <div style="border-bottom:1px solid var(--border);font-size:13px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;padding:10px 0;cursor:pointer" onclick="toggleWhDelivHistoryRow('${s.slipId}')">
+        <div style="flex:1;min-width:0">
+          <div style="color:var(--text);font-weight:600">${s.client || ''}／${fmtDateJP(s.date)}${s.subject ? '／' + s.subject : ''}</div>
+          <div style="color:var(--text-muted);font-size:11px;margin-top:2px">${s.slipNo ? `No.${escapeHtmlMain(s.slipNo)}／` : ''}数量合計 ${s.itemQty}個／合計 ¥${s.total.toLocaleString('ja-JP')}</div>
+          ${matchedHtml}
+        </div>
+        <span class="accordion-arrow${isOpen ? ' open' : ''}" style="font-size:10px;color:var(--text-muted);flex-shrink:0;margin-top:3px">▼</span>
       </div>
-      <div style="margin-top:6px">${freeeInvoiceGroupSummaryHtml(s.slipId)}</div>
+      <div class="accordion-body${isOpen ? ' open' : ''}" style="padding:0 0 10px">
+        ${itemsHtml}
+        <div style="margin-top:8px">
+          <button type="button" onclick="event.stopPropagation();showDeliverySlipPreview('${s.slipId}')" style="padding:6px 12px;background:var(--surface);border:1px solid var(--border);border-radius:20px;font-size:11.5px;color:var(--text);cursor:pointer">🔍 詳しく見る（印刷・編集・取消）</button>
+        </div>
+      </div>
+      <div style="margin-top:6px;padding-bottom:10px">${freeeInvoiceGroupSummaryHtml(s.slipId)}</div>
     </div>`;
   }).join('');
+
+  if (totalPages > 1) {
+    const rangeStart = pageStart + 1;
+    const rangeEnd = pageStart + visibleSlips.length;
+    listEl.innerHTML += `
+    <div style="text-align:center;font-size:11px;color:var(--text-muted);padding-top:8px">${totalCount}件中 ${rangeStart}〜${rangeEnd}件目（${_whDelivHistoryPage}／${totalPages}ページ）</div>
+    ${whDelivHistoryPaginationHtml(_whDelivHistoryPage, totalPages)}`;
+  }
+
   updateFreeeInvoiceSelectBar();
 }
 
@@ -5414,6 +5506,8 @@ function filterWhDelivHistory() {
     dateStart: dateStartInput ? dateStartInput.value : '',
     dateEnd: dateEndInput ? dateEndInput.value : ''
   };
+  // 絞り込み条件が変わったら1ページ目に戻す（新しい結果の先頭から見せる）
+  _whDelivHistoryPage = 1;
   updateWhDelivHistoryFilterClearBtn();
   renderWhDelivHistory();
 }
@@ -5436,6 +5530,7 @@ function clearWhDelivHistoryFilter() {
   if (dateStartInput) dateStartInput.value = '';
   if (dateEndInput) dateEndInput.value = '';
   _whDelivHistoryFilter = { q: '', client: '', dateStart: '', dateEnd: '' };
+  _whDelivHistoryPage = 1;
   updateWhDelivHistoryFilterClearBtn();
   renderWhDelivHistory();
 }
