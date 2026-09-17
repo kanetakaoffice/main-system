@@ -1461,46 +1461,19 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   </div>
 
   <div id="wh-body-deliv">
-  <!-- 要望：「発行済みの納品書が下にあって見にくいので上に表示してほしい。今の納品書作成の
-       項目は『新規作成』ボタンを押したら出るようにしたい」「新規作成ボタンは1番下ではなく
-       上に欲しい」への対応。発行済みの納品書一覧は件数が多いとページ分けされて縦に長くなる
-       ため、「＋ 新規作成」ボタンは一覧より前（画面の一番上）に置き、常にスクロールなしで
-       すぐ押せるようにしている。押すと納品書作成フォーム（取引先・商品スキャン・納品明細・
-       右側プレビュー）が表示される。フォームは下書きが残っている場合や編集中の場合は自動で
-       開く（toggleWhDelivCreateSection参照） -->
+  <!-- 要望：「発行済みの納品書が下にあって見にくいので上に表示してほしい。新規作成ボタンは
+       1番下ではなく上に欲しい」「新規作成ボタンを押した時に下に移動するのではなく
+       アコーディオン式に表示させたい（閉じる時にまた上にスクロールしないといけないのは
+       手間）」への対応。
+       「＋ 新規作成」ボタンのすぐ下に納品書作成フォーム（#wh-deliv-create-section：取引先・
+       商品スキャン・納品明細・右側プレビュー）をアコーディオンとして配置し、発行済みの
+       納品書一覧はその下に続ける構成にした。ボタンを押すとその場（画面最上部付近）で
+       フォームが開閉するだけなので、開くときも閉じるときもスクロールの移動は発生しない。
+       フォームは下書きが残っている場合や編集中の場合は自動で開く
+       （toggleWhDelivCreateSection参照） -->
   <div id="wh-deliv-create-toggle-row" style="display:flex;justify-content:flex-end;margin-bottom:14px">
     <button type="button" id="wh-deliv-create-toggle-btn" class="btn btn-gold" onclick="toggleWhDelivCreateSection()" style="padding:10px 18px;font-size:13px">＋ 新規作成</button>
   </div>
-
-    <div style="margin-bottom:16px;background:var(--surface);border-radius:10px;padding:10px 12px">
-      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('wh-deliv-history')">
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:13px;font-weight:700;color:var(--text)">発行済みの納品書</span>
-          <span id="wh-deliv-history-badge" style="display:none;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;background:var(--gold);color:#fff;font-size:11px;font-weight:700;border-radius:10px"></span>
-        </div>
-        <span class="accordion-arrow open" id="acc-arrow-wh-deliv-history" style="font-size:10px;color:var(--text-muted)">▼</span>
-      </div>
-      <div class="accordion-body open" id="acc-body-wh-deliv-history" style="margin-top:8px">
-        <!-- 要望：「ある型番をいつどこに卸したか検索をかけて引っ掛かるようにしたい。型番検索と
-             日にちの期間指定の機能を追加して、該当の型番のある納品書を抽出できるようにして
-             ほしい」への対応。委託の履歴検索（wh-consign-history）と同じ考え方で、型番
-             （部分一致・表記ゆれを吸収）と期間（開始〜終了、片方だけの指定も可）で絞り込める
-             ようにした。
-             追加要望：「型番や期間での検索はできるが、取引先の検索ができないので、取引先毎で
-             見れるようにしてほしい」への対応で、取引先名（部分一致）の検索欄も追加した -->
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-          <input type="text" id="wh-deliv-history-client-search" placeholder="🔍 取引先で検索" oninput="filterWhDelivHistory()" style="flex:1;min-width:130px;padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px;box-sizing:border-box">
-          <input type="text" id="wh-deliv-history-search" placeholder="🔍 型番で検索" oninput="filterWhDelivHistory()" style="flex:1;min-width:130px;padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px;box-sizing:border-box">
-          <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--text-muted);white-space:nowrap">期間
-            <input type="date" id="wh-deliv-history-date-start" onchange="filterWhDelivHistory()" aria-label="期間の開始日" style="padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px">
-            〜
-            <input type="date" id="wh-deliv-history-date-end" onchange="filterWhDelivHistory()" aria-label="期間の終了日" style="padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px">
-          </label>
-          <button type="button" id="wh-deliv-history-filter-clear" onclick="clearWhDelivHistoryFilter()" style="display:none;padding:7px 10px;border:1.2px solid var(--border);border-radius:8px;background:var(--white);color:var(--text-muted);font-size:12px;cursor:pointer;white-space:nowrap">✕ 条件をクリア</button>
-        </div>
-        <div id="wh-deliv-history-list"></div>
-      </div>
-    </div>
 
   <div id="wh-deliv-create-section" style="display:none">
   <div class="wh-desktop-layout">
@@ -1627,6 +1600,36 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   </div>
   </div>
   </div>
+
+    <div style="margin-bottom:16px;background:var(--surface);border-radius:10px;padding:10px 12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('wh-deliv-history')">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:13px;font-weight:700;color:var(--text)">発行済みの納品書</span>
+          <span id="wh-deliv-history-badge" style="display:none;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;background:var(--gold);color:#fff;font-size:11px;font-weight:700;border-radius:10px"></span>
+        </div>
+        <span class="accordion-arrow open" id="acc-arrow-wh-deliv-history" style="font-size:10px;color:var(--text-muted)">▼</span>
+      </div>
+      <div class="accordion-body open" id="acc-body-wh-deliv-history" style="margin-top:8px">
+        <!-- 要望：「ある型番をいつどこに卸したか検索をかけて引っ掛かるようにしたい。型番検索と
+             日にちの期間指定の機能を追加して、該当の型番のある納品書を抽出できるようにして
+             ほしい」への対応。委託の履歴検索（wh-consign-history）と同じ考え方で、型番
+             （部分一致・表記ゆれを吸収）と期間（開始〜終了、片方だけの指定も可）で絞り込める
+             ようにした。
+             追加要望：「型番や期間での検索はできるが、取引先の検索ができないので、取引先毎で
+             見れるようにしてほしい」への対応で、取引先名（部分一致）の検索欄も追加した -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+          <input type="text" id="wh-deliv-history-client-search" placeholder="🔍 取引先で検索" oninput="filterWhDelivHistory()" style="flex:1;min-width:130px;padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px;box-sizing:border-box">
+          <input type="text" id="wh-deliv-history-search" placeholder="🔍 型番で検索" oninput="filterWhDelivHistory()" style="flex:1;min-width:130px;padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px;box-sizing:border-box">
+          <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--text-muted);white-space:nowrap">期間
+            <input type="date" id="wh-deliv-history-date-start" onchange="filterWhDelivHistory()" aria-label="期間の開始日" style="padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px">
+            〜
+            <input type="date" id="wh-deliv-history-date-end" onchange="filterWhDelivHistory()" aria-label="期間の終了日" style="padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px">
+          </label>
+          <button type="button" id="wh-deliv-history-filter-clear" onclick="clearWhDelivHistoryFilter()" style="display:none;padding:7px 10px;border:1.2px solid var(--border);border-radius:8px;background:var(--white);color:var(--text-muted);font-size:12px;cursor:pointer;white-space:nowrap">✕ 条件をクリア</button>
+        </div>
+        <div id="wh-deliv-history-list"></div>
+      </div>
+    </div>
   </div>
 
   <div id="wh-body-consign" style="display:none">
@@ -1828,7 +1831,13 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 
 <!-- 預かり商品の精算モーダル -->
 <div id="wh-settle-modal" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom)) 16px">
-  <div style="background:var(--white);border-radius:16px;padding:20px;width:100%;max-width:340px;box-shadow:0 20px 60px rgba(0,0,0,0.2)">
+  <!-- 要望：「確認して精算するを押して確定価格や原価を入力する画面のところがスクロール
+       できないので、できるようにしてください」への対応。原価欄が追加されたことで画面の
+       高さが増え、特にスマホの縦幅が狭い端末では入力欄やボタンが画面からはみ出して
+       操作できなくなっていた。他のモーダル（wh-consign-edit-modal等）と同じく
+       max-height + overflow-y:autoを付け、収まらない場合はモーダル内でスクロールできる
+       ようにした -->
+  <div style="background:var(--white);border-radius:16px;padding:20px;width:100%;max-width:340px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.2)">
     <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">精算（売れた）</div>
     <div id="wh-settle-desc" style="font-size:12px;color:var(--text-muted);margin-bottom:14px"></div>
     <div class="field">
@@ -1871,7 +1880,9 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
      のでできるようにしてほしい」への対応。精算済みの確定金額だけを、預け中に戻すことなく
      その場で修正するための専用モーダル -->
 <div id="wh-settle-amount-edit-modal" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom)) 16px">
-  <div style="background:var(--white);border-radius:16px;padding:20px;width:100%;max-width:340px;box-shadow:0 20px 60px rgba(0,0,0,0.2)">
+  <!-- wh-settle-modalと同じ理由（画面からはみ出すとスクロールできず操作不能になるため）で、
+       同じくmax-height + overflow-y:autoを付けている -->
+  <div style="background:var(--white);border-radius:16px;padding:20px;width:100%;max-width:340px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.2)">
     <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">精算金額を編集</div>
     <div id="wh-settle-amount-edit-desc" style="font-size:12px;color:var(--text-muted);margin-bottom:14px"></div>
     <div class="field">
@@ -4295,9 +4306,13 @@ function openWhDelivHistoryAccordion() {
 }
 
 // 要望：「発行済みの納品書が下にあって見にくいので上に表示してほしい。今の納品書作成の項目は
-// 『新規作成』ボタンを押したら出るようにしたい」への対応。発行済みの納品書一覧を画面の
-// 一番上に固定表示し、代わりに納品書作成フォーム（#wh-deliv-create-section：取引先・商品
-// スキャン・納品明細・右側プレビュー一式）は、このトグル関数で開閉する。
+// 『新規作成』ボタンを押したら出るようにしたい」「新規作成ボタンを押した時に下に移動する
+// のではなくアコーディオン式に表示させたい（閉じる時にまた上にスクロールしないといけない
+// のは手間）」への対応。#wh-deliv-create-section（取引先・商品スキャン・納品明細・右側
+// プレビュー一式）は「＋ 新規作成」ボタンのすぐ下に置かれたアコーディオンで、このトグル
+// 関数で開閉する。ボタンのすぐ下でその場に開閉するだけなので、以前あった開いたときの
+// 自動スクロールは行わない（その場で見えているので不要かつ、閉じるときに元の位置へ戻る
+// スクロールが手間だという指摘があったため）。
 // forceOpenを省略した場合は現在の表示状態を反転させ（ボタンクリック用）、true/falseを渡すと
 // その状態に強制する（下書き復元時・編集開始時・発行完了時などプログラム側から呼ぶ場合用）。
 function toggleWhDelivCreateSection(forceOpen) {
@@ -4309,11 +4324,6 @@ function toggleWhDelivCreateSection(forceOpen) {
   if (shouldOpen === isOpen) return;
   section.style.display = shouldOpen ? 'block' : 'none';
   if (btn) btn.textContent = shouldOpen ? '－ 閉じる' : '＋ 新規作成';
-  if (shouldOpen) {
-    // ボタンを押した瞬間はまだ表示が切り替わったばかりでレイアウトが確定していないことがあるため、
-    // 1フレーム待ってからスクロールする
-    requestAnimationFrame(() => section.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-  }
 }
 
 // 納品書の見た目（取引先名・型番・数量・単価のみの簡易レイアウト）を組み立てる。
@@ -5105,9 +5115,12 @@ function editDeliverySlip(slipId) {
   const bannerText = document.getElementById('wh-deliv-edit-banner-text');
   if (bannerText) bannerText.textContent = '編集中の納品書があります';
   if (banner) banner.style.display = 'flex';
-  // 発行済みの納品書一覧が画面の一番上に表示されるようになったため、編集を始めたら
-  // 作成フォーム（#wh-deliv-create-section）を開いて、そこまでスクロールする
+  // 作成フォーム（#wh-deliv-create-section）は画面上部の「＋ 新規作成」ボタンのすぐ下に
+  // あるので、編集を始めたらまずそれを開く。編集は発行済みの納品書一覧（ページが分かれて
+  // 縦に長くなっていることがある）の中の行から始めることが多いため、フォームが見えるよう
+  // 画面の一番上までスクロールする
   toggleWhDelivCreateSection(true);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
   showToast('編集モードにしました。内容を修正して保存してください');
 }
 
