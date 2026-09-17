@@ -7788,13 +7788,18 @@ async function fetchBuybackRefForJan(jan) {
   }
 }
 
-// 要望：「商品を新しく登録する時や、納品書などの作成でJANコードをスキャンする際に、
-// 買取スキャナーで出る商品の型番や商品名を表示させたい」への対応として実装した自動入力。
-// → その後、「型番・メーカーが間違っていることが多いので、一旦元に戻してほしい」との
-// 要望を受け、新規（未登録）商品スキャン時の自動入力は一旦停止した（下の2箇所の
-// 呼び出しをコメントアウト）。表示のみ（読み取り専用の参考価格欄）は変更前と同じ。
-// この関数自体は、登録済み商品向けの「🔧 この買取データの内容で修正する」ボタン
-// （ユーザーが明示的に押した時だけ反映される機能）には使っていないため、そのまま残している。
+// 要望の経緯：
+//  1) 「商品を新しく登録する時や、納品書などの作成でJANコードをスキャンする際に、
+//     買取スキャナーで出る商品の型番や商品名を表示させたい」→ 表示に加え、商品名・型番・
+//     メーカーへの自動入力（すべて空欄の場合のみ）も実装した。
+//  2) 「型番・メーカーが間違っていることが多いので、一旦元に戻してほしい」→ 新規（未登録）
+//     商品スキャン時の自動入力をすべて停止し、参考表示のみに戻した。
+//  3) 改めて確認したところ、商品名（rec.n）は買取スキャナーのデータにそのまま入っている値の
+//     コピーであり「推測」ではないため間違いにくいが、型番・メーカーは商品名のテキストから
+//     それらしい部分を推測して取り出す仕組み（guessModelNumber・guessMaker）のため、他社の
+//     商品名の書き方次第で間違うことがある、という違いを説明した上で、「型番だけ自動入力を
+//     再開してほしい（商品名・メーカーは手入力のままでよい）」との回答だったため、
+//     型番のみ自動入力を再開する（呼び出し側でids.modelだけを渡す）。
 function applyBuybackRefAutoFill(rec, ids) {
   const filled = [];
   if (!rec || !rec.n) return filled;
@@ -7821,21 +7826,21 @@ async function lookupBuybackRefForJanField(jan) {
   const currentJan = document.getElementById('inv-jan') ? document.getElementById('inv-jan').value.trim() : null;
   if (currentJan !== jan) return;
   _lastInvBuybackRec = rec;
-  // 「型番・メーカーの自動入力が間違っていることが多いので一旦元に戻してほしい」との
-  // 要望により、新規（未登録）商品スキャン時の自動入力は停止し、参考表示のみに戻した。
-  renderBuybackJanRef(rec, jan, []);
+  // 型番のみ自動入力する（商品名・メーカーは手入力のまま。上のapplyBuybackRefAutoFillの
+  // コメント参照）。空欄の場合のみ入力され、すでに何か入力済みなら上書きしない。
+  const filled = applyBuybackRefAutoFill(rec, { model: 'inv-model' });
+  renderBuybackJanRef(rec, jan, filled);
 }
 
 // 納品書作成画面の「その場で登録」欄（#wh-quick-register）向け。未登録のJANをスキャンした
-// 際、買取スキャナーの参考データを表示する。
-// 以前は価格.com検索（autoSearchWhQuickRegisterByJan）と並行して商品名・型番・メーカーへ
-// 自動入力していたが、「型番・メーカーの自動入力が間違っていることが多いので一旦元に
-// 戻してほしい」との要望により、自動入力は停止し、参考表示のみに戻した。
+// 際、買取スキャナーの参考データを表示するとともに、型番のみ自動入力する
+// （商品名・メーカーは手入力のまま。上のapplyBuybackRefAutoFillのコメント参照）。
 async function lookupBuybackRefForWhQr(jan) {
   const rec = await fetchBuybackRefForJan(jan);
   const current = document.getElementById('wh-item-jan');
   if (!current || current.value.trim() !== jan) return; // 照会中にJANが変わっていれば古い結果を捨てる
-  renderBuybackRefBox('wh-qr-buyback-ref', rec, jan, []);
+  const filled = applyBuybackRefAutoFill(rec, { model: 'wh-qr-model' });
+  renderBuybackRefBox('wh-qr-buyback-ref', rec, jan, filled);
 }
 
 // 納品書作成画面で、すでに登録済みの商品のJANをスキャンした場合向け。この場合は
@@ -9514,6 +9519,29 @@ async function ensureZXingLoaded() {
   return false;
 }
 
+// 要望：「バーコードが複数あると、JANコードではないバーコードを読み込んでしまう」への対応。
+// JANコード（国内の商品識別コード）はEAN-13（13桁）またはEAN-8（8桁）という、桁数と
+// チェックデジット（末尾の検証用の1桁）の計算方法まで含めて明確に定義された規格であり、
+// 商品パッケージ上によくある物流用・社内管理用のバーコード（CODE128・CODE39・ITFなど）
+// とは仕組みが異なるため、区別すること自体は可能。
+// この関数は、GS1標準のチェックデジット計算式で「本当にJANコードとして正しい数字列か」を
+// 検証する（末尾の桁のみ形式的に数字が並んでいるだけの、別規格のバーコードの誤読を防ぐ）。
+function isValidJanCode(text) {
+  if (typeof text !== 'string' || !/^\d+$/.test(text)) return false;
+  if (text.length !== 8 && text.length !== 13) return false;
+  const digits = text.split('').map(Number);
+  const checkDigit = digits[digits.length - 1];
+  const payload = digits.slice(0, -1);
+  let sum = 0;
+  // GS1標準：チェックデジットのすぐ左（＝末尾から1番目）の桁から3・1・3・1…の順に重みを掛けて合計する
+  for (let i = 0; i < payload.length; i++) {
+    const posFromRight = payload.length - i;
+    sum += payload[i] * (posFromRight % 2 === 1 ? 3 : 1);
+  }
+  const calculated = (10 - (sum % 10)) % 10;
+  return calculated === checkDigit;
+}
+
 function handleScanResult(text) {
   document.getElementById(scanTarget).value = text;
   stopScan();
@@ -9561,8 +9589,14 @@ async function handleScanPhotoFile(event) {
 
 // 1枚の画像ファイルからバーコードの文字列を検出する。
 // まずネイティブのBarcodeDetectorを試し、使えない・失敗した場合はZXingで再挑戦する。
+//
+// 要望：「バーコードが複数あると、JANコードではないバーコードを読み込んでしまう」への対応。
+// JANコードはEAN-13・EAN-8という規格に限られるため、検出対象の形式自体をこの2種類だけに
+// 絞り込み、商品パッケージ上にある物流用・社内管理用の別規格バーコード（CODE128・ITFなど）
+// が誤って検出されないようにする。さらに、検出結果がチェックデジットまで含めて本当に
+// 正しいJANコードかをisValidJanCode()で確認し、それ以外は「見つからなかった」ものとして扱う。
 async function decodeBarcodeFromImageFile(file) {
-  const formats = ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'itf'];
+  const formats = ['ean_13', 'ean_8'];
 
   // 1. ネイティブのBarcodeDetector（対応端末のみ。静止画に対しては比較的安定して動く）
   if ('BarcodeDetector' in window) {
@@ -9571,7 +9605,8 @@ async function decodeBarcodeFromImageFile(file) {
       let detector;
       try { detector = new BarcodeDetector({ formats }); } catch (e) { detector = new BarcodeDetector(); }
       const codes = await detector.detect(bitmap);
-      if (codes && codes.length > 0) return codes[0].rawValue;
+      const validCode = codes && codes.find(c => isValidJanCode(c.rawValue));
+      if (validCode) return validCode.rawValue;
     } catch (e) {
       console.error('BarcodeDetector（静止画）での読み取りに失敗:', e);
     }
@@ -9589,11 +9624,7 @@ async function decodeBarcodeFromImageFile(file) {
   });
 
   const hints = new Map();
-  const zxingFormats = [
-    window.ZXing.BarcodeFormat.EAN_13, window.ZXing.BarcodeFormat.EAN_8,
-    window.ZXing.BarcodeFormat.CODE_128, window.ZXing.BarcodeFormat.CODE_39,
-    window.ZXing.BarcodeFormat.UPC_A, window.ZXing.BarcodeFormat.ITF,
-  ];
+  const zxingFormats = [window.ZXing.BarcodeFormat.EAN_13, window.ZXing.BarcodeFormat.EAN_8];
   hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, zxingFormats);
   hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
   const reader = new window.ZXing.BrowserMultiFormatReader(hints);
@@ -9601,13 +9632,13 @@ async function decodeBarcodeFromImageFile(file) {
   try {
     if (typeof reader.decodeFromImageUrl === 'function') {
       const result = await reader.decodeFromImageUrl(dataUrl);
-      return result ? result.getText() : null;
+      return (result && isValidJanCode(result.getText())) ? result.getText() : null;
     }
     if (typeof reader.decodeFromImage === 'function') {
       const img = new Image();
       await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = dataUrl; });
       const result = await reader.decodeFromImage(img);
-      return result ? result.getText() : null;
+      return (result && isValidJanCode(result.getText())) ? result.getText() : null;
     }
   } catch (e) {
     // NotFoundExceptionなど、その画像からは検出できなかった場合はnullを返す（呼び出し元でエラー表示）
@@ -9640,9 +9671,12 @@ async function startScan(targetId) {
       await video.play().catch(()=>{});
       attachTorchSupport(stream.getVideoTracks()[0]);
       await applyContinuousFocus(stream.getVideoTracks()[0]);
+      // 要望：「バーコードが複数あると、JANコードではないバーコードを読み込んでしまう」への対応。
+      // JANコードの規格（EAN-13・EAN-8）だけに検出対象を絞り、物流用・社内管理用の別規格の
+      // バーコード（CODE128・ITFなど）を誤って検出しないようにする。
       let detector;
       try {
-        detector = new BarcodeDetector({ formats: ['ean_13','ean_8','code_128','code_39','upc_a','upc_e','itf'] });
+        detector = new BarcodeDetector({ formats: ['ean_13','ean_8'] });
       } catch(e) {
         detector = new BarcodeDetector();
       }
@@ -9667,9 +9701,12 @@ async function startScan(targetId) {
           const rect = getGuideRectInVideo(video);
           const detectSource = rect ? drawCroppedScanFrame(video, scanCanvas, rect) : video;
           const codes = await detector.detect(detectSource);
-          if (codes && codes.length > 0) {
+          // 形式をEAN-13/EAN-8に絞ってもなお、チェックデジットまで確認して確実にJANコード
+          // として正しいものだけを採用する（誤検出のさらなる防止）
+          const validCode = codes && codes.find(c => isValidJanCode(c.rawValue));
+          if (validCode) {
             if (scanNativeTimeout) { clearTimeout(scanNativeTimeout); scanNativeTimeout = null; }
-            handleScanResult(codes[0].rawValue);
+            handleScanResult(validCode.rawValue);
             return;
           }
         } catch(e) { /* このフレームでは検出できなかっただけなので無視 */ }
@@ -9703,14 +9740,12 @@ async function startZxingLiveScan(video) {
   }
 
   try {
+    // 要望：「バーコードが複数あると、JANコードではないバーコードを読み込んでしまう」への対応。
+    // JANコードの規格（EAN-13・EAN-8）だけに検出対象を絞る。
     const hints = new Map();
     const formats = [
       window.ZXing.BarcodeFormat.EAN_13,
       window.ZXing.BarcodeFormat.EAN_8,
-      window.ZXing.BarcodeFormat.CODE_128,
-      window.ZXing.BarcodeFormat.CODE_39,
-      window.ZXing.BarcodeFormat.UPC_A,
-      window.ZXing.BarcodeFormat.ITF,
     ];
     hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
     hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
@@ -9744,7 +9779,9 @@ async function startZxingLiveScan(video) {
           if (rect) {
             drawCroppedScanFrame(video, scanCanvas, rect);
             const result = decodeCroppedCanvasWithZxing(zxingReader, scanCanvas);
-            if (result) { handleScanResult(result.getText()); return; }
+            // 形式をEAN-13/EAN-8に絞ってもなお、チェックデジットまで確認して確実にJANコード
+            // として正しいものだけを採用する（誤検出のさらなる防止）
+            if (result && isValidJanCode(result.getText())) { handleScanResult(result.getText()); return; }
           }
         } catch(e) { /* このフレームでは見つからなかっただけなので無視 */ }
         scanRAF = requestAnimationFrame(tick);
@@ -9759,7 +9796,7 @@ async function startZxingLiveScan(video) {
     };
 
     const decodeCallback = (result, err) => {
-      if (result) { handleScanResult(result.getText()); }
+      if (result && isValidJanCode(result.getText())) { handleScanResult(result.getText()); }
       // errはバーコードが見つからないフレームで毎回渡ってくる正常な動作のため無視する
     };
 
