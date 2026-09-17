@@ -7789,11 +7789,12 @@ async function fetchBuybackRefForJan(jan) {
 }
 
 // 要望：「商品を新しく登録する時や、納品書などの作成でJANコードをスキャンする際に、
-// 買取スキャナーで出る商品の型番や商品名を表示させたい」への対応。価格.com検索の自動入力
-// （guessModelNumber・guessMaker）と同じ考え方で、買取スキャナーの商品名（rec.n）からも
-// 型番・メーカーを推定し、まだ空欄の項目にだけ自動入力する（すでに入力済みの項目は
-// 上書きしない）。ids.name／ids.model／ids.maker に、商品名・型番・メーカーの各input要素の
-// idを渡す（商品登録画面ならinv-name等、納品書作成のその場登録欄ならwh-qr-name等）。
+// 買取スキャナーで出る商品の型番や商品名を表示させたい」への対応として実装した自動入力。
+// → その後、「型番・メーカーが間違っていることが多いので、一旦元に戻してほしい」との
+// 要望を受け、新規（未登録）商品スキャン時の自動入力は一旦停止した（下の2箇所の
+// 呼び出しをコメントアウト）。表示のみ（読み取り専用の参考価格欄）は変更前と同じ。
+// この関数自体は、登録済み商品向けの「🔧 この買取データの内容で修正する」ボタン
+// （ユーザーが明示的に押した時だけ反映される機能）には使っていないため、そのまま残している。
 function applyBuybackRefAutoFill(rec, ids) {
   const filled = [];
   if (!rec || !rec.n) return filled;
@@ -7820,20 +7821,21 @@ async function lookupBuybackRefForJanField(jan) {
   const currentJan = document.getElementById('inv-jan') ? document.getElementById('inv-jan').value.trim() : null;
   if (currentJan !== jan) return;
   _lastInvBuybackRec = rec;
-  const filled = applyBuybackRefAutoFill(rec, { name: 'inv-name', model: 'inv-model', maker: 'inv-maker', makerPrefix: 'inv' });
-  renderBuybackJanRef(rec, jan, filled);
+  // 「型番・メーカーの自動入力が間違っていることが多いので一旦元に戻してほしい」との
+  // 要望により、新規（未登録）商品スキャン時の自動入力は停止し、参考表示のみに戻した。
+  renderBuybackJanRef(rec, jan, []);
 }
 
 // 納品書作成画面の「その場で登録」欄（#wh-quick-register）向け。未登録のJANをスキャンした
-// 際、価格.com検索（autoSearchWhQuickRegisterByJan）と並行して、買取スキャナーの参考データ
-// からも商品名・型番・メーカーを自動入力する（どちらが先に完了しても、すでに埋まっている
-// 項目は上書きしない）。
+// 際、買取スキャナーの参考データを表示する。
+// 以前は価格.com検索（autoSearchWhQuickRegisterByJan）と並行して商品名・型番・メーカーへ
+// 自動入力していたが、「型番・メーカーの自動入力が間違っていることが多いので一旦元に
+// 戻してほしい」との要望により、自動入力は停止し、参考表示のみに戻した。
 async function lookupBuybackRefForWhQr(jan) {
   const rec = await fetchBuybackRefForJan(jan);
   const current = document.getElementById('wh-item-jan');
   if (!current || current.value.trim() !== jan) return; // 照会中にJANが変わっていれば古い結果を捨てる
-  const filled = applyBuybackRefAutoFill(rec, { name: 'wh-qr-name', model: 'wh-qr-model', maker: 'wh-qr-maker', makerPrefix: 'wh-qr' });
-  renderBuybackRefBox('wh-qr-buyback-ref', rec, jan, filled);
+  renderBuybackRefBox('wh-qr-buyback-ref', rec, jan, []);
 }
 
 // 納品書作成画面で、すでに登録済みの商品のJANをスキャンした場合向け。この場合は
@@ -9397,6 +9399,94 @@ async function toggleScanTorch() {
   }
 }
 
+// 要望：「JANコードのスキャン機能の性能を上げたい。現在は読み取れなくて使いづらい」への対応。
+// 対応端末では自動フォーカスを「連続動作（continuous）」に固定する。既定のフォーカスモード
+// （シングルショットや端末任せ）のままだと、バーコードにかざした瞬間にピントが合っていない
+// ことが多く、それが読み取り失敗の主な原因の一つになっていたため。非対応端末では静かに無視する。
+async function applyContinuousFocus(track) {
+  try {
+    const caps = track && track.getCapabilities ? track.getCapabilities() : null;
+    if (caps && caps.focusMode && caps.focusMode.includes('continuous')) {
+      await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+    }
+  } catch(e) { /* 対応していない端末・ブラウザでは無視する（Safari等） */ }
+}
+
+// 要望：「JANコードのスキャン機能の性能を上げたい」への対応の中核部分。
+// 画面中央のガイド枠（.scan-guide）に映っている範囲だけを切り出し、拡大してから解析する
+// ことで、次の2つの問題を改善する：
+//   ① 映像全体（1280x720）をそのまま解析すると、バーコードが画面の中で占める割合が
+//      小さく、認識精度が落ちやすい → ガイド枠内だけを切り出して拡大することで、
+//      デジタルズームと同じ効果を得て、認識精度を上げる。
+//   ② ガイド枠の外側（背景の別の商品のバーコードなど）を誤って読み取ってしまうことがある
+//      → 解析対象をガイド枠内に限定することで、誤読を防ぐ。
+// video要素はobject-fit:coverで画面いっぱいに表示されているため、ガイド枠の画面上の位置を
+// そのまま使うのではなく、実際の映像の解像度（video.videoWidth/videoHeight）における
+// 座標に変換する必要がある。
+function getGuideRectInVideo(video) {
+  const guideEl = document.querySelector('.scan-guide');
+  const vw = video && video.videoWidth, vh = video && video.videoHeight;
+  if (!guideEl || !vw || !vh) return null;
+  const guideRect = guideEl.getBoundingClientRect();
+  if (!guideRect.width || !guideRect.height) return null;
+  // #scan-overlayはposition:fixed;inset:0の全画面表示のため、画面サイズ＝コンテナサイズとして扱える
+  const cw = window.innerWidth, ch = window.innerHeight;
+  // object-fit:coverは、縦横どちらか大きい方の倍率に合わせて拡大し、はみ出た分を左右または
+  // 上下で切り取る仕組みのため、その倍率（Math.max）で画面座標→映像座標に逆算する
+  const scale = Math.max(cw / vw, ch / vh);
+  const dispW = vw * scale, dispH = vh * scale;
+  const offsetX = (dispW - cw) / 2;
+  const offsetY = (dispH - ch) / 2;
+  let x = (guideRect.left + offsetX) / scale;
+  let y = (guideRect.top + offsetY) / scale;
+  let w = guideRect.width / scale;
+  let h = guideRect.height / scale;
+  // ガイド枠ぎりぎりに合わせなくても読み取れるよう、上下左右に余白を持たせて切り出す
+  // （特に縦方向は、枠の高さが1Dバーコードの表示より狭いことが多いため広めに取る）
+  const padX = w * 0.15, padY = h * 0.6;
+  x = Math.max(0, x - padX);
+  y = Math.max(0, y - padY);
+  w = Math.min(vw - x, w + padX * 2);
+  h = Math.min(vh - y, h + padY * 2);
+  if (w <= 0 || h <= 0) return null;
+  return { x, y, w, h };
+}
+
+// ガイド枠の範囲だけを切り出し、解析しやすい大きさに拡大してオフスクリーンcanvasへ描画する
+// （小さなバーコードでもデジタルズームで大きく見せることで認識率を上げる）。
+function drawCroppedScanFrame(video, canvas, rect) {
+  const targetW = 700;
+  const scaleUp = targetW / rect.w;
+  const targetH = Math.max(1, Math.round(rect.h * scaleUp));
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, rect.x, rect.y, rect.w, rect.h, 0, 0, targetW, targetH);
+  return canvas;
+}
+
+// ZXing向け：切り出したcanvasから直接デコードする。ZXingのdecodeFromConstraints等は映像全体を
+// そのまま解析する内蔵ループのため、ガイド枠だけを切り出すには使えない。そこで、canvasの
+// ピクセルデータから輝度（グレースケール）配列を作り、ZXingの公開クラス
+// （RGBLuminanceSource・HybridBinarizer・BinaryBitmap）を使って1フレームずつ手動でデコードする。
+function decodeCroppedCanvasWithZxing(reader, canvas) {
+  if (!window.ZXing || !window.ZXing.RGBLuminanceSource || !window.ZXing.HybridBinarizer || !window.ZXing.BinaryBitmap) {
+    return null; // 想定外のビルドでこれらのクラスが無い場合は呼び出し元でフォールバックする
+  }
+  const ctx = canvas.getContext('2d');
+  const { width, height } = canvas;
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+  const luminances = new Uint8ClampedArray(width * height);
+  for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+    // ITU-R BT.601に基づく標準的な輝度換算式でグレースケール化する
+    luminances[j] = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) | 0;
+  }
+  const luminanceSource = new window.ZXing.RGBLuminanceSource(luminances, width, height);
+  const binaryBitmap = new window.ZXing.BinaryBitmap(new window.ZXing.HybridBinarizer(luminanceSource));
+  return reader.decodeBitmap(binaryBitmap); // 見つからない場合はNotFoundException等を投げる（呼び出し元で無視）
+}
+
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
@@ -9549,6 +9639,7 @@ async function startScan(targetId) {
       video.srcObject = stream;
       await video.play().catch(()=>{});
       attachTorchSupport(stream.getVideoTracks()[0]);
+      await applyContinuousFocus(stream.getVideoTracks()[0]);
       let detector;
       try {
         detector = new BarcodeDetector({ formats: ['ean_13','ean_8','code_128','code_39','upc_a','upc_e','itf'] });
@@ -9565,10 +9656,17 @@ async function startScan(targetId) {
         startZxingLiveScan(video);
       }, 5000);
 
+      // 要望：「スキャン機能の性能を上げたい」への対応。映像全体をそのまま解析するのではなく、
+      // 画面中央のガイド枠内だけを切り出して拡大したものを解析することで、認識精度を上げる
+      // （getGuideRectInVideo・drawCroppedScanFrame参照）。切り出しに使うcanvasは毎フレーム
+      // 作り直さず使い回す。
+      const scanCanvas = document.createElement('canvas');
       const tick = async () => {
         if (!scanActive) return;
         try {
-          const codes = await detector.detect(video);
+          const rect = getGuideRectInVideo(video);
+          const detectSource = rect ? drawCroppedScanFrame(video, scanCanvas, rect) : video;
+          const codes = await detector.detect(detectSource);
           if (codes && codes.length > 0) {
             if (scanNativeTimeout) { clearTimeout(scanNativeTimeout); scanNativeTimeout = null; }
             handleScanResult(codes[0].rawValue);
@@ -9617,11 +9715,45 @@ async function startZxingLiveScan(video) {
     hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
     hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
 
-    // 走査間隔を300msから150msに短縮し、バーコードにかざしてからの反応をより素早くする
+    // 走査間隔150msは、後述のフォールバック経路（ZXing内蔵ループ）でのみ使われる設定
     zxingReader = new window.ZXing.BrowserMultiFormatReader(hints, 150);
 
-    // Safariは advanced constraints（focusModeなど）を受け付けないことがあるため指定しない。
-    // 解像度は1280x720程度に抑え、要求解像度が高すぎることによるオートフォーカスの遅延を避ける
+    // 要望：「スキャン機能の性能を上げたい」への対応。以前はdecodeFromConstraints等の
+    // ZXing内蔵ループを使っていたが、これは映像全体をそのまま解析するため、ガイド枠内だけを
+    // 切り出して拡大する（＝デジタルズームで認識精度を上げる）ことができなかった。
+    // ZXingの公開クラス（RGBLuminanceSource等）が使える場合は、ネイティブ検出と同じ方式で
+    // 自前のカメラストリーム＋RAFループに切り替え、ガイド枠を切り出して解析する。
+    // 想定外のビルドでそれらのクラスが無い場合のみ、従来の映像全体解析にフォールバックする。
+    const canUseCroppedZxing = !!(window.ZXing.RGBLuminanceSource && window.ZXing.HybridBinarizer && window.ZXing.BinaryBitmap);
+
+    if (canUseCroppedZxing) {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      if (!scanActive) { stream.getTracks().forEach(t => t.stop()); return; }
+      video.srcObject = stream;
+      await video.play().catch(()=>{});
+      attachTorchSupport(stream.getVideoTracks()[0]);
+      await applyContinuousFocus(stream.getVideoTracks()[0]);
+
+      const scanCanvas = document.createElement('canvas');
+      const tick = () => {
+        if (!scanActive) return;
+        try {
+          const rect = getGuideRectInVideo(video);
+          if (rect) {
+            drawCroppedScanFrame(video, scanCanvas, rect);
+            const result = decodeCroppedCanvasWithZxing(zxingReader, scanCanvas);
+            if (result) { handleScanResult(result.getText()); return; }
+          }
+        } catch(e) { /* このフレームでは見つからなかっただけなので無視 */ }
+        scanRAF = requestAnimationFrame(tick);
+      };
+      tick();
+      return;
+    }
+
+    // フォールバック：従来通り、ZXing内蔵のループに映像全体をそのまま解析させる
     const constraints = {
       video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
     };
