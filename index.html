@@ -1632,7 +1632,20 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     </div>
   </div>
 
-  <div id="wh-body-consign" style="display:none">
+<div id="wh-body-consign" style="display:none">
+  <!-- 要望：「委託リストも納品書作成のように上に新規作成ボタンを作り、その下に取引先に
+       預けている商品がわかるようにできますか」への対応。納品書作成画面
+       （wh-deliv-create-toggle-row／wh-deliv-create-section）と全く同じ考え方で、
+       預け商品を記録するフォーム（取引先・日付・メモ、商品スキャン追加、預ける商品一覧、
+       右側のプレビュー）を「＋ 新規作成」ボタンのすぐ下にアコーディオンとして配置し、
+       「現在預けている商品」はその下に続けて常に見えるようにした。ボタンを押すとその場で
+       開閉するだけなので、開くときも閉じるときもページの自動スクロールは発生しない
+       （toggleWhConsignCreateSection参照） -->
+  <div id="wh-consign-create-toggle-row" style="display:flex;justify-content:flex-end;margin-bottom:14px">
+    <button type="button" id="wh-consign-create-toggle-btn" class="btn btn-gold" onclick="toggleWhConsignCreateSection()" style="padding:10px 18px;font-size:13px">＋ 新規作成</button>
+  </div>
+
+  <div id="wh-consign-create-section" style="display:none">
   <div class="wh-desktop-layout">
   <div class="wh-desktop-main">
     <div class="card">
@@ -1683,6 +1696,20 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <button class="btn btn-gold" style="width:100%" onclick="submitConsign()">まとめて記録する</button>
       </div>
     </div>
+  </div>
+  <div class="wh-desktop-preview-col" id="wh-consign-preview-col">
+    <div class="card">
+      <div class="card-title">プレビュー（追加予定の商品）</div>
+      <div id="wh-consign-new-preview-body" style="padding:0 16px 16px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">現在预けている一覧</div>
+      <div id="wh-consign-holding-mirror-body" style="padding:0 16px 16px"></div>
+    </div>
+  </div>
+  </div>
+  </div>
+
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <span style="font-size:13px;font-weight:700;color:#3a3a3a">現在預けている商品</span>
       <span id="wh-consign-summary" style="font-size:12px;color:#909090"></span>
@@ -1691,13 +1718,26 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <span>取引先から精算・返却の連絡が来たとき、このアプリを開いている間だけお知らせできます</span>
       <button onclick="requestConsignNotifyPermission()" style="flex-shrink:0;padding:6px 10px;font-size:12px;font-weight:700;border:1.5px solid var(--gold-dark);border-radius:8px;background:var(--white);color:var(--gold-dark);cursor:pointer">🔔 通知を有効にする</button>
     </div>
+    <!-- 要望：「取引先からのリクエストは、申請が来た分だけズラッと表示させるのではなくて、
+         取引先からのリクエスト・精算分の合計をタップしたら中身（何が売れたのか）が見える
+         ようにしたい」への対応。以前は件数・合計金額の下に申請1件ずつの明細を常に表示して
+         いたが、件数が多いと縦に長くなり見にくかった。ヘッダー（🔔件数・精算分の合計）は
+         常に見えるようにしたまま、1件ずつの明細（承認・却下ボタンを含む）はタップして開く
+         アコーディオンの中に移した。承認・却下が必要な連絡があることは件数・合計金額だけで
+         気づけて、詳しく見たいときだけ開く形にしている。開閉状態は再描画をまたいで保持する
+         （toggleWhConsignRequestsPanel／_whConsignRequestsExpanded） -->
     <div id="wh-consign-requests-panel" style="display:none;background:#fff8e1;border:1.2px solid #e0c56a;border-radius:10px;padding:10px 12px;margin-bottom:12px">
-      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">🔔 取引先からのリクエスト <span id="wh-consign-requests-count" style="font-weight:400;color:var(--text-muted)"></span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleWhConsignRequestsPanel()">
+        <div style="font-size:13px;font-weight:700;color:var(--text)">🔔 取引先からのリクエスト <span id="wh-consign-requests-count" style="font-weight:400;color:var(--text-muted)"></span></div>
+        <span class="accordion-arrow" id="acc-arrow-wh-consign-requests" style="font-size:10px;color:var(--text-muted)">▼</span>
+      </div>
       <!-- 要望：「委託リストのところで、売れた商品が黄色く表示されますが、その合計が分からない
            ので合計金額と個数が分かるようにしてほしい」への対応。精算（売れた）の連絡だけを
            対象に、合計金額・合計個数をまとめて表示する（返却の連絡には金額がないため対象外） -->
-      <div id="wh-consign-requests-total" style="display:none;font-size:12.5px;font-weight:700;color:var(--gold-dark);margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(0,0,0,0.08)"></div>
-      <div id="wh-consign-requests-list"></div>
+      <div id="wh-consign-requests-total" style="display:none;font-size:12.5px;font-weight:700;color:var(--gold-dark);margin-top:6px" onclick="toggleWhConsignRequestsPanel()"></div>
+      <div class="accordion-body" id="acc-body-wh-consign-requests" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,0,0,0.08)">
+        <div id="wh-consign-requests-list"></div>
+      </div>
     </div>
     <div id="wh-consign-list"></div>
     <div id="wh-consign-empty" style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">現在預けている商品はありません</div>
@@ -1726,7 +1766,16 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
           <button type="button" id="wh-consign-history-filter-clear" onclick="clearWhConsignHistoryFilter()" style="display:none;padding:7px 10px;border:1.2px solid var(--border);border-radius:8px;background:var(--white);color:var(--text-muted);font-size:12px;cursor:pointer;white-space:nowrap">✕ 条件をクリア</button>
         </div>
         <div id="wh-consign-history-list"></div>
-        <button onclick="createConsignInvoiceSlipFromSelection()" style="width:100%;margin-top:10px;padding:10px;background:var(--surface);color:var(--text);border:1.5px dashed var(--border);border-radius:var(--radius-sm);font-size:12.5px;font-weight:600;cursor:pointer">📄 選択した精算済み商品で納品書を作成</button>
+        <!-- 要望：「委託リストの納品書を作成する時に、チェックを入れて選択し納品書を作成する
+             のですが、ページを移動すると前のページでチェックを入れたものが全て外されて
+             しまう。ページを移動してチェックを入れても外れないようにしてほしい」への対応。
+             以前はチェック状態をDOMのcheckedプロパティだけで持っていたため、ページ切替・
+             取引先カードの開閉・絞り込みなどでrenderWhConsignHistorySection()が再描画される
+             たびにチェックボックスごと作り直され、チェックが消えてしまっていた。取引先納品書
+             作成画面の_freeeInvoiceSelectedと同じ考え方で、チェック状態を_consignInvoiceSelected
+             （_key単位のSet）に保持し、再描画のたびにそこから復元するようにした -->
+        <div id="wh-consign-invoice-select-count" style="font-size:11.5px;color:var(--gold-dark);font-weight:700;margin-top:8px"></div>
+        <button onclick="createConsignInvoiceSlipFromSelection()" style="width:100%;margin-top:6px;padding:10px;background:var(--surface);color:var(--text);border:1.5px dashed var(--border);border-radius:var(--radius-sm);font-size:12.5px;font-weight:600;cursor:pointer">📄 選択した精算済み商品で納品書を作成</button>
       </div>
     </div>
 
@@ -1739,26 +1788,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div id="wh-consign-invoices-list"></div>
       </div>
     </div>
-  </div>
-  <!-- 要望：「パソコンで委託リストを作成している時に、右側に作成中のプレビューがあるとやりやすい」
-       への対応。「委託リストのプレビューとは？」の確認で「両方」（＝①これから追加する商品の
-       内容の確認プレビューと、②現在预けている一覧の両方を出しておいてほしい）と回答があったため、
-       2枚のカードに分けて両方を常に表示する。①はまだ記録前の_whConsignItems＋取引先・日付・メモ、
-       ②は既存の「現在预けている商品」（stockMoves側のholdingレコード）を、取引先ごとにまとめた
-       簡易な一覧として表示する（操作ボタンは持たせず、あくまで参照用）。
-       画面幅1024px未満（スマホなど）では.wh-desktop-preview-colごとCSSで非表示になる -->
-  <div class="wh-desktop-preview-col" id="wh-consign-preview-col">
-    <div class="card">
-      <div class="card-title">プレビュー（追加予定の商品）</div>
-      <div id="wh-consign-new-preview-body" style="padding:0 16px 16px"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">現在预けている一覧</div>
-      <div id="wh-consign-holding-mirror-body" style="padding:0 16px 16px"></div>
-    </div>
-  </div>
-  </div>
-  </div>
+</div>
 </div>
 
 <!-- 買取価格チェック：要望「買取スキャナーのCSVをこのシステムに組み込めるか」への対応。
@@ -3371,6 +3401,9 @@ function switchWhTab(tab) {
     renderWhConsignLivePreview();
     markConsignRequestsSeen();
     updateConsignNotifyPromptVisibility();
+    // 納品書作成画面と同じく、入力中の商品が残っている場合は作成フォームを自動で開いておく
+    // （それ以外は閉じたまま＝「現在預けている商品」一覧を優先して見せる）
+    if (_whConsignItems.length) toggleWhConsignCreateSection(true);
   }
   if (tab === 'deliv') {
     const dateEl = document.getElementById('wh-deliv-date');
@@ -4324,6 +4357,39 @@ function toggleWhDelivCreateSection(forceOpen) {
   if (shouldOpen === isOpen) return;
   section.style.display = shouldOpen ? 'block' : 'none';
   if (btn) btn.textContent = shouldOpen ? '－ 閉じる' : '＋ 新規作成';
+}
+
+// 要望：「委託リストも納品書作成のように上に新規作成ボタンを作り、その下に取引先に预けている
+// 商品がわかるようにできますか」への対応。toggleWhDelivCreateSectionと全く同じ考え方で、
+// #wh-consign-create-section（取引先・商品スキャン・預ける商品一式）を「＋ 新規作成」
+// ボタンのすぐ下に置かれたアコーディオンとして開閉する。ボタンのすぐ下でその場に開閉する
+// だけなので、開くときも閉じるときもページの自動スクロールは発生しない。
+// forceOpenを省略した場合は現在の表示状態を反転させ（ボタンクリック用）、true/falseを渡すと
+// その状態に強制する（入力中の商品が残っている場合の自動復元・記録完了時などプログラム側から
+// 呼ぶ場合用）。
+function toggleWhConsignCreateSection(forceOpen) {
+  const section = document.getElementById('wh-consign-create-section');
+  const btn = document.getElementById('wh-consign-create-toggle-btn');
+  if (!section) return;
+  const isOpen = section.style.display !== 'none';
+  const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : !isOpen;
+  if (shouldOpen === isOpen) return;
+  section.style.display = shouldOpen ? 'block' : 'none';
+  if (btn) btn.textContent = shouldOpen ? '－ 閉じる' : '＋ 新規作成';
+}
+
+// 要望：「取引先からのリクエストは、申請が来た分だけズラッと表示させるのではなくて、取引先
+// からのリクエスト・精算分の合計をタップしたら中身が見えるようにしたい」への対応。
+// #wh-consign-requests-panel内の1件ずつの明細（承認・却下ボタン付き）をアコーディオンにし、
+// 見出し（🔔件数・精算分の合計）をタップすると開閉する。開閉状態はrenderConsignRequestsPanel
+// による再描画をまたいで保持する（_whConsignRequestsExpanded）。
+let _whConsignRequestsExpanded = false;
+function toggleWhConsignRequestsPanel(forceOpen) {
+  _whConsignRequestsExpanded = typeof forceOpen === 'boolean' ? forceOpen : !_whConsignRequestsExpanded;
+  const body = document.getElementById('acc-body-wh-consign-requests');
+  const arrow = document.getElementById('acc-arrow-wh-consign-requests');
+  if (body) body.classList.toggle('open', _whConsignRequestsExpanded);
+  if (arrow) arrow.classList.toggle('open', _whConsignRequestsExpanded);
 }
 
 // 納品書の見た目（取引先名・型番・数量・単価のみの簡易レイアウト）を組み立てる。
@@ -5898,6 +5964,8 @@ async function submitConsign() {
     document.getElementById('wh-consign-memo').value = '';
     await loadInventory();
     renderWhConsignList();
+    // 記録が終わったら作成フォームは閉じ、画面の主役である「現在預けている商品」一覧に戻す
+    toggleWhConsignCreateSection(false);
     showToast('預けを記録しました');
   } catch(e) { showToast('記録に失敗しました'); console.error(e); }
 }
@@ -6260,6 +6328,29 @@ function toggleWhConsignHistoryClient(idx) {
   renderWhConsignHistorySection();
 }
 
+// 要望：「委託リストの納品書を作成する時に、チェックを入れて選択し納品書を作成するのですが、
+// ページを移動すると前のページでチェックを入れたものが全て外されてしまう。ページを移動して
+// チェックを入れても外れないようにしてほしい」への対応。
+// 精算済みの履歴（renderWhConsignHistorySection）は、ページ切替・取引先カードの開閉・絞り込み
+// などのたびに一覧全体をinnerHTMLで作り直すため、チェック状態をDOM（inputのcheckedだけ）に
+// 持たせていると、選択したページ以外（あるいは選択後に再描画されたページ自体）のチェックボックス
+// が新しく作り直されてチェックが消えてしまう。取引先の納品書一覧の「請求書作成済みにする」
+// （_freeeInvoiceSelected）と同じ考え方で、選択状態を_keyのSetとしてJS側に保持し、
+// 再描画のたびにそこから復元する（チェックボックスの見た目だけを作り直しても、選択内容自体は
+// ページをまたいでも保持され続ける）。
+let _consignInvoiceSelected = new Set();
+function toggleConsignInvoiceSelect(key, checked) {
+  if (checked) _consignInvoiceSelected.add(key);
+  else _consignInvoiceSelected.delete(key);
+  updateConsignInvoiceSelectCount();
+}
+function updateConsignInvoiceSelectCount() {
+  const el = document.getElementById('wh-consign-invoice-select-count');
+  if (!el) return;
+  const n = _consignInvoiceSelected.size;
+  el.textContent = n ? `${n}件を選択中（ページや取引先を切り替えても選択は保持されます）` : '';
+}
+
 function renderWhConsignHistorySection() {
   const historyEl = document.getElementById('wh-consign-history-list');
   if (!historyEl) return;
@@ -6316,7 +6407,7 @@ function renderWhConsignHistorySection() {
         </div>`;
       }
       return `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;align-items:center;gap:6px">
-        <input type="checkbox" class="consign-invoice-checkbox" data-key="${m._key}" style="flex-shrink:0;width:16px;height:16px">
+        <input type="checkbox" class="consign-invoice-checkbox" data-key="${m._key}" onchange="toggleConsignInvoiceSelect('${m._key}', this.checked)" ${_consignInvoiceSelected.has(m._key) ? 'checked' : ''} style="flex-shrink:0;width:16px;height:16px">
         <span style="flex:1">${rowText}</span>
         ${editAmountLinkHtml(m)}
         ${undoLinkHtml(m)}
@@ -6382,6 +6473,9 @@ function renderWhConsignHistorySection() {
         </div>
       </div>`;
   }).join('');
+  // チェックボックスは再描画のたびに作り直されるが、選択件数の表示（_consignInvoiceSelected）
+  // 自体はページ・取引先をまたいで保持されているので、都度ここで表示だけ更新する
+  updateConsignInvoiceSelectCount();
 }
 
 // 検索・月・期間（開始／終了）いずれかの入力欄が変わるたびに呼ばれ、フィルター条件を読み取って再描画する
@@ -6470,9 +6564,11 @@ function renderConsignInvoicesList() {
 // 取引先ごとにまとめて納品書（請求用）を作成する。預かり品は預け入れ時点ですでに在庫を
 // 減らしているため、ここでは在庫・売上のどちらも変更しない（すでに精算時に売上として記録済み）。
 async function createConsignInvoiceSlipFromSelection() {
-  const checked = Array.from(document.querySelectorAll('.consign-invoice-checkbox:checked'));
-  if (!checked.length) { showToast('納品書にする精算済みの商品を選んでください'); return; }
-  const keys = checked.map(el => el.dataset.key);
+  // ページ・取引先をまたいで保持されている_consignInvoiceSelected（_keyのSet）から選択内容を
+  // 読み取る（以前はその場のDOMのチェックボックスから直接読んでいたため、選択後にページを
+  // 移動する等で一覧が再描画されると、選択済みだったチェックが失われてしまっていた）
+  const keys = Array.from(_consignInvoiceSelected);
+  if (!keys.length) { showToast('納品書にする精算済みの商品を選んでください'); return; }
   const targets = keys.map(k => (stockMoves || []).find(m => m._key === k)).filter(m => m && m.status === 'settled' && !m.invoicedSlipId);
   if (!targets.length) { showToast('選択した商品が見つかりませんでした'); return; }
 
@@ -6518,6 +6614,9 @@ async function createConsignInvoiceSlipFromSelection() {
         invoicedSlipId: slipId
       })})));
     }
+    // 納品書にした分はもう「精算済みの履歴」にチェックボックス付きでは出てこなくなる
+    // （請求済みバッジ表示に変わる）ため、選択状態からも取り除いておく
+    targets.forEach(m => _consignInvoiceSelected.delete(m._key));
     await loadInventory();
     renderWhConsignList();
     showToast(`${order.length}件の取引先へ、精算分の納品書を作成しました`);
