@@ -981,7 +981,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div class="field-divider"></div>
         <div class="field" style="padding-top:16px">
           <div class="field-label">型番</div>
-          <input type="text" id="inv-model" placeholder="型番・品番" oninput="lookupModel()">
+          <div style="position:relative">
+            <input type="text" id="inv-model" placeholder="型番・品番" oninput="lookupModel(); toggleFieldClearBtn('inv-model','inv-model-clear');" style="padding-right:34px">
+            <button type="button" id="inv-model-clear" onclick="clearFieldAndNotify('inv-model','inv-model-clear')" aria-label="型番をクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
+          </div>
           <div id="model-lookup-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
           <!-- 要望：「登録済み商品の情報を、JANスキャン画面から直接修正したい」への対応。
                既存商品モードでは商品名・型番・メーカーが読み取り専用になるため、必要な時だけ
@@ -1095,7 +1098,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
           <div style="margin-bottom:6px">
             <button class="scan-btn" onclick="startScan('move-jan')" style="width:100%">📷 スキャンする</button>
           </div>
-          <input type="text" id="move-jan" placeholder="または手入力" oninput="lookupProduct()">
+          <div style="position:relative">
+            <input type="text" id="move-jan" placeholder="または手入力" oninput="lookupProduct(); toggleFieldClearBtn('move-jan','move-jan-clear');" style="padding-right:34px">
+            <button type="button" id="move-jan-clear" onclick="clearFieldAndNotify('move-jan','move-jan-clear')" aria-label="JANコードをクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
+          </div>
           <div id="move-jan-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
           <div id="move-product-info" style="margin-top:12px;padding:12px;background:var(--gold-bg);border-radius:8px;display:none">
             <div style="font-weight:700;font-size:15px" id="move-product-name"></div>
@@ -1310,13 +1316,19 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div style="margin-bottom:6px">
           <button class="scan-btn" onclick="startScan('pack-jan-sp')" style="width:100%">📷 スキャンする</button>
         </div>
-        <input type="text" id="pack-jan-sp" placeholder="または手入力" oninput="lookupPackJan()">
+        <div style="position:relative">
+          <input type="text" id="pack-jan-sp" placeholder="または手入力" oninput="lookupPackJan(); toggleFieldClearBtn('pack-jan-sp','pack-jan-sp-clear');" style="padding-right:34px">
+          <button type="button" id="pack-jan-sp-clear" onclick="clearFieldAndNotify('pack-jan-sp','pack-jan-sp-clear')" aria-label="JANコードをクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
+        </div>
         <div id="pack-jan-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
       </div>
       <div class="field-divider"></div>
       <div class="field" style="padding-top:16px">
         <div class="field-label">型番 <span class="req">*</span></div>
-        <input type="text" id="pack-product-sp" placeholder="型番を入力（JANスキャンで自動入力されます）">
+        <div style="position:relative">
+          <input type="text" id="pack-product-sp" placeholder="型番を入力（JANスキャンで自動入力されます）" oninput="toggleFieldClearBtn('pack-product-sp','pack-product-sp-clear')" style="padding-right:34px">
+          <button type="button" id="pack-product-sp-clear" onclick="clearFieldAndNotify('pack-product-sp','pack-product-sp-clear')" aria-label="型番をクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
+        </div>
       </div>
       <div class="field-divider"></div>
       <div class="field" style="padding-top:16px">
@@ -1485,7 +1497,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div style="margin-bottom:6px">
           <button class="scan-btn" onclick="startScan('wh-item-jan')" style="width:100%">📷 スキャンする</button>
         </div>
-        <input type="text" id="wh-item-jan" placeholder="または手入力" oninput="lookupWhItem()">
+        <div style="position:relative">
+          <input type="text" id="wh-item-jan" placeholder="または手入力" oninput="lookupWhItem(); toggleFieldClearBtn('wh-item-jan','wh-item-jan-clear');" style="padding-right:34px">
+          <button type="button" id="wh-item-jan-clear" onclick="clearFieldAndNotify('wh-item-jan','wh-item-jan-clear')" aria-label="JANコードをクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
+        </div>
         <div id="wh-item-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
         <div id="wh-jan-buyback-ref" style="display:none;margin-top:6px"></div>
         <div style="margin-top:14px">
@@ -1497,7 +1512,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div id="wh-quick-register" style="display:none;margin-top:10px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px">
           <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">この商品はまだ登録されていません。JANコードから商品情報を自動検索します</div>
           <div style="display:flex;gap:6px;margin-bottom:8px">
-            <input type="text" id="wh-qr-model" placeholder="見つからない場合は型番を入力して再検索" style="flex:1">
+            <div style="position:relative;flex:1">
+              <input type="text" id="wh-qr-model" placeholder="見つからない場合は型番を入力して再検索" oninput="toggleFieldClearBtn('wh-qr-model','wh-qr-model-clear')" style="width:100%;padding-right:34px;box-sizing:border-box">
+              <button type="button" id="wh-qr-model-clear" onclick="clearFieldAndNotify('wh-qr-model','wh-qr-model-clear')" aria-label="型番をクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
+            </div>
             <button onclick="searchWhQuickRegister()" style="padding:8px 12px;background:var(--gold);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">型番で再検索</button>
           </div>
           <div id="wh-qr-status" style="font-size:11px;color:var(--text-muted);margin-bottom:8px"></div>
@@ -1627,7 +1645,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div style="margin-bottom:6px">
           <button class="scan-btn" onclick="startScan('wh-consign-jan')" style="width:100%">📷 スキャンする</button>
         </div>
-        <input type="text" id="wh-consign-jan" placeholder="または手入力" oninput="lookupWhConsignItem()">
+        <div style="position:relative">
+          <input type="text" id="wh-consign-jan" placeholder="または手入力" oninput="lookupWhConsignItem(); toggleFieldClearBtn('wh-consign-jan','wh-consign-jan-clear');" style="padding-right:34px">
+          <button type="button" id="wh-consign-jan-clear" onclick="clearFieldAndNotify('wh-consign-jan','wh-consign-jan-clear')" aria-label="JANコードをクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
+        </div>
         <div id="wh-consign-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
         <div style="margin-top:14px">
           <div class="field-label">型番・商品名で検索して追加</div>
@@ -1867,7 +1888,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div style="margin-bottom:6px">
       <button class="scan-btn" onclick="startScan('wh-consign-edit-add-jan')" style="width:100%">📷 スキャンする</button>
     </div>
-    <input type="text" id="wh-consign-edit-add-jan" placeholder="または手入力" oninput="lookupConsignEditAddItem()">
+    <div style="position:relative">
+      <input type="text" id="wh-consign-edit-add-jan" placeholder="または手入力" oninput="lookupConsignEditAddItem(); toggleFieldClearBtn('wh-consign-edit-add-jan','wh-consign-edit-add-jan-clear');" style="padding-right:34px">
+      <button type="button" id="wh-consign-edit-add-jan-clear" onclick="clearFieldAndNotify('wh-consign-edit-add-jan','wh-consign-edit-add-jan-clear')" aria-label="JANコードをクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
+    </div>
     <div id="wh-consign-edit-add-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
     <div id="wh-consign-edit-add-list" style="margin-top:8px"></div>
     <div id="wh-consign-edit-add-empty" style="font-size:12px;color:var(--text-muted);padding:8px 0">まだ追加した商品はありません</div>
@@ -2211,10 +2235,16 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:16px">梱包リストを編集</div>
     <input type="hidden" id="pack-edit-key">
     <div class="field"><div class="field-label">型番 <span class="req">*</span></div>
-      <input type="text" id="pack-edit-product"></div>
+      <div style="position:relative">
+        <input type="text" id="pack-edit-product" oninput="toggleFieldClearBtn('pack-edit-product','pack-edit-product-clear')" style="padding-right:34px">
+        <button type="button" id="pack-edit-product-clear" onclick="clearFieldAndNotify('pack-edit-product','pack-edit-product-clear')" aria-label="型番をクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
+      </div></div>
     <div class="field-divider"></div>
     <div class="field" style="padding-top:12px"><div class="field-label">JANコード</div>
-      <input type="text" id="pack-edit-jan" placeholder="JANコード"></div>
+      <div style="position:relative">
+        <input type="text" id="pack-edit-jan" placeholder="JANコード" oninput="toggleFieldClearBtn('pack-edit-jan','pack-edit-jan-clear')" style="padding-right:34px">
+        <button type="button" id="pack-edit-jan-clear" onclick="clearFieldAndNotify('pack-edit-jan','pack-edit-jan-clear')" aria-label="JANコードをクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
+      </div></div>
     <div class="field-divider"></div>
     <div class="field" style="padding-top:12px"><div class="field-label">カテゴリー</div>
       <select id="pack-edit-category" style="font-size:13px;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;width:100%">
@@ -2258,10 +2288,16 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <input type="text" id="prod-edit-name"></div>
     <div class="field-divider"></div>
     <div class="field" style="padding-top:12px"><div class="field-label">型番</div>
-      <input type="text" id="prod-edit-model"></div>
+      <div style="position:relative">
+        <input type="text" id="prod-edit-model" oninput="toggleFieldClearBtn('prod-edit-model','prod-edit-model-clear')" style="padding-right:34px">
+        <button type="button" id="prod-edit-model-clear" onclick="clearFieldAndNotify('prod-edit-model','prod-edit-model-clear')" aria-label="型番をクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
+      </div></div>
     <div class="field-divider"></div>
     <div class="field" style="padding-top:12px"><div class="field-label">JANコード</div>
-      <input type="text" id="prod-edit-jan"></div>
+      <div style="position:relative">
+        <input type="text" id="prod-edit-jan" oninput="toggleFieldClearBtn('prod-edit-jan','prod-edit-jan-clear')" style="padding-right:34px">
+        <button type="button" id="prod-edit-jan-clear" onclick="clearFieldAndNotify('prod-edit-jan','prod-edit-jan-clear')" aria-label="JANコードをクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
+      </div></div>
     <div class="field-divider"></div>
     <div class="field" style="padding-top:12px"><div class="field-label">在庫数 <span class="req">*</span></div>
       <input type="number" id="prod-edit-stock" min="0"></div>
@@ -2757,6 +2793,18 @@ function consignItemModel(m) {
   return (m && m.model) || (products.find(p => p._key === (m && m.productKey)) || {}).model || (m && m.productName) || '';
 }
 
+// 要望：「取引先の方から、同じ型番なのに違う商品として分かれていると言われた。在庫一覧で
+// 型番を修正したら、取引先の画面にも反映されるようにしてほしい」への対応。
+// 精算・返却が済んだ履歴（consignItemModel）は、その時点の記録を正確に残す必要があるため
+// 預けたときのmodelを優先したままにしているが、まだ精算・返却が済んでいない「現在预かり中」
+// の商品は取引が完了していないため、商品マスタ（products）の現在の型番を優先して表示・
+// グループ分けする。これにより、在庫一覧で型番の表記（[ ]の有無や余分な文字列など）を
+// 統一すれば、預かり中の一覧・取引先ポータルの表示もすぐに揃うようになる。
+function consignItemModelLive(m) {
+  const prod = products.find(p => p._key === (m && m.productKey));
+  return (prod && prod.model) || (m && m.model) || (m && m.productName) || '';
+}
+
 // 取引先ポータル向けのスナップショットを組み立てる際、同じ商品（型番）を複数回に分けて
 // 預けていたり、部分精算の取り消しで同じ商品のholdingレコードが複数に分かれてしまった場合
 // （「同じ商品はまとめて欲しい」という要望）に、取引先の画面ではまとめて1行として見えるように
@@ -2767,7 +2815,7 @@ function buildPortalSnapshotItemsForClient(holdingMoves) {
   const byModel = {};
   const order = [];
   holdingMoves.forEach(m => {
-    const norm = normalizeModelStr(consignItemModel(m)) || '__unknown__';
+    const norm = normalizeModelStr(consignItemModelLive(m)) || '__unknown__';
     if (!byModel[norm]) { byModel[norm] = []; order.push(norm); }
     byModel[norm].push(m);
   });
@@ -2776,7 +2824,7 @@ function buildPortalSnapshotItemsForClient(holdingMoves) {
     const moves = [...byModel[norm]].sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
     const memoList = [...new Set(moves.map(m => m.memo).filter(Boolean))];
     return {
-      model: consignItemModel(moves[0]),
+      model: consignItemModelLive(moves[0]),
       qty: moves.reduce((s,m) => s + (m.qty||0), 0),
       moveKeys: moves.map(m => ({ key: m._key, qty: m.qty })),
       date: moves[0].date,
@@ -3371,6 +3419,7 @@ function lookupWhItem() {
   if (found) {
     addWhItemRow(found);
     input.value = '';
+    toggleFieldClearBtn('wh-item-jan', 'wh-item-jan-clear');
     if (status) status.textContent = '';
     hideWhQuickRegister();
     lookupBuybackRefForWhFound(jan);
@@ -3414,6 +3463,7 @@ function hideWhQuickRegister() {
   const panel = document.getElementById('wh-quick-register');
   if (panel) panel.style.display = 'none';
   ['wh-qr-model','wh-qr-name','wh-qr-maker','wh-qr-stock'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  toggleFieldClearBtn('wh-qr-model', 'wh-qr-model-clear');
   renderMakerSelectUI('wh-qr');
   const catEl = document.getElementById('wh-qr-category');
   if (catEl) catEl.selectedIndex = 0;
@@ -3506,7 +3556,7 @@ async function autoSearchWhQuickRegisterByJan(jan) {
         if (nameField && !nameField.value) nameField.value = productName;
         const guessedModel = guessModelNumber(title) || guessModelNumber(snippet);
         const modelField = document.getElementById('wh-qr-model');
-        if (guessedModel && modelField && !modelField.value) modelField.value = guessedModel;
+        if (guessedModel && modelField && !modelField.value) { modelField.value = guessedModel; toggleFieldClearBtn('wh-qr-model','wh-qr-model-clear'); }
         const guessedMaker = guessMaker(productName);
         const makerField = document.getElementById('wh-qr-maker');
         if (guessedMaker && makerField && !makerField.value) { makerField.value = guessedMaker; renderMakerSelectUI('wh-qr'); }
@@ -5504,6 +5554,7 @@ function lookupWhConsignItem() {
   if (found) {
     addWhConsignRow(found);
     input.value = '';
+    toggleFieldClearBtn('wh-consign-jan', 'wh-consign-jan-clear');
     if (status) status.textContent = '';
     return;
   }
@@ -5653,7 +5704,7 @@ function renderWhConsignHoldingMirror() {
     const totalQty = items.reduce((s, m) => s + (m.qty || 0), 0);
     const rows = items.map(m => `
       <div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:12px;color:var(--text)">
-        <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(consignItemModel(m))}</div>
+        <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(consignItemModelLive(m))}</div>
         <div style="flex-shrink:0;color:var(--text-muted)">${m.qty}個</div>
       </div>`).join('');
     return `
@@ -5758,7 +5809,7 @@ function whConsignItemRowHtml(m) {
     <div style="${rowStyle}">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
         <div style="min-width:0;flex:1">
-          <div style="color:var(--text);font-weight:600">${escapeHtmlMain(consignItemModel(m))}</div>
+          <div style="color:var(--text);font-weight:600">${escapeHtmlMain(consignItemModelLive(m))}</div>
           <div style="color:var(--text-muted);font-size:11px;margin-top:2px">${fmtDateJP(m.date)}／${m.qty}個${m.memo ? '／' + escapeHtmlMain(m.memo) : ''}</div>
         </div>
         <div style="flex-shrink:0;text-align:right">
@@ -5846,7 +5897,7 @@ function renderWhConsignClientItemsList(idx) {
   const q = (_whConsignClientSearchQuery[client] || '').trim().toLowerCase();
   // 型番はハイフン・スペース・カッコ・大文字小文字の違いを無視して一致させる
   const qNorm = normalizeModelStr(q);
-  const filtered = qNorm ? holding.filter(m => normalizeModelStr(consignItemModel(m)).includes(qNorm)) : holding;
+  const filtered = qNorm ? holding.filter(m => normalizeModelStr(consignItemModelLive(m)).includes(qNorm)) : holding;
   const countEl = document.getElementById('wh-consign-client-search-count-' + idx);
   if (countEl) countEl.textContent = q ? `${filtered.length}件見つかりました` : '';
   if (!filtered.length) {
@@ -5858,7 +5909,7 @@ function renderWhConsignClientItemsList(idx) {
   const modelGroups = {};
   const modelOrder = [];
   filtered.forEach(m => {
-    const gk = normalizeModelStr(consignItemModel(m)) || '__unknown__';
+    const gk = normalizeModelStr(consignItemModelLive(m)) || '__unknown__';
     if (!modelGroups[gk]) { modelGroups[gk] = []; modelOrder.push(gk); }
     modelGroups[gk].push(m);
   });
@@ -5872,7 +5923,7 @@ function renderWhConsignClientItemsList(idx) {
       <div style="border-bottom:1px solid var(--border)">
         <div style="padding:10px 0;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer" onclick="toggleWhConsignModelGroup(${idx}, '${gk}')">
           <div style="min-width:0">
-            <div style="color:var(--text);font-weight:600">${escapeHtmlMain(consignItemModel(items[0]))}</div>
+            <div style="color:var(--text);font-weight:600">${escapeHtmlMain(consignItemModelLive(items[0]))}</div>
             <div style="color:var(--text-muted);font-size:11px;margin-top:2px">合計${totalQty}個（${items.length}件に分かれています）</div>
           </div>
           <span class="accordion-arrow${isOpen ? ' open' : ''}" style="font-size:10px;flex-shrink:0">▼</span>
@@ -6635,8 +6686,9 @@ function showConsignListPreview(client) {
   if (pageEl) {
     pageEl.style.transform = 'none';
     const items = holding.map(m => ({
-      // 型番が記録に残っていない古いレコードは、商品マスタから補う（納品書と同じ考え方）
-      model: m.model || (products.find(p => p._key === m.productKey) || {}).model || m.productName || '',
+      // 現在预かり中の商品は取引が完了していないため、商品マスタ（products）の現在の
+      // 型番を優先する（consignItemModelLive参照。在庫一覧での型番修正がこの明細にもすぐ反映される）
+      model: consignItemModelLive(m),
       qty: m.qty, date: m.date, memo: m.memo || ''
     })).sort((a,b) => (a.date||'').localeCompare(b.date||''));
     pageEl.innerHTML = consignListBodyHtml(client);
@@ -6968,6 +7020,7 @@ function lookupConsignEditAddItem() {
   if (found) {
     addConsignEditAddRow(found);
     input.value = '';
+    toggleFieldClearBtn('wh-consign-edit-add-jan', 'wh-consign-edit-add-jan-clear');
     if (status) status.textContent = '';
     return;
   }
@@ -7319,6 +7372,7 @@ function setInvAddExistingMode(found) {
   document.getElementById('inv-name').value = found.name || '';
   document.getElementById('inv-maker').value = found.maker || '';
   document.getElementById('inv-model').value = found.model || '';
+  toggleFieldClearBtn('inv-model', 'inv-model-clear');
   renderMakerSelectUI('inv');
   _invExistingEditMode = false;
   ['inv-name','inv-model'].forEach(id => {
@@ -7426,6 +7480,26 @@ function clearInvJan() {
   if (modelStatus) modelStatus.textContent = '';
   toggleInvJanClearBtn();
   janInput.focus();
+}
+
+// 要望：「型番・JANコードの入力欄が在庫管理の色々な画面にあるが、入力したものを
+// 一発で削除したい」への対応。商品登録画面のJANコード欄（clearInvJan）と同じ考え方の
+// 一発クリアの仕組みを、他の型番・JANコード欄でも使えるよう汎用化したもの。
+// クリア後は対象欄のoninputハンドラを改めて発火させることで、検索結果・ステータス
+// 表示などの画面状態も「未入力」の状態に戻す（画面ごとに専用の処理を書かずに済む）。
+function toggleFieldClearBtn(inputId, btnId) {
+  const input = document.getElementById(inputId);
+  const btn = document.getElementById(btnId);
+  if (!input || !btn) return;
+  btn.style.display = input.value ? 'block' : 'none';
+}
+function clearFieldAndNotify(inputId, btnId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  input.value = '';
+  toggleFieldClearBtn(inputId, btnId);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.focus();
 }
 
 // 検索結果のタイトル・スニペットから型番らしき文字列を推定する（ヒューリスティック・要確認）
@@ -7720,7 +7794,11 @@ function applyBuybackRefAutoFill(rec, ids) {
   if (nameField && !nameField.value) { nameField.value = rec.n; filled.push('商品名'); }
   const guessedModel = guessModelNumber(rec.n);
   const modelField = ids.model ? document.getElementById(ids.model) : null;
-  if (guessedModel && modelField && !modelField.value) { modelField.value = guessedModel; filled.push('型番'); }
+  if (guessedModel && modelField && !modelField.value) {
+    modelField.value = guessedModel;
+    filled.push('型番');
+    toggleFieldClearBtn(ids.model, ids.model + '-clear');
+  }
   const guessedMaker = guessMaker(rec.n);
   const makerField = ids.maker ? document.getElementById(ids.maker) : null;
   if (guessedMaker && makerField && !makerField.value) {
@@ -7832,7 +7910,7 @@ function applyBuybackRefToExistingProduct() {
   if (nameField) nameField.value = rec.n;
   const guessedModel = guessModelNumber(rec.n);
   const modelField = document.getElementById('inv-model');
-  if (guessedModel && modelField) modelField.value = guessedModel;
+  if (guessedModel && modelField) { modelField.value = guessedModel; toggleFieldClearBtn('inv-model','inv-model-clear'); }
   const guessedMaker = guessMaker(rec.n);
   const makerField = document.getElementById('inv-maker');
   if (guessedMaker && makerField) {
@@ -7959,6 +8037,7 @@ async function submitProduct() {
       renderMakerSelectUI('inv');
       document.getElementById('jan-lookup-status').textContent = '';
       toggleInvJanClearBtn();
+      toggleFieldClearBtn('inv-model', 'inv-model-clear');
       await loadInventory();
       showToast(masterUpdated ? '入荷を記録し、商品情報を修正しました（在庫: ' + newStock + '個）' : '入荷を記録しました（在庫: ' + newStock + '個）');
     } catch(e) { showAlert('inv-alert-box','inv-alert-msg','記録に失敗しました','error'); }
@@ -8011,6 +8090,7 @@ async function submitProduct() {
     document.getElementById('inv-img-preview').style.display = 'none';
     renderMakerSelectUI('inv');
     toggleInvJanClearBtn();
+    toggleFieldClearBtn('inv-model', 'inv-model-clear');
     await loadInventory();
     showToast('商品を登録しました');
   } catch(e) { showAlert('inv-alert-box','inv-alert-msg','登録に失敗しました','error'); }
@@ -8028,6 +8108,8 @@ function openProductEdit(key) {
   document.getElementById('prod-edit-name').value = p.name || '';
   document.getElementById('prod-edit-model').value = p.model || '';
   document.getElementById('prod-edit-jan').value = p.jan || '';
+  toggleFieldClearBtn('prod-edit-model', 'prod-edit-model-clear');
+  toggleFieldClearBtn('prod-edit-jan', 'prod-edit-jan-clear');
   document.getElementById('prod-edit-stock').value = p.stock ?? 0;
   document.getElementById('prod-edit-threshold').value = (typeof p.lowStock === 'number') ? p.lowStock : '';
   document.getElementById('prod-edit-cost').value = p.cost || 0;
@@ -8208,7 +8290,7 @@ function lookupPackJan() {
   if (found) {
     const productField = document.getElementById('pack-product-sp');
     // 一覧の主表示（在庫一覧など）と同じく、型番を優先して自動入力する（型番未登録の商品は商品名を代用）
-    if (productField) productField.value = found.model || found.name;
+    if (productField) { productField.value = found.model || found.name; toggleFieldClearBtn('pack-product-sp','pack-product-sp-clear'); }
     const catField = document.getElementById('pack-category-sp');
     if (catField && found.category) catField.value = found.category;
     status.innerHTML = `✅ ${found.name}（現在庫: ${found.stock}個）`;
@@ -8306,6 +8388,7 @@ async function submitMove() {
     // 卸売事業もあり出庫＝EC販売とは限らないため、入出庫からEC売上への自動連携は行わない
     // （EC売上は出荷管理のEC売上タブから個別に記録する）
     ['move-jan','move-date','move-qty','move-memo'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+    toggleFieldClearBtn('move-jan', 'move-jan-clear');
     document.getElementById('move-type').selectedIndex = 0;
     handleMoveType();
     resetMoveDamageSection();
@@ -9402,12 +9485,12 @@ function isValidJanCode(text) {
 function handleScanResult(text) {
   document.getElementById(scanTarget).value = text;
   stopScan();
-  if (scanTarget === 'move-jan') lookupProduct();
+  if (scanTarget === 'move-jan') { lookupProduct(); toggleFieldClearBtn('move-jan','move-jan-clear'); }
   if (scanTarget === 'inv-jan') { lookupJan(); toggleInvJanClearBtn(); }
-  if (scanTarget === 'pack-jan-sp') lookupPackJan();
-  if (scanTarget === 'wh-item-jan') lookupWhItem();
-  if (scanTarget === 'wh-consign-jan') lookupWhConsignItem();
-  if (scanTarget === 'wh-consign-edit-add-jan') lookupConsignEditAddItem();
+  if (scanTarget === 'pack-jan-sp') { lookupPackJan(); toggleFieldClearBtn('pack-jan-sp','pack-jan-sp-clear'); }
+  if (scanTarget === 'wh-item-jan') { lookupWhItem(); toggleFieldClearBtn('wh-item-jan','wh-item-jan-clear'); }
+  if (scanTarget === 'wh-consign-jan') { lookupWhConsignItem(); toggleFieldClearBtn('wh-consign-jan','wh-consign-jan-clear'); }
+  if (scanTarget === 'wh-consign-edit-add-jan') { lookupConsignEditAddItem(); toggleFieldClearBtn('wh-consign-edit-add-jan','wh-consign-edit-add-jan-clear'); }
 }
 
 let scanNativeTimeout = null;
@@ -11504,6 +11587,8 @@ async function addPackItemSP() {
     ['pack-product-sp','pack-jan-sp','pack-qty-sp','pack-customer-sp','pack-zip-sp','pack-dest-sp','pack-staff-sp','pack-memo-sp'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.value='';
     });
+    toggleFieldClearBtn('pack-product-sp', 'pack-product-sp-clear');
+    toggleFieldClearBtn('pack-jan-sp', 'pack-jan-sp-clear');
     const catEl = document.getElementById('pack-category-sp');
     if (catEl) catEl.selectedIndex = 0;
     await loadPackItems();
@@ -12008,6 +12093,8 @@ function openPackEdit(key) {
   document.getElementById('pack-edit-key').value = key;
   document.getElementById('pack-edit-product').value = item.product||'';
   document.getElementById('pack-edit-jan').value = item.jan||'';
+  toggleFieldClearBtn('pack-edit-product', 'pack-edit-product-clear');
+  toggleFieldClearBtn('pack-edit-jan', 'pack-edit-jan-clear');
   document.getElementById('pack-edit-category').value = item.category||'';
   document.getElementById('pack-edit-qty').value = item.qty||1;
   document.getElementById('pack-edit-customer').value = item.customer||'';
