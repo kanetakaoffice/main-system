@@ -14195,6 +14195,64 @@ function submitPortalPin() {
   renderPortalDataFromCache();
 }
 
+// 要望「取引先の方が、実際に預けている数より多い数を申請できるようになっている」への対応の
+// 一部。店舗側のスナップショット（/consignPortal/{portalId}のpendingRequests）は、取引先
+// ポータルが/consignRequests/{portalId}を直接読めない（書き込み専用の権限しかない）ため
+// 用意されているものだが、店舗側が「委託リスト」画面を開いたときにしか再同期されない。その
+// ため、取引先が精算・返却を送信した直後にページを再読み込みすると、店舗側がまだ一度も
+// 委託リスト画面を開いていない間はスナップショットに反映されておらず、残り申請可能数の
+// 判定が「まだ何も送っていない」状態に戻ってしまい、同じ内容を何度でも送信できてしまって
+// いた。取引先自身が送信した分は、店舗側の再同期を待たずにこの端末のブラウザ
+// （localStorage）にも控えておき、ページの再読み込み・再訪問をまたいでも残り申請可能数の
+// 計算に反映され続けるようにする（店舗側のスナップショットが実際に追いついたものは、
+// _keyが一致するのでそちらを優先し、控えは二重にカウントしない）。
+function portalLocalPendingStorageKey() {
+  return 'kanetaka_portal_local_pending_' + (window._portalId || '');
+}
+// 店舗側が却下した場合など、控えが対応するサーバー側の記録が無くなった後もいつまでも
+// 残り続けてしまわないよう、十分に長い期限（3日）で自動的に消えるようにしておく
+// （通常の営業であれば、店舗側が委託リスト画面を開くまでに3日もかかることはまず無い）
+const PORTAL_LOCAL_PENDING_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+function loadPortalLocalPendingShadow() {
+  if (!window._portalId) return [];
+  let list;
+  try {
+    const raw = localStorage.getItem(portalLocalPendingStorageKey());
+    list = raw ? JSON.parse(raw) : [];
+  } catch (e) { list = []; }
+  if (!Array.isArray(list)) list = [];
+  const now = Date.now();
+  const fresh = list.filter(r => r && (now - (r._savedAt || r.requestedAt || 0)) < PORTAL_LOCAL_PENDING_TTL_MS);
+  if (fresh.length !== list.length) savePortalLocalPendingShadow(fresh);
+  return fresh;
+}
+function savePortalLocalPendingShadow(list) {
+  if (!window._portalId) return;
+  try { localStorage.setItem(portalLocalPendingStorageKey(), JSON.stringify(list || [])); } catch (e) {}
+}
+// 送信できた（_keyが無い場合も、通信の不調でサーバーからの応答が読めなかっただけで実際には
+// 送信できている可能性があるため、控えとしては残す）精算・返却の連絡を控えに追加する
+function addPortalLocalPendingShadow(entries) {
+  if (!entries || !entries.length) return;
+  const list = loadPortalLocalPendingShadow();
+  const now = Date.now();
+  entries.forEach(e => {
+    if (!e) return;
+    const key = e._key || ('local_' + now + '_' + Math.random().toString(36).slice(2));
+    list.push({ _key: key, model: e.model, qty: e.qty, type: e.type, unitPrice: e.unitPrice != null ? e.unitPrice : null, requestedAt: e.requestedAt || now, soldDate: e.soldDate || null, _savedAt: now });
+  });
+  savePortalLocalPendingShadow(list);
+}
+function removePortalLocalPendingShadow(key) {
+  savePortalLocalPendingShadow(loadPortalLocalPendingShadow().filter(r => r._key !== key));
+}
+function updatePortalLocalPendingShadow(key, patch) {
+  const list = loadPortalLocalPendingShadow();
+  const found = list.find(r => r._key === key);
+  if (found) Object.assign(found, patch);
+  savePortalLocalPendingShadow(list);
+}
+
 // 暗証番号の確認が済んだ（または不要だった）後に、実際の内容を描画する
 function renderPortalDataFromCache() {
   const data = window._portalData;
@@ -14205,7 +14263,12 @@ function renderPortalDataFromCache() {
   // 精算・返却の連絡はrenderPortalItems()より先に、確認待ちリクエストの一覧
   // （window._portalPendingRequests）を用意しておく。これは商品カード側のバッジ表示が
   // renderPortalItems()内のrenderPortalItemsList()から参照するため。
-  renderPortalPendingRequests(data.pendingRequests || []);
+  // 店舗側のスナップショット（data.pendingRequests）に、まだ反映されていないこの端末からの
+  // 送信控え（loadPortalLocalPendingShadow）を補って使う（上のコメント参照）
+  const serverPending = data.pendingRequests || [];
+  const serverPendingKeys = new Set(serverPending.map(r => r._key));
+  const localShadowPending = loadPortalLocalPendingShadow().filter(r => !serverPendingKeys.has(r._key));
+  renderPortalPendingRequests(serverPending.concat(localShadowPending));
   renderPortalItems(data.items || []);
   renderPortalHistory(data.historyItems || []);
 }
@@ -14330,6 +14393,7 @@ async function cancelPortalOwnRequest(key) {
   try {
     await fetch(authedUrl('/consignRequests/' + window._portalId + '/' + key + '.json'), { method: 'DELETE' });
     window._portalPendingRequests = (window._portalPendingRequests || []).filter(r => r._key !== key);
+    removePortalLocalPendingShadow(key);
     renderPortalPendingRequests(window._portalPendingRequests);
     filterPortalItems();
     showToast('連絡を取り消しました');
@@ -14385,11 +14449,17 @@ async function confirmEditPendingRequest() {
   const showError = (msg) => { if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; } };
   const qty = parseInt(document.getElementById('portal-edit-pending-qty').value, 10);
   if (!qty || qty < 1) { showError('数量を正しく入力してください'); return; }
-  // 現在この画面に表示されている（＝まだ預かっている）数量を超えていないか、分かる範囲で
-  // 念のため確認する（この商品がすでに一部精算・返却済みで一覧から消えている場合は確認せず
-  // 通す。最終的には店舗側の承認時にも安全のため現在の預かり数量に合わせて調整される）
+  // 要望「取引先の方が、実際に預けている数より多い数を申請できるようになっている」への対応の
+  // 一部。以前は「預けている数量（it.qty）」そのものが上限だったため、他にも店舗未確認の
+  // 申請中の分がある商品について、この修正だけで合計が預けている数を超えてしまうことがあった。
+  // 残りの申請可能数（getPortalAvailableQty）に、今まさに修正しようとしているこの連絡
+  // 自身の分（req.qty）を一旦戻した数を上限として使う（自分自身の分を差し引いたままだと、
+  // 同じ数量のまま修正しようとしただけでも超過扱いになってしまうため）
   const it = (window._portalItems || []).find(x => (x.model || '') === (req.model || ''));
-  if (it && qty > it.qty) { showError(`預けている数量（${it.qty}個）を超えています`); return; }
+  if (it) {
+    const limit = getPortalAvailableQty(it) + (req.qty || 0);
+    if (qty > limit) { showError(`申請できる数量（${limit}個）を超えています（他に店舗未確認の申請中分がある場合は、その分を差し引いた数が上限です）`); return; }
+  }
   const patch = { qty };
   let soldDate = null, unitPrice = null;
   if (isSettle) {
@@ -14406,6 +14476,7 @@ async function confirmEditPendingRequest() {
       method: 'PATCH', body: JSON.stringify(patch)
     });
     Object.assign(req, patch);
+    updatePortalLocalPendingShadow(key, patch);
     renderPortalPendingRequests(window._portalPendingRequests);
     filterPortalItems();
     closeEditPendingRequest();
@@ -15185,6 +15256,10 @@ async function sendPortalRequest(idx, type) {
     // 要望「取引先が自分で取消せるようにしてほしい」への対応。店舗側の確認・スナップショット
     // 再同期を待たず、送信できた時点でその場で「確認中」欄に反映し、取り消せるようにする
     window._portalPendingRequests = (window._portalPendingRequests || []).concat(created);
+    // 要望「更新すると再度申請できるようになってしまう」への対応。店舗側の再同期を待たずに
+    // この端末に控えておくことで、ページを再読み込みしても残り申請可能数の計算に残り続ける
+    // ようにする（renderPortalDataFromCache参照）
+    addPortalLocalPendingShadow(created);
     renderPortalPendingRequests(window._portalPendingRequests);
     // 要望「預けている数より多くの数を申請できないようにしてほしい」への対応。送信できた分だけ
     // 残り申請可能数が減るので、この商品のカードの入力欄・ボタンの有効／無効をその場で更新する
@@ -15373,6 +15448,10 @@ async function submitBatchSettle() {
   // しまう（＝送信直後にまた預けている数いっぱいまで申請できてしまう不具合）。
   if (newlyCreated.length) {
     window._portalPendingRequests = (window._portalPendingRequests || []).concat(newlyCreated);
+    // 要望「更新すると再度申請できるようになってしまう」への対応。店舗側の再同期を待たずに
+    // この端末に控えておくことで、ページを再読み込みしても残り申請可能数の計算に残り続ける
+    // ようにする（renderPortalDataFromCache参照）
+    addPortalLocalPendingShadow(newlyCreated);
     renderPortalPendingRequests(window._portalPendingRequests);
   }
   // 送信に成功した組だけを入力欄から取り除く（失敗した組は、再送信できるようそのまま残す）。
