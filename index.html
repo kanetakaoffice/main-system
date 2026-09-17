@@ -14427,6 +14427,86 @@ function getPortalPendingBadgeHtml(model) {
   return `<span style="display:inline-block;margin-top:6px;padding:3px 9px;border-radius:999px;background:#fff3cd;color:#8a6d1a;border:1px solid #e0c56a;font-size:11px;font-weight:700">⏳ ${parts.join('／')}</span>`;
 }
 
+// 要望：「取引先の方が、実際に預けている数より多い数を申請できるようになっている。預けて
+// いる数より多くの数を申請できないようにしてほしい。または、預けている数より多い数を申請
+// した時にエラーが出るようにしてほしい」への対応。
+// 以前は精算・返却の入力欄のmax・合計チェックが常に「預けている数量（it.qty）」そのものを
+// 上限にしていた。it.qtyは店舗がまだ確認（承認）していないリクエストがあっても減らないため、
+// 例えば1個しか預けていない商品について、精算の申請を送った直後にもう一度別の精算・返却を
+// 申請しようとすると、店舗未確認の1件目がまだit.qtyに反映されていない状態のまま、また
+// 最大1個まで送れてしまい、合計で預けている数を超える申請ができてしまっていた。
+// 「まだ店舗が確認していない（精算・返却どちらの種別でも）申請中の数量」をit.qtyから
+// 差し引いた「これ以上申請できる残りの数量」を上限として使うようにする。
+function getPortalPendingQtyForModel(model) {
+  return (window._portalPendingRequests || [])
+    .filter(r => (r.model || '') === (model || ''))
+    .reduce((s, r) => s + (r.qty || 0), 0);
+}
+function getPortalAvailableQty(it) {
+  if (!it) return 0;
+  const pending = getPortalPendingQtyForModel(it.model);
+  return Math.max(0, (it.qty || 0) - pending);
+}
+
+// 精算・返却の連絡を送信した直後、その商品について残り申請可能数（getPortalAvailableQty）が
+// 変わるので、一覧全体を再描画（renderPortalItemsList／filterPortalItems）せずに、その商品の
+// カードのうち影響を受ける部分（申請できる数が無くなった旨の案内・入力欄やボタンの有効／
+// 無効・売れた日一覧のmax）だけをその場で直接更新する。一覧全体を再描画すると、他の商品の
+// アコーディオンの開閉状態や、直前に表示したばかりの「送信しました」等のステータス
+// メッセージまで消えてしまうため、意図的にこの商品だけをピンポイントで更新している。
+function refreshPortalItemAvailability(idx) {
+  const it = (window._portalItems || [])[idx];
+  if (!it) return;
+  const availableQty = getPortalAvailableQty(it);
+  const noneAvailable = availableQty <= 0;
+  const pendingQtyForModel = getPortalPendingQtyForModel(it.model);
+  const hasPendingForModel = pendingQtyForModel > 0;
+
+  const noticeEl = document.getElementById('portal-none-available-' + idx);
+  if (noticeEl) noticeEl.style.display = noneAvailable ? 'block' : 'none';
+
+  const entriesWrap = document.getElementById('portal-entries-' + idx);
+  if (entriesWrap) {
+    entriesWrap.style.opacity = noneAvailable ? '0.5' : '';
+    entriesWrap.style.pointerEvents = noneAvailable ? 'none' : '';
+  }
+
+  const addBtn = document.getElementById('portal-add-entry-btn-' + idx);
+  if (addBtn) {
+    addBtn.disabled = noneAvailable;
+    addBtn.style.opacity = noneAvailable ? '0.5' : '1';
+    addBtn.style.cursor = noneAvailable ? 'default' : 'pointer';
+  }
+
+  const returnInput = document.getElementById('portal-return-qty-' + idx);
+  if (returnInput) {
+    returnInput.max = String(availableQty);
+    returnInput.disabled = noneAvailable;
+    const curVal = parseInt(returnInput.value, 10);
+    if (noneAvailable || !curVal || curVal > availableQty) {
+      returnInput.value = String(Math.max(1, availableQty));
+    }
+  }
+
+  const returnHintEl = document.getElementById('portal-return-hint-' + idx);
+  if (returnHintEl) {
+    returnHintEl.textContent = hasPendingForModel
+      ? `申請中を除くと${availableQty}個まで`
+      : `${it.qty}個のうち一部だけの場合は数を変えてください`;
+  }
+
+  const returnBtn = document.getElementById('portal-return-btn-' + idx);
+  if (returnBtn) {
+    returnBtn.disabled = noneAvailable;
+    returnBtn.style.background = noneAvailable ? 'var(--surface)' : 'var(--white)';
+    returnBtn.style.color = noneAvailable ? 'var(--text-muted)' : 'var(--text)';
+    returnBtn.style.cursor = noneAvailable ? 'default' : 'pointer';
+  }
+
+  // 売れた日一覧（数量欄のmax）も残り申請可能数に合わせて更新する
+  renderPortalItemEntries(idx);
+}
+
 function renderPortalItems(items) {
   window._portalItems = items;
   // 検索で絞り込む・絞り込みを解除するたびに商品カードのDOMを作り直す（renderPortalItemsList）ため、
@@ -14764,7 +14844,7 @@ function renderPortalItemsList(pairs) {
     // 精算・返却の連絡がある型番のカードだけ、上の確認中欄（黄色）とは別の色（薄ピンク）で
     // 縁取り・背景を付け、見出し行の数量表示の横にも申請中の合計数量を添える。
     const pendingForModel = (window._portalPendingRequests || []).filter(r => (r.model || '') === (it.model || ''));
-    const pendingQtyForModel = pendingForModel.reduce((s, r) => s + (r.qty || 0), 0);
+    const pendingQtyForModel = getPortalPendingQtyForModel(it.model);
     const hasPendingForModel = pendingForModel.length > 0;
     const cardStyle = hasPendingForModel
       ? 'border:1.2px solid #e5a9c0;border-radius:12px;margin-bottom:10px;background:#fdeef4;overflow:hidden'
@@ -14772,6 +14852,15 @@ function renderPortalItemsList(pairs) {
     const qtyDisp = hasPendingForModel
       ? `${it.qty}個<span style="color:#c23670;font-weight:700">（申請中${pendingQtyForModel}個）</span>`
       : `${it.qty}個`;
+    // 要望：「取引先の方が、実際に預けている数より多い数を申請できるようになっている。預けて
+    // いる数より多くの数を申請できないようにしてほしい」への対応。店舗がまだ確認していない
+    // （精算・返却どちらでも）申請中の数量を差し引いた「これ以上申請できる残りの数量」
+    // （getPortalAvailableQty）を、以降の入力欄の上限・初期値として使う。
+    const availableQty = getPortalAvailableQty(it);
+    const noneAvailable = availableQty <= 0;
+    // 常にDOMには存在させ、display切り替えだけで出し分ける（refreshPortalItemAvailabilityが
+    // 一覧全体を再描画せずにこの部分だけをその場で更新できるようにするため）
+    const noneAvailableNoticeHtml = `<div id="portal-none-available-${idx}" style="font-size:12px;color:#8a6d1a;background:#fff8e1;border:1px solid #e0c56a;border-radius:8px;padding:8px 10px;margin-bottom:10px;${noneAvailable ? '' : 'display:none'}">預けている${it.qty}個すべてについて、すでに精算・返却のご連絡を送信済みで店舗の確認待ちです。この商品について新たに申請できる数はありません。店舗の確認をお待ちください。</div>`;
     // 要望：「常に全て表示させていなくても対象の型番のものをタップして開く形の方が全体が
     // 見やすくなるのではないか」への対応。型番・数量・備考だけの1行（見出し）をタップすると、
     // 数量・売値・備考の入力欄と返却ボタンが開く。既存の「過去の履歴」等と同じ
@@ -14788,13 +14877,14 @@ function renderPortalItemsList(pairs) {
       <div class="accordion-body" id="acc-body-portal-item-${idx}" style="padding:0 14px 14px">
         <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px">${fmtDateJP(it.date)}／預けている数量：${it.qty}個${it.memo ? '／' + escapeHtmlMain(it.memo) : ''}</div>
         ${pendingBadge ? `<div style="margin-bottom:8px">${pendingBadge}</div>` : ''}
+        ${noneAvailableNoticeHtml}
         <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">精算（売れた）を報告</div>
         <!-- 要望：「取引先の方が売れたその日に連絡できない時がある。1日でまとめて売れたものの
              入力をしたい」「同じ商品でも売れた日によって金額が異なる場合がある」への対応。
              1つの型番につき、売れた日・数量・売値の組を複数追加できるようにする
              （addPortalSettleEntry／removePortalSettleEntry／updatePortalEntryField）。 -->
-        <div id="portal-entries-${idx}">${renderPortalEntryRowsHtml(idx, it)}</div>
-        <button type="button" onclick="addPortalSettleEntry(${idx})" style="background:none;border:none;color:var(--gold-dark);font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;padding:6px 0">＋ 別の日の分を追加</button>
+        <div id="portal-entries-${idx}" style="${noneAvailable ? 'opacity:0.5;pointer-events:none' : ''}">${renderPortalEntryRowsHtml(idx, it)}</div>
+        <button type="button" id="portal-add-entry-btn-${idx}" onclick="addPortalSettleEntry(${idx})" ${noneAvailable ? 'disabled' : ''} style="background:none;border:none;color:var(--gold-dark);font-size:12px;font-weight:700;text-decoration:underline;cursor:${noneAvailable ? 'default' : 'pointer'};padding:6px 0;opacity:${noneAvailable ? '0.5' : '1'}">＋ 別の日の分を追加</button>
         <div id="portal-total-${idx}" style="display:none;font-size:12.5px;font-weight:700;color:var(--text);margin-top:2px;text-align:right"></div>
         <div id="portal-entries-over-warning-${idx}" style="display:none;font-size:11px;color:#b33;margin-top:4px;text-align:right"></div>
         <div style="margin-top:8px">
@@ -14803,11 +14893,11 @@ function renderPortalItemsList(pairs) {
         </div>
         <div style="margin-top:14px;padding-top:10px;border-top:1px dashed var(--border);display:flex;align-items:center;gap:8px">
           <label for="portal-return-qty-${idx}" style="font-size:12px;color:var(--text-muted)">返却する数量</label>
-          <input type="number" id="portal-return-qty-${idx}" min="1" max="${it.qty}" value="${it.qty}" style="width:64px;padding:6px 8px;border:1.2px solid var(--border);border-radius:8px;font-size:13px">
-          <span style="font-size:12px;color:var(--text-muted)">個（${it.qty}個のうち一部だけの場合は数を変えてください）</span>
+          <input type="number" id="portal-return-qty-${idx}" min="1" max="${availableQty}" value="${Math.max(1, availableQty)}" ${noneAvailable ? 'disabled' : ''} style="width:64px;padding:6px 8px;border:1.2px solid var(--border);border-radius:8px;font-size:13px">
+          <span style="font-size:12px;color:var(--text-muted)">個（<span id="portal-return-hint-${idx}">${hasPendingForModel ? `申請中を除くと${availableQty}個まで` : `${it.qty}個のうち一部だけの場合は数を変えてください`}</span>）</span>
         </div>
         <div style="margin-top:8px">
-          <button onclick="sendPortalRequest(${idx}, 'return')" style="width:100%;padding:9px 0;border-radius:8px;border:1.2px solid var(--border);background:var(--white);color:var(--text);font-size:13px;font-weight:700;cursor:pointer">返却します</button>
+          <button id="portal-return-btn-${idx}" onclick="sendPortalRequest(${idx}, 'return')" ${noneAvailable ? 'disabled' : ''} style="width:100%;padding:9px 0;border-radius:8px;border:1.2px solid var(--border);background:${noneAvailable ? 'var(--surface)' : 'var(--white)'};color:${noneAvailable ? 'var(--text-muted)' : 'var(--text)'};font-size:13px;font-weight:700;cursor:${noneAvailable ? 'default' : 'pointer'}">返却します</button>
         </div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:6px">精算する場合は、上の日付・数量・売値を入力すると画面上部の「まとめて精算」ボタンから送信できます</div>
         <div id="portal-item-status-${idx}" style="display:none;margin-top:8px;font-size:12px"></div>
@@ -14820,11 +14910,15 @@ function renderPortalItemsList(pairs) {
 
 // idxの商品に対して、これまでに入力済みの（売れた日・数量・売値）の組を返す。まだ1件も
 // 無ければ、これまでの挙動（対象の数量＝預けている全数量、売値は空欄）に合わせた1件を初期値にする。
+// 要望「預けている数より多い数を申請できないようにしてほしい」への対応で、初期値の数量は
+// 預けている全数量ではなく、店舗未確認の申請中の分を差し引いた「残りの申請可能数」にする
+// （getPortalAvailableQty）。すでに全数申請中で残りが無い場合は空欄にしておく。
 function getPortalEntries(idx, it) {
   if (!window._portalEnteredValues) window._portalEnteredValues = {};
   const rec = window._portalEnteredValues[idx] || (window._portalEnteredValues[idx] = {});
   if (!rec.entries || !rec.entries.length) {
-    rec.entries = [{ date: todayStr(), qty: (it && it.qty != null) ? String(it.qty) : '', price: '' }];
+    const available = getPortalAvailableQty(it);
+    rec.entries = [{ date: todayStr(), qty: available > 0 ? String(available) : '', price: '' }];
   }
   return rec.entries;
 }
@@ -14839,7 +14933,7 @@ function renderPortalEntryRowsHtml(idx, it) {
       </div>
       <div>
         <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">数量</div>
-        <input type="number" id="portal-entry-qty-${idx}-${entryIdx}" min="1" max="${it.qty}" value="${entry.qty != null ? entry.qty : ''}" oninput="updatePortalEntryField(${idx},${entryIdx},'qty',this.value)" style="width:56px;padding:6px 8px;border:1.2px solid var(--border);border-radius:8px;font-size:13px">
+        <input type="number" id="portal-entry-qty-${idx}-${entryIdx}" min="1" max="${getPortalAvailableQty(it)}" value="${entry.qty != null ? entry.qty : ''}" oninput="updatePortalEntryField(${idx},${entryIdx},'qty',this.value)" style="width:56px;padding:6px 8px;border:1.2px solid var(--border);border-radius:8px;font-size:13px">
       </div>
       <div>
         <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">売値（円）</div>
@@ -14919,8 +15013,14 @@ function updatePortalItemTotal(idx) {
     }
   }
   if (warnEl) {
-    if (it && sumQty > it.qty) {
-      warnEl.textContent = `※合計${sumQty}個が、預けている${it.qty}個を超えています。数量をご確認ください（このままでは精算に含まれません）`;
+    // 要望「預けている数より多い数を申請できないようにしてほしい」への対応。すでに店舗未確認の
+    // 精算・返却リクエストがある分は差し引いた「残りの申請可能数」（getPortalAvailableQty）を
+    // 超えていないかで判定する（it.qtyそのものではない）
+    const available = getPortalAvailableQty(it);
+    if (it && sumQty > available) {
+      warnEl.textContent = available < it.qty
+        ? `※合計${sumQty}個が、申請できる残り${available}個（預けている${it.qty}個のうち、確認待ちの申請中分を除いた数）を超えています。数量をご確認ください（このままでは精算に含まれません）`
+        : `※合計${sumQty}個が、預けている${it.qty}個を超えています。数量をご確認ください（このままでは精算に含まれません）`;
       warnEl.style.display = 'block';
     } else {
       warnEl.style.display = 'none';
@@ -14961,7 +15061,9 @@ function getPortalSettleCandidates() {
       validEntries.push({ qty, price, date, entryIdx });
     });
     if (!validEntries.length) return;
-    if (sumQty > it.qty) return;
+    // 要望「預けている数より多い数を申請できないようにしてほしい」への対応。すでに店舗未確認の
+    // 精算・返却リクエストがある分を差し引いた「残りの申請可能数」を超える場合は対象から外す
+    if (sumQty > getPortalAvailableQty(it)) return;
     validEntries.forEach(entry => {
       candidates.push({ idx, it, qty: entry.qty, price: entry.price, date: entry.date, memo, entryIdx: entry.entryIdx });
     });
@@ -15060,7 +15162,19 @@ async function sendPortalRequest(idx, type) {
   const qtyInput = document.getElementById('portal-return-qty-' + idx);
   const qty = qtyInput ? parseInt(qtyInput.value, 10) : it.qty;
   if (!qty || qty < 1) { setStatus('数量を正しく入力してください', true); return; }
-  if (qty > it.qty) { setStatus(`預けている数量（${it.qty}個）を超えています`, true); return; }
+  // 要望「取引先の方が、実際に預けている数より多い数を申請できるようになっている。預けている
+  // 数より多くの数を申請できないようにしてほしい。または、預けている数より多い数を申請した
+  // 時にエラーが出るようにしてほしい」への対応。ボタン自体はgetPortalAvailableQtyが0の場合に
+  // renderPortalItemsList側ですでに押せなくしてあるが、念のためここでも二重にチェックする
+  // （型番検索で絞り込まれる前に開いていた古い画面のまま送信しようとした場合などに備える）。
+  // すでに店舗未確認の精算・返却リクエストがある分を差し引いた「残りの申請可能数」が上限。
+  const availableQty = getPortalAvailableQty(it);
+  if (qty > availableQty) {
+    setStatus(availableQty < it.qty
+      ? `申請できる残り数量（${availableQty}個）を超えています（預けている${it.qty}個のうち、確認待ちの申請中分を除いた数です）`
+      : `預けている数量（${it.qty}個）を超えています`, true);
+    return;
+  }
   // ボタンの誤タップでそのまま送信されてしまわないよう、送信前に必ず確認を挟む
   const ok = await showConfirm(`${it.model || '商品'}を${qty}個、返却します。よろしいですか？`);
   if (!ok) return;
@@ -15072,6 +15186,9 @@ async function sendPortalRequest(idx, type) {
     // 再同期を待たず、送信できた時点でその場で「確認中」欄に反映し、取り消せるようにする
     window._portalPendingRequests = (window._portalPendingRequests || []).concat(created);
     renderPortalPendingRequests(window._portalPendingRequests);
+    // 要望「預けている数より多くの数を申請できないようにしてほしい」への対応。送信できた分だけ
+    // 残り申請可能数が減るので、この商品のカードの入力欄・ボタンの有効／無効をその場で更新する
+    refreshPortalItemAvailability(idx);
     setStatus(`✓ ${qty}個の返却のご連絡を送信しました。店舗からの確認をお待ちください。`, false);
   } catch (e) {
     console.error('sendPortalRequest failed:', e);
@@ -15248,6 +15365,16 @@ async function submitBatchSettle() {
     itemStatusEl.style.color = itemHadFailure[idx] ? '#b33' : '#2f6b2f';
     itemStatusEl.style.display = 'block';
   });
+  // 要望「取引先が自分で取消せるようにしてほしい」への対応。店舗側の確認・スナップショット
+  // 再同期を待たず、送信できた時点でその場で「確認中」欄に反映し、取り消せるようにする。
+  // ※この更新は、直後の入力欄リセット処理（残り申請可能数の再計算）より先に行う必要がある。
+  // 先にリセットしてしまうと、今まさに送信した分がまだ_portalPendingRequestsに反映されて
+  // いない状態で残り申請可能数を計算してしまい、預けている数そのものが上限として使われて
+  // しまう（＝送信直後にまた預けている数いっぱいまで申請できてしまう不具合）。
+  if (newlyCreated.length) {
+    window._portalPendingRequests = (window._portalPendingRequests || []).concat(newlyCreated);
+    renderPortalPendingRequests(window._portalPendingRequests);
+  }
   // 送信に成功した組だけを入力欄から取り除く（失敗した組は、再送信できるようそのまま残す）。
   // 元の配列の後ろの位置から削除することで、他の組のentryIdxがずれないようにする。
   Object.keys(succeededEntriesByIdx).forEach(idxStr => {
@@ -15256,15 +15383,15 @@ async function submitBatchSettle() {
     const entries = getPortalEntries(idx, it);
     const doneEntryIdxs = succeededEntriesByIdx[idxStr].slice().sort((a, b) => b - a);
     doneEntryIdxs.forEach(entryIdx => { entries.splice(entryIdx, 1); });
-    if (!entries.length) entries.push({ date: todayStr(), qty: (it && it.qty != null) ? String(it.qty) : '', price: '' });
-    renderPortalItemEntries(idx);
+    if (!entries.length) {
+      const available = getPortalAvailableQty(it);
+      entries.push({ date: todayStr(), qty: available > 0 ? String(available) : '', price: '' });
+    }
+    // 要望「預けている数より多くの数を申請できないようにしてほしい」への対応。送信できた分
+    // だけ残り申請可能数が減るので、この商品のカードの入力欄・ボタンの有効／無効もその場で
+    // 更新する（renderPortalItemEntriesの呼び出しも兼ねる）
+    refreshPortalItemAvailability(idx);
   });
-  // 要望「取引先が自分で取消せるようにしてほしい」への対応。店舗側の確認・スナップショット
-  // 再同期を待たず、送信できた時点でその場で「確認中」欄に反映し、取り消せるようにする
-  if (newlyCreated.length) {
-    window._portalPendingRequests = (window._portalPendingRequests || []).concat(newlyCreated);
-    renderPortalPendingRequests(window._portalPendingRequests);
-  }
   if (btn) btn.disabled = false;
   if (succeeded === candidates.length) {
     setBatchStatus(`✓ ${succeeded}件／合計¥${grandTotal.toLocaleString('ja-JP')} の精算のご連絡を送信しました。店舗からの確認をお待ちください。`, false);
