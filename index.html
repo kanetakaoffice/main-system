@@ -975,7 +975,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         </div>
         <div class="field-divider"></div>
         <div class="field" style="padding-top:16px">
-          <div class="field-label">商品名 <span class="req">*</span></div>
+          <div class="field-label">商品名</div>
           <input type="text" id="inv-name" placeholder="商品名を入力">
         </div>
         <div class="field-divider"></div>
@@ -995,11 +995,9 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div class="field-divider"></div>
         <div class="field" style="padding-top:16px">
           <div class="field-label">JANコード</div>
-          <div style="display:flex;gap:8px;margin-bottom:6px">
-            <button class="scan-btn" onclick="scanFromPhoto('inv-jan')" style="flex:1">📸 写真で読み取る</button>
-            <button class="scan-btn" onclick="startScan('inv-jan')" style="flex:1;background:var(--surface);color:var(--text);border:1.5px solid var(--border)">📷 連続スキャン</button>
+          <div style="margin-bottom:6px">
+            <button class="scan-btn" onclick="startScan('inv-jan')" style="width:100%">📷 スキャンする</button>
           </div>
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">連続スキャンで読み取れない場合は「写真で読み取る」をお試しください（ピントが合った状態で撮影されるため読み取りやすくなります）</div>
           <div style="position:relative">
             <input type="text" id="inv-jan" placeholder="または手入力" oninput="lookupJan(); toggleInvJanClearBtn();" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupJanImmediate();}" style="padding-right:34px">
             <button type="button" id="inv-jan-clear" onclick="clearInvJan()" aria-label="JANコードをクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
@@ -1094,11 +1092,9 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div class="card">
         <div class="card-title">商品スキャン</div>
         <div class="field">
-          <div style="display:flex;gap:8px;margin-bottom:6px">
-            <button class="scan-btn" onclick="scanFromPhoto('move-jan')" style="flex:1">📸 写真で読み取る</button>
-            <button class="scan-btn" onclick="startScan('move-jan')" style="flex:1;background:var(--surface);color:var(--text);border:1.5px solid var(--border)">📷 連続スキャン</button>
+          <div style="margin-bottom:6px">
+            <button class="scan-btn" onclick="startScan('move-jan')" style="width:100%">📷 スキャンする</button>
           </div>
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">連続スキャンで読み取れない場合は「写真で読み取る」をお試しください（ピントが合った状態で撮影されるため読み取りやすくなります）</div>
           <input type="text" id="move-jan" placeholder="または手入力" oninput="lookupProduct()">
           <div id="move-jan-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
           <div id="move-product-info" style="margin-top:12px;padding:12px;background:var(--gold-bg);border-radius:8px;display:none">
@@ -1307,9 +1303,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div class="card-title">出荷リストに追加</div>
       <div class="field">
         <div class="field-label">JANコード</div>
-        <div style="display:flex;gap:8px;margin-bottom:6px">
-          <button class="scan-btn" onclick="scanFromPhoto('pack-jan-sp')" style="flex:1">📸 写真で読み取る</button>
-          <button class="scan-btn" onclick="startScan('pack-jan-sp')" style="flex:1;background:var(--surface);color:var(--text);border:1.5px solid var(--border)">📷 連続スキャン</button>
+        <div style="margin-bottom:6px">
+          <button class="scan-btn" onclick="startScan('pack-jan-sp')" style="width:100%">📷 スキャンする</button>
         </div>
         <input type="text" id="pack-jan-sp" placeholder="または手入力" oninput="lookupPackJan()">
         <div id="pack-jan-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
@@ -1483,9 +1478,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">スキャン・入力するたびに下の納品明細へ自動で追加されます（同じ商品は数量が増えます）</div>
       <div class="field">
         <div class="field-label">JANコード</div>
-        <div style="display:flex;gap:8px;margin-bottom:6px">
-          <button class="scan-btn" onclick="scanFromPhoto('wh-item-jan')" style="flex:1">📸 写真で読み取る</button>
-          <button class="scan-btn" onclick="startScan('wh-item-jan')" style="flex:1;background:var(--surface);color:var(--text);border:1.5px solid var(--border)">📷 連続スキャン</button>
+        <div style="margin-bottom:6px">
+          <button class="scan-btn" onclick="startScan('wh-item-jan')" style="width:100%">📷 スキャンする</button>
         </div>
         <input type="text" id="wh-item-jan" placeholder="または手入力" oninput="lookupWhItem()">
         <div id="wh-item-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
@@ -1626,9 +1620,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">スキャン・入力するたびに下のリストへ自動で追加されます（同じ商品は数量が増えます）</div>
       <div class="field">
         <div class="field-label">JANコード</div>
-        <div style="display:flex;gap:8px;margin-bottom:6px">
-          <button class="scan-btn" onclick="scanFromPhoto('wh-consign-jan')" style="flex:1">📸 写真で読み取る</button>
-          <button class="scan-btn" onclick="startScan('wh-consign-jan')" style="flex:1;background:var(--surface);color:var(--text);border:1.5px solid var(--border)">📷 連続スキャン</button>
+        <div style="margin-bottom:6px">
+          <button class="scan-btn" onclick="startScan('wh-consign-jan')" style="width:100%">📷 スキャンする</button>
         </div>
         <input type="text" id="wh-consign-jan" placeholder="または手入力" oninput="lookupWhConsignItem()">
         <div id="wh-consign-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
@@ -1867,9 +1860,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div class="field-divider" style="margin:16px 0"></div>
     <div class="card-title" style="font-size:13px;margin-bottom:8px">同じ預け先に他の商品も追加</div>
     <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">スキャン・入力するたびに下のリストへ追加されます</div>
-    <div style="display:flex;gap:8px;margin-bottom:6px">
-      <button class="scan-btn" onclick="scanFromPhoto('wh-consign-edit-add-jan')" style="flex:1">📸 写真で読み取る</button>
-      <button class="scan-btn" onclick="startScan('wh-consign-edit-add-jan')" style="flex:1;background:var(--surface);color:var(--text);border:1.5px solid var(--border)">📷 連続スキャン</button>
+    <div style="margin-bottom:6px">
+      <button class="scan-btn" onclick="startScan('wh-consign-edit-add-jan')" style="width:100%">📷 スキャンする</button>
     </div>
     <input type="text" id="wh-consign-edit-add-jan" placeholder="または手入力" oninput="lookupConsignEditAddItem()">
     <div id="wh-consign-edit-add-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
@@ -2009,7 +2001,6 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   <button id="scan-torch-btn" onclick="toggleScanTorch()" style="display:none;position:absolute;top:calc(env(safe-area-inset-top,0px) + 20px);right:20px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.4);color:#fff;font-size:19px;align-items:center;justify-content:center;cursor:pointer;z-index:10;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)">💡</button>
   <button class="scan-close" onclick="stopScan()">キャンセル</button>
 </div>
-<input type="file" id="jan-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handleScanPhotoFile(event)">
 
 </div>
 
@@ -7481,17 +7472,15 @@ function guessMaker(name) {
 // そのまま送り込む」タイプの外付けスキャナー（キーボードウェッジ方式。一般的な有線・
 // Bluetoothバーコードスキャナーのほとんどがこの方式で、OS側で通常のキーボードとして
 // ペアリングするだけで使える）で使うと、1桁ずつ猛スピードで入力されるため、oninputが
-// 桁が確定するたびに連続で発火し、そのたびに価格.com検索を投げてしまっていた
-// （無駄な通信が飛ぶうえ、途中経過の検索結果が後から遅れて届いて最終結果を上書きして
-// しまう可能性もあった）。型番欄（lookupModel／runModelPriceSearch）と同じ考え方で、
-// 入力が一段落してから検索するようデバウンスし、検索開始時点で値が変わっていないかも
-// 確認するようにした（手入力・カメラスキャン・買取スキャナーのいずれでも同じ挙動になる）。
-let _janLookupTimer = null;
+// 桁が確定するたびに連続で発火し、そのたびに他社買取価格の参考照会を投げてしまっていた
+// （無駄な通信が飛ぶうえ、途中経過の結果が後から遅れて届いて最終結果を上書きして
+// しまう可能性もあった）ため、入力が一段落してから照会するようデバウンスし、照会開始
+// 時点で値が変わっていないかも確認するようにした（手入力・カメラスキャン・買取スキャナー
+// のいずれでも同じ挙動になる）。
 let _janBuybackLookupTimer = null;
 function lookupJan() {
   const jan = document.getElementById('inv-jan').value.trim();
   const status = document.getElementById('jan-lookup-status');
-  clearTimeout(_janLookupTimer);
   clearTimeout(_janBuybackLookupTimer);
   if (!jan) { status.textContent = ''; clearInvAddExistingMode(); renderBuybackJanRef(null); return; }
 
@@ -7502,9 +7491,7 @@ function lookupJan() {
     status.style.color = 'var(--success)';
   } else {
     clearInvAddExistingMode();
-    status.innerHTML = '入力が終わると自動で商品名・型番・メーカーを検索します…';
-    status.style.color = 'var(--text-muted)';
-    _janLookupTimer = setTimeout(() => { runJanPriceSearch(jan); }, 600);
+    status.textContent = '';
   }
   // 要望：「買取スキャナーのCSVを取り込んで、他社の買取価格を参考にできるようにしてほしい」
   // への対応。登録済み・未登録のどちらの場合でも、このJANコードに他社買取価格の参考データが
@@ -7514,92 +7501,14 @@ function lookupJan() {
 }
 
 // 買取スキャナーなど、バーコードを読み取ったあとに確定のEnterキーを送ってくるタイプの
-// キーボードウェッジ機器向け：Enterが来た時点で600msのデバウンスを待たず即座に検索を始める
-// （lookupJan()のoninputで既にローカルの登録済み商品との一致確認は済んでいるはずのため、
-// ここでは価格.com検索・他社買取価格照会の即時実行のみを担当する）
+// キーボードウェッジ機器向け：Enterが来た時点で600msのデバウンスを待たず即座に他社買取
+// 価格の参考照会を始める（lookupJan()のoninputで既にローカルの登録済み商品との一致確認は
+// 済んでいるはずのため、ここでは買取価格の参考照会の即時実行のみを担当する）
 function lookupJanImmediate() {
-  clearTimeout(_janLookupTimer);
   clearTimeout(_janBuybackLookupTimer);
   const jan = document.getElementById('inv-jan').value.trim();
   if (!jan) return;
-  if (!document.getElementById('inv-existing-key').value) runJanPriceSearch(jan);
   lookupBuybackRefForJanField(jan);
-}
-
-async function runJanPriceSearch(jan) {
-  // 検索を開始しようとした時点からJAN欄の内容が変わっていれば（入力継続中など）何もしない
-  const current = document.getElementById('inv-jan').value.trim();
-  if (current !== jan || document.getElementById('inv-existing-key').value) return;
-  const status = document.getElementById('jan-lookup-status');
-  status.innerHTML = '🔍 価格.comで商品情報を検索中...';
-  status.style.color = 'var(--text-muted)';
-
-  try {
-    const query = encodeURIComponent(jan + ' 価格.com');
-    const url = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${query}&num=1`;
-    const r = await fetch(url);
-    const d = await r.json();
-
-    // 検索を待っている間にJAN欄の内容が変わっていた場合（さらに続けてスキャン・入力された場合など）は
-    // 古い結果で画面を上書きしないよう、ここでも改めて確認する
-    if (document.getElementById('inv-jan').value.trim() !== jan) return;
-
-    // 検索APIそのものがエラーを返した場合（キーの利用制限・クォータ超過など）は、
-    // 「見つからなかった」と区別してその旨を表示する（原因の切り分けをしやすくするため）
-    if (!r.ok || d.error) {
-      console.error('価格.com検索APIエラー:', r.status, d.error);
-      status.innerHTML = `商品情報の検索でエラーが発生しました${formatSearchApiError(r, d)}（検索機能自体が一時的に利用できない可能性があります）。お手数ですが商品名・型番・メーカーは手入力をお願いします。<br>${kakakuLinkHtml(jan, null, '価格.comで手動検索する')}`;
-      status.style.color = 'var(--danger)';
-      return;
-    }
-
-    if (d.items && d.items.length > 0) {
-      const item = d.items[0];
-      const title = item.title || '';
-      const snippet = item.snippet || '';
-
-      let productName = title
-        .replace(/\s*[-|｜]\s*価格\.com.*$/gi, '')
-        .replace(/の\s*価格比較.*$/gi, '')
-        .replace(/の最安値.*$/gi, '')
-        .replace(/\s*[-|｜]\s*$/, '')
-        .trim();
-
-      if (productName) {
-        document.getElementById('inv-name').value = productName;
-
-        // 型番・メーカーも推定してみる（タイトル・スニペットから抽出。あくまで推定のため要確認）
-        const guessedModel = guessModelNumber(title) || guessModelNumber(snippet);
-        const modelField = document.getElementById('inv-model');
-        const guessedMaker = guessMaker(productName);
-        const makerField = document.getElementById('inv-maker');
-        const notes = [];
-        if (guessedModel && modelField && !modelField.value) {
-          modelField.value = guessedModel;
-          notes.push('型番');
-        }
-        if (guessedMaker && makerField && !makerField.value) {
-          makerField.value = guessedMaker;
-          notes.push('メーカー');
-        }
-        const guessNote = notes.length ? `（${notes.join('・')}は自動推定です。必ずご確認ください）` : '';
-
-        status.innerHTML = `✅ 商品名を取得しました！確認・修正してから登録してください。${guessNote}<br>${kakakuLinkHtml(jan, item, '価格.comで詳細を確認')}`;
-        status.style.color = 'var(--success)';
-      } else {
-        status.innerHTML = `商品が見つかりませんでした。${kakakuLinkHtml(jan, null, '価格.comで検索する')}`;
-        status.style.color = 'var(--text-muted)';
-      }
-    } else {
-      status.innerHTML = `新規商品です。${kakakuLinkHtml(jan, null, '価格.comで検索する')}`;
-      status.style.color = 'var(--text-muted)';
-    }
-  } catch(e) {
-    console.error('価格.com検索リクエスト失敗:', e);
-    if (document.getElementById('inv-jan').value.trim() !== jan) return;
-    status.innerHTML = `商品情報の検索に失敗しました（通信エラーの可能性があります）。お手数ですが商品名・型番・メーカーは手入力をお願いします。<br>${kakakuLinkHtml(jan, null, '価格.comで手動検索する')}`;
-    status.style.color = 'var(--danger)';
-  }
 }
 
 // ============================================================
@@ -7963,23 +7872,16 @@ async function renderBuybackSearchResults() {
   resultsEl.innerHTML = shown.map(([jan, rec]) => formatBuybackRecordHtml(jan, rec)).join('');
 }
 
-// タイトル・スニペットの文字列からJANコード（8桁または13桁の数字の並び）らしきものを推定する。
-// 型番のような英数字混在のハイフン区切り文字列と混同しないよう、独立した数字の並びのみを対象にする（あくまで推定）
-function guessJanCode(text) {
-  if (!text) return '';
-  const matches = text.match(/\b\d{13}\b|\b\d{8}\b/g) || [];
-  return matches.length ? matches[0] : '';
-}
-
-// 型番欄に入力があるたびに呼ばれる。まず（ネットワーク不要な）既存商品との一致を即座に確認し、
-// 一致すればJAN入力時と同じ「入荷（在庫追加）」モードに切り替える。一致しない場合は、入力が
-// 一段落してから（キー入力のたびに検索しないよう少し待って）価格.comを型番で検索し、
-// メーカー・商品名・JANコードを推定して自動入力する（すべてあくまで推定のため要確認）。
-let _modelLookupTimer = null;
-async function lookupModel() {
+// 型番欄に入力があるたびに呼ばれる。（ネットワーク不要な）既存商品との一致を即座に確認し、
+// 一致すればJAN入力時と同じ「入荷（在庫追加）」モードに切り替える。
+//
+// 要望：「商品登録画面の価格.com自動検索機能（JAN・型番から商品名・型番・メーカー・
+// JANコードを推測する機能）は、買取スキャナー連携でJAN・型番が分かるようになったため
+// 不要」への対応。以前ここにあった、一致しない場合に価格.comを型番で検索してメーカー・
+// 商品名・JANコードを推測する処理（runModelPriceSearch）は削除した。
+function lookupModel() {
   const model = document.getElementById('inv-model').value.trim();
   const status = document.getElementById('model-lookup-status');
-  clearTimeout(_modelLookupTimer);
   // JAN一致ですでに入荷モードになっている場合、型番欄は読み取り専用のため通常ここには来ないが、念のため
   if (document.getElementById('inv-existing-key').value) return;
   if (!model) { if (status) { status.textContent = ''; status.style.color = 'var(--text-muted)'; } return; }
@@ -7998,91 +7900,12 @@ async function lookupModel() {
     return;
   }
 
-  if (status) { status.innerHTML = '入力が終わると自動でメーカー・商品名・JANコードを検索します…'; status.style.color = 'var(--text-muted)'; }
-  _modelLookupTimer = setTimeout(() => { runModelPriceSearch(model); }, 600);
-}
-
-async function runModelPriceSearch(model) {
-  // 検索を開始しようとした時点から型番欄の内容が変わっていれば（入力継続中など）何もしない
-  const current = document.getElementById('inv-model').value.trim();
-  if (current !== model || document.getElementById('inv-existing-key').value) return;
-  const status = document.getElementById('model-lookup-status');
-  if (status) { status.innerHTML = '🔍 価格.comで商品情報を検索中...'; status.style.color = 'var(--text-muted)'; }
-
-  try {
-    const query = encodeURIComponent(model + ' 価格.com');
-    const url = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${query}&num=1`;
-    const r = await fetch(url);
-    const d = await r.json();
-
-    if (!r.ok || d.error) {
-      console.error('価格.com検索APIエラー（型番検索）:', r.status, d.error);
-      if (status) {
-        status.innerHTML = `商品情報の検索でエラーが発生しました${formatSearchApiError(r, d)}（検索機能自体が一時的に利用できない可能性があります）。お手数ですが商品名・メーカー・JANコードは手入力をお願いします。<br>${kakakuLinkHtml(model, null, '価格.comで手動検索する')}`;
-        status.style.color = 'var(--danger)';
-      }
-      return;
-    }
-
-    if (d.items && d.items.length > 0) {
-      const item = d.items[0];
-      const title = item.title || '';
-      const snippet = item.snippet || '';
-
-      let productName = title
-        .replace(/\s*[-|｜]\s*価格\.com.*$/gi, '')
-        .replace(/の\s*価格比較.*$/gi, '')
-        .replace(/の最安値.*$/gi, '')
-        .replace(/\s*[-|｜]\s*$/, '')
-        .trim();
-
-      const notes = [];
-      const nameField = document.getElementById('inv-name');
-      if (productName && nameField && !nameField.value) {
-        nameField.value = productName;
-        notes.push('商品名');
-      }
-      const guessedMaker = guessMaker(productName || title);
-      const makerField = document.getElementById('inv-maker');
-      if (guessedMaker && makerField && !makerField.value) {
-        makerField.value = guessedMaker;
-        renderMakerSelectUI('inv');
-        notes.push('メーカー');
-      }
-      const guessedJan = guessJanCode(title + ' ' + snippet);
-      const janField = document.getElementById('inv-jan');
-      if (guessedJan && janField && !janField.value) {
-        janField.value = guessedJan;
-        toggleInvJanClearBtn();
-        notes.push('JANコード');
-      }
-
-      if (status) {
-        if (notes.length) {
-          status.innerHTML = `✅ 商品情報を取得しました！確認・修正してから登録してください。（${notes.join('・')}は自動推定です。必ずご確認ください）<br>${kakakuLinkHtml(model, item, '価格.comで詳細を確認')}`;
-          status.style.color = 'var(--success)';
-        } else {
-          status.innerHTML = `商品が見つかりましたが、自動入力できる項目はありませんでした。お手数ですが手入力をお願いします。<br>${kakakuLinkHtml(model, item, '価格.comで詳細を確認')}`;
-          status.style.color = 'var(--text-muted)';
-        }
-      }
-    } else if (status) {
-      status.innerHTML = `新規商品のようです。お手数ですがメーカー・商品名・JANコードは手入力をお願いします。<br>${kakakuLinkHtml(model, null, '価格.comで検索する')}`;
-      status.style.color = 'var(--text-muted)';
-    }
-  } catch (e) {
-    console.error('型番からの商品情報検索に失敗:', e);
-    if (status) {
-      status.innerHTML = `商品情報の検索に失敗しました（通信エラーの可能性があります）。お手数ですがメーカー・商品名・JANコードは手入力をお願いします。<br>${kakakuLinkHtml(model, null, '価格.comで手動検索する')}`;
-      status.style.color = 'var(--danger)';
-    }
-  }
+  if (status) { status.textContent = ''; }
 }
 
 async function submitProduct() {
   const name  = document.getElementById('inv-name').value.trim();
   const stock = document.getElementById('inv-stock').value;
-  if (!name) { showAlert('inv-alert-box','inv-alert-msg','商品名は必須です','error'); return; }
 
   const existingKey = document.getElementById('inv-existing-key').value;
 
@@ -9553,100 +9376,6 @@ function handleScanResult(text) {
   if (scanTarget === 'wh-consign-edit-add-jan') lookupConsignEditAddItem();
 }
 
-// ── 写真から読み取る（iPhoneでの連続スキャンがうまく動かない場合の代替手段）──
-// getUserMediaでのライブプレビューはiOS Safariでピントが合わないまま動き続けることが多く、
-// 連続スキャンが反応しないという報告が多いため、その場合はネイティブのカメラアプリで
-// 静止画を撮影してもらい、その1枚をピンポイントで解析する方式を用意する。
-// ネイティブカメラアプリはタップでピント合わせができるため、こちらの方が読み取り成功率が高い。
-function scanFromPhoto(targetId) {
-  scanTarget = targetId;
-  const input = document.getElementById('jan-photo-input');
-  if (!input) return;
-  input.value = '';
-  input.click();
-}
-
-async function handleScanPhotoFile(event) {
-  const file = event.target.files && event.target.files[0];
-  event.target.value = '';
-  if (!file) return;
-
-  showToast('画像を解析しています…');
-
-  try {
-    const text = await decodeBarcodeFromImageFile(file);
-    if (text) {
-      handleScanResult(text);
-      showToast('読み取りました');
-    } else {
-      showToast('バーコードを読み取れませんでした。ピントを合わせて、明るい場所で近づいて撮影し直してください');
-    }
-  } catch (e) {
-    console.error('写真からの読み取りエラー:', e);
-    showToast('バーコードを読み取れませんでした。ピントを合わせて、明るい場所で近づいて撮影し直してください');
-  }
-}
-
-// 1枚の画像ファイルからバーコードの文字列を検出する。
-// まずネイティブのBarcodeDetectorを試し、使えない・失敗した場合はZXingで再挑戦する。
-//
-// 要望：「バーコードが複数あると、JANコードではないバーコードを読み込んでしまう」への対応。
-// JANコードはEAN-13・EAN-8という規格に限られるため、検出対象の形式自体をこの2種類だけに
-// 絞り込み、商品パッケージ上にある物流用・社内管理用の別規格バーコード（CODE128・ITFなど）
-// が誤って検出されないようにする。さらに、検出結果がチェックデジットまで含めて本当に
-// 正しいJANコードかをisValidJanCode()で確認し、それ以外は「見つからなかった」ものとして扱う。
-async function decodeBarcodeFromImageFile(file) {
-  const formats = ['ean_13', 'ean_8'];
-
-  // 1. ネイティブのBarcodeDetector（対応端末のみ。静止画に対しては比較的安定して動く）
-  if ('BarcodeDetector' in window) {
-    try {
-      const bitmap = await createImageBitmap(file);
-      let detector;
-      try { detector = new BarcodeDetector({ formats }); } catch (e) { detector = new BarcodeDetector(); }
-      const codes = await detector.detect(bitmap);
-      const validCode = codes && codes.find(c => isValidJanCode(c.rawValue));
-      if (validCode) return validCode.rawValue;
-    } catch (e) {
-      console.error('BarcodeDetector（静止画）での読み取りに失敗:', e);
-    }
-  }
-
-  // 2. ZXingで再挑戦
-  const loaded = await ensureZXingLoaded();
-  if (!loaded) return null;
-
-  const dataUrl = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = e => resolve(e.target.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-
-  const hints = new Map();
-  const zxingFormats = [window.ZXing.BarcodeFormat.EAN_13, window.ZXing.BarcodeFormat.EAN_8];
-  hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, zxingFormats);
-  hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
-  const reader = new window.ZXing.BrowserMultiFormatReader(hints);
-
-  try {
-    if (typeof reader.decodeFromImageUrl === 'function') {
-      const result = await reader.decodeFromImageUrl(dataUrl);
-      return (result && isValidJanCode(result.getText())) ? result.getText() : null;
-    }
-    if (typeof reader.decodeFromImage === 'function') {
-      const img = new Image();
-      await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = dataUrl; });
-      const result = await reader.decodeFromImage(img);
-      return (result && isValidJanCode(result.getText())) ? result.getText() : null;
-    }
-  } catch (e) {
-    // NotFoundExceptionなど、その画像からは検出できなかった場合はnullを返す（呼び出し元でエラー表示）
-    return null;
-  }
-  return null;
-}
-
 let scanNativeTimeout = null;
 
 async function startScan(targetId) {
@@ -9734,7 +9463,7 @@ async function startZxingLiveScan(video) {
   if (!scanActive) return;
   const loaded = await ensureZXingLoaded();
   if (!loaded) {
-    showToast('スキャンライブラリの読み込みに失敗しました。「写真で読み取る」または手入力をお試しください');
+    showToast('スキャンライブラリの読み込みに失敗しました。手入力をお試しください');
     stopScan();
     return;
   }
@@ -9816,9 +9545,9 @@ async function startZxingLiveScan(video) {
     if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
       showToast('カメラへのアクセスが許可されていません。ブラウザの設定をご確認ください');
     } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
-      showToast('カメラが見つかりませんでした。「写真で読み取る」または手入力をお試しください');
+      showToast('カメラが見つかりませんでした。手入力をお試しください');
     } else {
-      showToast('カメラの起動に失敗しました。「写真で読み取る」または手入力をお試しください');
+      showToast('カメラの起動に失敗しました。手入力をお試しください');
     }
     stopScan();
   }
