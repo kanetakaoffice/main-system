@@ -83,6 +83,24 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
   .wh-desktop-layout > .wh-desktop-main { flex: 1 1 0; min-width: 0; }
   .wh-desktop-preview-col { display: block; flex: 0 0 380px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
 }
+/* 要望：「パソコンで発行済みの納品書一覧を画面いっぱいに開いた時に右側の余白が広い。
+   取引先名／日付の下にある請求書No.・合計数量・合計金額と、その下の請求書作成済みかの
+   欄を横に並べて表示してほしい（freeeの一覧のようなイメージ）。携帯は今のままでよい」への
+   対応。携帯幅では今まで通り縦に並んだまま（メタ情報は取引先名の下に、ステータスは
+   折り返して一番下に全幅で）にしておき、PC幅（860px以上）だけ、メタ情報・ステータスを
+   同じ行に横並びで表示するよう切り替える。JSの再描画をはさまずCSSのメディアクエリだけで
+   画面幅の変化に追従できるようにするため、renderWhDelivHistory側のHTML構造自体は変えず、
+   ここでのスタイル切り替えだけで対応している。 */
+.wh-deliv-row-grid { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 10px 0; cursor: pointer; }
+.wh-deliv-click-cell { flex: 1 1 auto; min-width: 0; }
+.wh-deliv-row-status-cell { order: 3; width: 100%; margin-top: 6px; padding-bottom: 10px; }
+@media (min-width: 860px) {
+  .wh-deliv-row-grid { flex-wrap: nowrap; align-items: center; }
+  .wh-deliv-click-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 20px; }
+  .wh-deliv-click-cell > .wh-deliv-row-meta { margin-top: 0 !important; white-space: nowrap; }
+  .wh-deliv-click-cell > .wh-deliv-row-matched { flex-basis: 100%; margin-top: 0 !important; }
+  .wh-deliv-row-status-cell { order: 0; width: auto; flex: 0 0 auto; margin-top: 0; padding-bottom: 0; }
+}
 .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(135deg, #b0b0b0, #a0a0a0); border-top: 2px solid #c8c8c8; display: flex; padding-bottom: env(safe-area-inset-bottom, 0); box-shadow: 0 -2px 12px rgba(0,0,0,0.12); }
 .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 8px 0 6px; background: none; border: none; cursor: pointer; color: #4a4a4a; font-size: 9px; font-weight: 500; -webkit-tap-highlight-color: transparent; }
 .nav-btn.active { color: #f0f0f0; }
@@ -5804,7 +5822,7 @@ function renderWhDelivHistory() {
 
   listEl.innerHTML = visibleSlips.map(s => {
     const matched = matchedItemsBySlip[s.slipId];
-    const matchedHtml = matched ? `<div style="margin-top:4px;font-size:11px;color:var(--gold-dark)">該当：${matched.map(it => `${escapeHtmlMain(it.model || it.productName || '')} ${it.qty}個`).join('／')}</div>` : '';
+    const matchedHtml = matched ? `<div class="wh-deliv-row-matched" style="margin-top:4px;font-size:11px;color:var(--gold-dark)">該当：${matched.map(it => `${escapeHtmlMain(it.model || it.productName || '')} ${it.qty}個`).join('／')}</div>` : '';
     const isOpen = _whDelivHistoryExpanded.has(s.slipId);
     const itemsHtml = s.items.map(it => `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
@@ -5813,12 +5831,13 @@ function renderWhDelivHistory() {
       </div>`).join('');
     return `
     <div style="border-bottom:1px solid var(--border);font-size:13px">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;padding:10px 0;cursor:pointer" onclick="toggleWhDelivHistoryRow('${s.slipId}')">
-        <div style="flex:1;min-width:0">
-          <div style="color:var(--text);font-weight:600">${s.client || ''}／${fmtDateJP(s.date)}${s.subject ? '／' + s.subject : ''}</div>
-          <div style="color:var(--text-muted);font-size:11px;margin-top:2px">${s.slipNo ? `No.${escapeHtmlMain(s.slipNo)}／` : ''}数量合計 ${s.itemQty}個／合計 ¥${s.total.toLocaleString('ja-JP')}</div>
+      <div class="wh-deliv-row-grid" onclick="toggleWhDelivHistoryRow('${s.slipId}')">
+        <div class="wh-deliv-click-cell">
+          <div class="wh-deliv-row-title" style="color:var(--text);font-weight:600">${s.client || ''}／${fmtDateJP(s.date)}${s.subject ? '／' + s.subject : ''}</div>
+          <div class="wh-deliv-row-meta" style="color:var(--text-muted);font-size:11px;margin-top:2px">${s.slipNo ? `No.${escapeHtmlMain(s.slipNo)}／` : ''}数量合計 ${s.itemQty}個／合計 ¥${s.total.toLocaleString('ja-JP')}</div>
           ${matchedHtml}
         </div>
+        <div class="wh-deliv-row-status-cell">${freeeInvoiceGroupSummaryHtml(s.slipId)}</div>
         <span class="accordion-arrow${isOpen ? ' open' : ''}" style="font-size:10px;color:var(--text-muted);flex-shrink:0;margin-top:3px">▼</span>
       </div>
       <div class="accordion-body${isOpen ? ' open' : ''}" style="padding:0 0 10px">
@@ -5827,7 +5846,6 @@ function renderWhDelivHistory() {
           <button type="button" onclick="event.stopPropagation();showDeliverySlipPreview('${s.slipId}')" style="padding:6px 12px;background:var(--surface);border:1px solid var(--border);border-radius:20px;font-size:11.5px;color:var(--text);cursor:pointer">🔍 詳しく見る（印刷・編集・取消）</button>
         </div>
       </div>
-      <div style="margin-top:6px;padding-bottom:10px">${freeeInvoiceGroupSummaryHtml(s.slipId)}</div>
     </div>`;
   }).join('');
 
