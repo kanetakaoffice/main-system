@@ -14531,6 +14531,13 @@ function buildPortalQtyDispHtml(it, availableQty, pendingQtyForModel, hasPending
 function buildPortalDetailLineHtml(it, availableQty, hasPendingForModel) {
   return `${fmtDateJP(it.date)}／預けている数量：${it.qty}個${hasPendingForModel ? `（残り${availableQty}個）` : ''}${it.memo ? '／' + escapeHtmlMain(it.memo) : ''}`;
 }
+// カード全体の縁取り・背景色（確認待ちの連絡がある間だけ薄ピンクにする）。初回描画と
+// その場での部分更新（refreshPortalItemAvailability）の両方で使う共通の組み立て関数。
+function buildPortalCardStyle(hasPendingForModel) {
+  return hasPendingForModel
+    ? 'border:1.2px solid #e5a9c0;border-radius:12px;margin-bottom:10px;background:#fdeef4;overflow:hidden'
+    : 'border:1.2px solid var(--border);border-radius:12px;margin-bottom:10px;background:var(--white);overflow:hidden';
+}
 
 // 精算・返却の連絡を送信した直後、その商品について残り申請可能数（getPortalAvailableQty）が
 // 変わるので、一覧全体を再描画（renderPortalItemsList／filterPortalItems）せずに、その商品の
@@ -14555,6 +14562,21 @@ function refreshPortalItemAvailability(idx) {
   if (qtyDispEl) qtyDispEl.innerHTML = buildPortalQtyDispHtml(it, availableQty, pendingQtyForModel, hasPendingForModel);
   const detailLineEl = document.getElementById('portal-detail-line-' + idx);
   if (detailLineEl) detailLineEl.innerHTML = buildPortalDetailLineHtml(it, availableQty, hasPendingForModel);
+
+  // 要望：「残りが0になった時にピンクになるようにしましたが、すぐにピンクにはなりません
+  // でした。更新をしないと変わらないのでしょうか？数は更新しなくても変わるので、ピンクに
+  // 変えられるのであれば変えてください」への対応。カード全体の縁取り・背景色と、見出し・
+  // カード内の「⏳」バッジも、一覧全体の再描画を待たずにその場で切り替える
+  const pendingBadge = getPortalPendingBadgeHtml(it.model);
+  const cardEl = document.getElementById('portal-item-card-' + idx);
+  if (cardEl) cardEl.style.cssText = buildPortalCardStyle(hasPendingForModel);
+  const headerBadgeEl = document.getElementById('portal-header-badge-' + idx);
+  if (headerBadgeEl) headerBadgeEl.style.display = pendingBadge ? '' : 'none';
+  const pendingBadgeWrapEl = document.getElementById('portal-pending-badge-wrap-' + idx);
+  if (pendingBadgeWrapEl) {
+    pendingBadgeWrapEl.style.display = pendingBadge ? '' : 'none';
+    pendingBadgeWrapEl.innerHTML = pendingBadge || '';
+  }
 
   const entriesWrap = document.getElementById('portal-entries-' + idx);
   if (entriesWrap) {
@@ -14937,9 +14959,7 @@ function renderPortalItemsList(pairs) {
     const pendingForModel = (window._portalPendingRequests || []).filter(r => (r.model || '') === (it.model || ''));
     const pendingQtyForModel = getPortalPendingQtyForModel(it.model);
     const hasPendingForModel = pendingForModel.length > 0;
-    const cardStyle = hasPendingForModel
-      ? 'border:1.2px solid #e5a9c0;border-radius:12px;margin-bottom:10px;background:#fdeef4;overflow:hidden'
-      : 'border:1.2px solid var(--border);border-radius:12px;margin-bottom:10px;background:var(--white);overflow:hidden';
+    const cardStyle = buildPortalCardStyle(hasPendingForModel);
     // 要望：「取引先の方が、実際に預けている数より多い数を申請できるようになっている。預けて
     // いる数より多くの数を申請できないようにしてほしい」への対応。店舗がまだ確認していない
     // （精算・返却どちらでも）申請中の数量を差し引いた「これ以上申請できる残りの数量」
@@ -14960,17 +14980,17 @@ function renderPortalItemsList(pairs) {
     // 数量・売値・備考の入力欄と返却ボタンが開く。既存の「過去の履歴」等と同じ
     // toggleAccordion()の仕組み（.accordion-arrow／.accordion-body）をそのまま流用している。
     return `
-    <div style="${cardStyle}">
+    <div id="portal-item-card-${idx}" style="${cardStyle}">
       <div onclick="toggleAccordion('portal-item-${idx}')" style="display:flex;align-items:center;gap:8px;padding:12px 14px;cursor:pointer">
         <span class="accordion-arrow" id="acc-arrow-portal-item-${idx}" style="flex-shrink:0;font-size:11px">▼</span>
         <div style="flex:1.3;min-width:0;font-size:14px;font-weight:700;color:var(--text);overflow-wrap:break-word">${escapeHtmlMain(it.model || '商品')}</div>
         <div style="flex:0 0 auto;font-size:12.5px;color:var(--text-muted);white-space:nowrap"><span id="portal-qty-disp-${idx}">${qtyDisp}</span></div>
         <div style="flex:1.1;min-width:0;font-size:11.5px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.memo ? escapeHtmlMain(it.memo) : ''}</div>
-        ${pendingBadge ? '<span style="flex-shrink:0;font-size:13px" title="確認待ちのご連絡があります">⏳</span>' : ''}
+        <span id="portal-header-badge-${idx}" style="flex-shrink:0;font-size:13px;${pendingBadge ? '' : 'display:none'}" title="確認待ちのご連絡があります">⏳</span>
       </div>
       <div class="accordion-body" id="acc-body-portal-item-${idx}" style="padding:0 14px 14px">
         <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px" id="portal-detail-line-${idx}">${buildPortalDetailLineHtml(it, availableQty, hasPendingForModel)}</div>
-        ${pendingBadge ? `<div style="margin-bottom:8px">${pendingBadge}</div>` : ''}
+        <div id="portal-pending-badge-wrap-${idx}" style="margin-bottom:8px;${pendingBadge ? '' : 'display:none'}">${pendingBadge || ''}</div>
         ${noneAvailableNoticeHtml}
         <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">精算（売れた）を報告</div>
         <!-- 要望：「取引先の方が売れたその日に連絡できない時がある。1日でまとめて売れたものの
