@@ -2545,7 +2545,38 @@ function flattenConsignRequests(obj) {
 // ・音・ブラウザ通知：30秒ごとの軽量ポーリングで新規リクエストの増加を検知した瞬間だけ鳴らす
 //   （すでに未読として表示されている分については、ポーリングのたびに繰り返し鳴らさない）
 let _lastSeenConsignCount = parseInt(localStorage.getItem('kanetaka_consign_seen_count') || '0');
-let _consignNotifyBaseline = null;
+// 要望：「取引先の方が取り消したり、修正した時の通知は来ますか？来ないようになっていたら
+// 来るようにしてほしい」への対応。以前は「件数が増えたかどうか」（_consignNotifyBaseline）
+// だけを見ていたため、取消（件数が減る）や内容の修正（件数は変わらない）に気づけなかった。
+// _key単位で前回ポーリング時の内容を控えておき（_consignNotifySeenMap）、次回との差分
+// （新しく現れた・消えた・内容が変わった）を見ることで、件数の増減を伴わない変化も
+// 検知できるようにする。起動直後の最初の1回（null）は、その時点ですでにある分をすべて
+// 「新着」として通知してしまわないよう、比較の基準を作るだけにとどめる。
+let _consignNotifySeenMap = null;
+// 店舗側（この端末・このタブ）自身の操作（承認・却下）でconsignRequestsから消えた分を、
+// 取引先自身の取消と区別するための控え（同じタブ内ですぐ使える、軽量な一次チェック）。
+// clearConsignRequest()が消去する直前にここへ記録し、ポーリングでその消失に気づいた時点で
+// 「自分がやった操作だ」と分かれば通知せずに記録を消費する。
+let _consignLocallyHandledKeys = new Set();
+
+// 要望：「通知が誤って出てしまうのは避けてほしい」への対応。上の_consignLocallyHandledKeys
+// だけでは、承認・却下を行ったのと別の端末・別のタブでポーリングが走った場合に区別が
+// つかず、「取引先が取り消した」という通知が誤って出てしまっていた（承認・却下という
+// 操作をしたこと自体は、その操作をした端末のメモリの中にしか残らないため）。
+// この目印をFirebase側の共有の場所（/consignRequestsCleared/{portalId}/{key}）にも
+// 書き込んでおき、どの端末でポーリングしても同じ目印を確認できるようにすることで、
+// 承認・却下をどの端末・スタッフが行っても正しく区別できるようにする。
+// 目印は「次のポーリングまでの間、消失の理由を伝える」ためだけの一時的なものなので、
+// 用が済んだら消してよい。肥大化を防ぐため、ポーリングのたびに十分に古いもの
+// （CONSIGN_CLEARED_MARK_TTL_MSを超えたもの）は一緒に削除する。
+const CONSIGN_CLEARED_MARK_TTL_MS = 10 * 60 * 1000; // 10分（複数端末のポーリング間隔に十分な余裕を持たせる）
+async function markConsignRequestClearedByStore(portalId, requestId) {
+  try {
+    await fetch(authedUrl('/consignRequestsCleared/' + portalId + '/' + requestId + '.json'), {
+      method: 'PUT', body: JSON.stringify(Date.now())
+    });
+  } catch (e) { console.error(e); }
+}
 
 function updateConsignNavBadge(pendingCount) {
   const diff = Math.max(0, pendingCount - _lastSeenConsignCount);
@@ -2588,6 +2619,25 @@ function showConsignBrowserNotification(newCount, latestReq) {
   } catch (e) { console.error('notification error', e); }
 }
 
+// 要望「取引先の方が取り消したり、修正した時の通知は来ますか？来るようにしてほしい」への対応
+function showConsignCanceledNotification(req) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const body = `${req.client || ''}／${req.model || ''}／${req.qty || ''}個（${req.type === 'settle' ? '精算' : '返却'}）`;
+    const n = new Notification('❌ 取引先が申請を取り消しました', { body });
+    n.onclick = () => { window.focus(); n.close(); };
+  } catch (e) { console.error('notification error', e); }
+}
+
+function showConsignEditedNotification(req) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const body = `${req.client || ''}／${req.model || ''}／${req.qty || ''}個（${req.type === 'settle' ? '精算' : '返却'}）の内容が修正されました`;
+    const n = new Notification('✏️ 取引先が申請内容を修正しました', { body });
+    n.onclick = () => { window.focus(); n.close(); };
+  } catch (e) { console.error('notification error', e); }
+}
+
 // Notification.requestPermission()はユーザー操作（クリック等）をきっかけに呼ぶ必要があるため、
 // 卸売管理画面のボタンから明示的に呼び出す
 async function requestConsignNotifyPermission() {
@@ -2611,25 +2661,104 @@ function updateConsignNotifyPromptVisibility() {
   });
 }
 
-// 30秒ごとに（画面を問わず）consignRequestsだけを軽く取得し直し、新着があればバッジ・音・
-// ブラウザ通知で知らせる。既存の画面表示用データ（consignRequests本体）には触れず、あくまで
-// 件数の監視だけを行う（表示の更新は、その画面を開いたときの既存の読み込み処理に任せる）
+// 30秒ごとに（画面を問わず）consignRequestsだけを軽く取得し直し、新着・取消・修正があれば
+// バッジ・音・ブラウザ通知で知らせる。
+//
+// 要望：「委託リスト画面を開いたままでも自動で反映されるようにしてほしい」「在庫一覧などの
+// 別画面を見ている間もリアルタイムで反映してほしい」への対応。これまでは画面表示用のデータ
+// （consignRequests本体）には触れず件数の監視だけを行い、表示の更新は委託リスト画面を
+// 開き直したとき（loadInventory）に任せていたため、その画面を開いていない間は一覧の中身
+// （確認中欄・型番ごとのハイライト）が古いままだった。今回、consignRequests本体もここで
+// 更新し、renderWhConsignList()もどの画面を見ている間も呼び直すようにする（renderWhConsign
+// ListはDOM要素が非表示でも問題なく更新でき、その中でsyncPortalSnapshotForClientによる
+// 取引先ポータル向けスナップショットの再同期も一緒に行われるため、他の画面を見ている間も
+// 取引先側の反映が早くなる副次効果もある）。委託リスト画面を実際に表示している間だけ、
+// 見た目にもその場でハイライト等が切り替わっていくのが見える。
+//
+// ただし、原価欄への入力中（保存待ちのタイマーが残っている間）や、一覧内の入力欄
+// （型番検索欄・原価欄）にフォーカスが当たっている間に再描画してしまうと、まだ保存して
+// いない入力内容を消してしまう恐れがあるため、その間は再描画をスキップし、次回のポーリング
+// （最大30秒後）に持ち越す。
 async function pollConsignRequestsForNotify() {
   try {
-    const cr = await fetch(authedUrl('/consignRequests.json')).then(r => r.json()).catch(() => null);
+    const [cr, clearedRaw] = await Promise.all([
+      fetch(authedUrl('/consignRequests.json')).then(r => r.json()).catch(() => null),
+      fetch(authedUrl('/consignRequestsCleared.json')).then(r => r.json()).catch(() => null)
+    ]);
     const flat = flattenConsignRequests(cr);
-    const pendingCount = flat.filter(r => r.status === 'pending').length;
-    if (_consignNotifyBaseline === null) {
-      _consignNotifyBaseline = pendingCount;
-    } else if (pendingCount > _consignNotifyBaseline) {
-      const pending = flat.filter(r => r.status === 'pending').sort((a,b) => (b.requestedAt||0) - (a.requestedAt||0));
-      playConsignNotifySound();
-      showConsignBrowserNotification(pendingCount - _consignNotifyBaseline, pending[0]);
-      _consignNotifyBaseline = pendingCount;
-    } else if (pendingCount < _consignNotifyBaseline) {
-      _consignNotifyBaseline = pendingCount;
+    const pendingList = flat.filter(r => r.status === 'pending');
+    const pendingCount = pendingList.length;
+
+    // 要望「通知が誤って出てしまうのは避けてほしい」への対応。承認・却下による消失を、
+    // 別の端末・別のスタッフが行った場合でも正しく区別できるよう、Firebase側の共有の目印
+    // （consignRequestsCleared。詳しい考え方はmarkConsignRequestClearedByStoreの宣言部の
+    // コメントを参照）を読み取る。十分に古くなった目印は、この場でまとめて削除しておく
+    // （どの端末がポーリングしてもこの掃除は行われるので、特定の端末に依存しない）。
+    const clearedByStoreKeys = new Set();
+    const now = Date.now();
+    Object.entries(clearedRaw || {}).forEach(([pId, reqs]) => {
+      Object.entries(reqs || {}).forEach(([reqId, at]) => {
+        const qk = pId + '::' + reqId;
+        clearedByStoreKeys.add(qk);
+        if (now - (at || 0) > CONSIGN_CLEARED_MARK_TTL_MS) {
+          fetch(authedUrl('/consignRequestsCleared/' + pId + '/' + reqId + '.json'), { method: 'DELETE' }).catch(() => {});
+        }
+      });
+    });
+
+    // 要望「取引先の方が取り消したり、修正した時の通知は来ますか？来るようにしてほしい」
+    // への対応。_key単位で前回との差分を取り、新しく現れた分・消えた分・内容が変わった分を
+    // それぞれ検知する（詳しい考え方は_consignNotifySeenMapの宣言部のコメントを参照）。
+    const currentMap = {};
+    pendingList.forEach(r => { currentMap[r._portalId + '::' + r._key] = r; });
+
+    if (_consignNotifySeenMap === null) {
+      _consignNotifySeenMap = currentMap;
+    } else {
+      const prevMap = _consignNotifySeenMap;
+      const newlyArrived = [];
+      Object.keys(currentMap).forEach(qk => { if (!(qk in prevMap)) newlyArrived.push(currentMap[qk]); });
+      const canceled = [];
+      Object.keys(prevMap).forEach(qk => {
+        if (qk in currentMap) return;
+        if (_consignLocallyHandledKeys.has(qk) || clearedByStoreKeys.has(qk)) {
+          // 承認・却下など、店舗側の操作による消失なので通知しない（この端末で行った場合は
+          // _consignLocallyHandledKeys、別の端末で行った場合はclearedByStoreKeysで分かる）
+          _consignLocallyHandledKeys.delete(qk);
+        } else {
+          canceled.push(prevMap[qk]);
+        }
+      });
+      const edited = [];
+      Object.keys(currentMap).forEach(qk => {
+        const prev = prevMap[qk];
+        if (!prev) return;
+        const cur = currentMap[qk];
+        const changed = prev.qty !== cur.qty || prev.type !== cur.type
+          || (prev.unitPrice ?? null) !== (cur.unitPrice ?? null)
+          || (prev.soldDate ?? null) !== (cur.soldDate ?? null);
+        if (changed) edited.push(cur);
+      });
+
+      if (newlyArrived.length || canceled.length || edited.length) playConsignNotifySound();
+      if (newlyArrived.length) {
+        newlyArrived.sort((a,b) => (b.requestedAt||0) - (a.requestedAt||0));
+        showConsignBrowserNotification(newlyArrived.length, newlyArrived[0]);
+      }
+      canceled.forEach(showConsignCanceledNotification);
+      edited.forEach(showConsignEditedNotification);
+
+      _consignNotifySeenMap = currentMap;
     }
     updateConsignNavBadge(pendingCount);
+
+    consignRequests = flat;
+    const hasPendingCostEdit = Object.keys(_whConsignCostSaveTimers || {}).length > 0;
+    const active = document.activeElement;
+    const isEditingInList = !!(active && document.getElementById('wh-consign-list')?.contains(active));
+    if (!hasPendingCostEdit && !isEditingInList) {
+      renderWhConsignList();
+    }
   } catch (e) { console.error('consign notify poll error', e); }
 }
 
@@ -6859,6 +6988,16 @@ function renderConsignRequestsPanel() {
 }
 
 async function clearConsignRequest(portalId, requestId) {
+  // 要望「取引先が取消・修正した時も通知が来るようにしてほしい」「（承認・却下を別の端末で
+  // 行った場合に）通知が誤って出てしまうのは避けてほしい」への対応。承認・却下など、店舗側の
+  // 操作でこのリクエストを消す場合は、次のポーリング（pollConsignRequestsForNotify）で
+  // その消失に気づいたときに「取引先が取り消した」と誤って通知してしまわないよう、消去する
+  // 前に控えておく。この端末・このタブ用の軽量な控え（_consignLocallyHandledKeys）に加えて、
+  // 別の端末・別のスタッフがポーリングしても同じように区別できるよう、Firebase側の共有の
+  // 目印（consignRequestsCleared）も先に書き込んでから、実際の削除を行う（先に目印を
+  // 書いておくことで、他の端末が「削除されたのに目印が無い」状態を絶対に見ないようにする）。
+  _consignLocallyHandledKeys.add(portalId + '::' + requestId);
+  await markConsignRequestClearedByStore(portalId, requestId);
   try {
     await fetch(authedUrl('/consignRequests/' + portalId + '/' + requestId + '.json'), { method: 'DELETE' });
   } catch (e) { console.error(e); }
@@ -14253,6 +14392,54 @@ function updatePortalLocalPendingShadow(key, patch) {
   savePortalLocalPendingShadow(list);
 }
 
+// 要望：「取引先の方が触る画面で、取消のボタンは時間が経つと取り消せないようになって
+// いますか？申請直後に取り消したら消えるが、時間が経ってから取り消しを押したら一旦は
+// 消えてまた申請できるようになっており、更新したら取り消したはずのものが消えておらず、
+// 二重の申請ができてしまっていた」への対応。
+//
+// 原因：cancelPortalOwnRequestは/consignRequests/{portalId}/{key}を直接削除しているが、
+// 店舗側の確認待ち一覧（/consignPortal/{portalId}のpendingRequestsスナップショット）は
+// 店舗が「委託リスト」画面を開いたときにしか再同期されない。取消の時点ですでに店舗側が
+// 一度でも委託リスト画面を開いていて、そのリクエストがスナップショットに載ってしまって
+// いた場合、取消（削除）した後でも、そのスナップショット自体は古いまま（そのリクエストが
+// 載ったまま）残り続ける。取消した直後の同じセッション内ではwindow._portalPendingRequests
+// の方を直接書き換えるので画面上は正しく消えるが、ページを再読み込みすると
+// renderPortalDataFromCacheが（取消済みとは知らずに）このスナップショットを読み直して
+// しまい、取り消したはずの連絡が復活して見えてしまう（＝残り申請可能数の計算にも影響し、
+// 二重に申請できてしまう）。
+//
+// 対応：取消した_keyを、店舗側のスナップショットが実際に追いつくまでの間、この端末の
+// localStorageに「取消済み」として控えておき、renderPortalDataFromCacheで店舗側の
+// スナップショットからこの控えに載っているものを取り除いてから使うようにする
+// （店舗側の再同期が追いつけば、スナップショット自体からも自然に消えるので、控えの方は
+// 期限（TTL）で自動的に消してよい＝loadPortalLocalPendingShadowと同じ仕組みを流用する）。
+function portalLocalCanceledStorageKey() {
+  return 'kanetaka_portal_local_canceled_' + (window._portalId || '');
+}
+function loadPortalLocalCanceledShadow() {
+  if (!window._portalId) return [];
+  let list;
+  try {
+    const raw = localStorage.getItem(portalLocalCanceledStorageKey());
+    list = raw ? JSON.parse(raw) : [];
+  } catch (e) { list = []; }
+  if (!Array.isArray(list)) list = [];
+  const now = Date.now();
+  const fresh = list.filter(r => r && (now - (r._canceledAt || 0)) < PORTAL_LOCAL_PENDING_TTL_MS);
+  if (fresh.length !== list.length) savePortalLocalCanceledShadow(fresh);
+  return fresh;
+}
+function savePortalLocalCanceledShadow(list) {
+  if (!window._portalId) return;
+  try { localStorage.setItem(portalLocalCanceledStorageKey(), JSON.stringify(list || [])); } catch (e) {}
+}
+function addPortalLocalCanceledShadow(key) {
+  if (!key) return;
+  const list = loadPortalLocalCanceledShadow().filter(r => r._key !== key);
+  list.push({ _key: key, _canceledAt: Date.now() });
+  savePortalLocalCanceledShadow(list);
+}
+
 // 暗証番号の確認が済んだ（または不要だった）後に、実際の内容を描画する
 function renderPortalDataFromCache() {
   const data = window._portalData;
@@ -14264,8 +14451,13 @@ function renderPortalDataFromCache() {
   // （window._portalPendingRequests）を用意しておく。これは商品カード側のバッジ表示が
   // renderPortalItems()内のrenderPortalItemsList()から参照するため。
   // 店舗側のスナップショット（data.pendingRequests）に、まだ反映されていないこの端末からの
-  // 送信控え（loadPortalLocalPendingShadow）を補って使う（上のコメント参照）
-  const serverPending = data.pendingRequests || [];
+  // 送信控え（loadPortalLocalPendingShadow）を補って使う（上のコメント参照）。また、この
+  // 端末がすでに取り消し済みの分（loadPortalLocalCanceledShadow）は、店舗側の再同期が
+  // まだ追いついていなくてもスナップショットから取り除いてから使う（取り消したはずの連絡が
+  // 再読み込み後に復活してしまう不具合への対応）
+  const serverPendingRaw = data.pendingRequests || [];
+  const canceledKeys = new Set(loadPortalLocalCanceledShadow().map(r => r._key));
+  const serverPending = serverPendingRaw.filter(r => !canceledKeys.has(r._key));
   const serverPendingKeys = new Set(serverPending.map(r => r._key));
   const localShadowPending = loadPortalLocalPendingShadow().filter(r => !serverPendingKeys.has(r._key));
   renderPortalPendingRequests(serverPending.concat(localShadowPending));
@@ -14394,6 +14586,10 @@ async function cancelPortalOwnRequest(key) {
     await fetch(authedUrl('/consignRequests/' + window._portalId + '/' + key + '.json'), { method: 'DELETE' });
     window._portalPendingRequests = (window._portalPendingRequests || []).filter(r => r._key !== key);
     removePortalLocalPendingShadow(key);
+    // 要望「時間が経ってから取り消しを押したら、更新後に取り消したはずのものが消えて
+    // おらず、二重の申請ができてしまう」への対応。店舗側のスナップショットの再同期を
+    // 待たずに、取消済みとしてこの端末に控えておく（renderPortalDataFromCache参照）
+    addPortalLocalCanceledShadow(key);
     renderPortalPendingRequests(window._portalPendingRequests);
     filterPortalItems();
     showToast('連絡を取り消しました');
@@ -14531,10 +14727,11 @@ function buildPortalQtyDispHtml(it, availableQty, pendingQtyForModel, hasPending
 function buildPortalDetailLineHtml(it, availableQty, hasPendingForModel) {
   return `${fmtDateJP(it.date)}／預けている数量：${it.qty}個${hasPendingForModel ? `（残り${availableQty}個）` : ''}${it.memo ? '／' + escapeHtmlMain(it.memo) : ''}`;
 }
-// カード全体の縁取り・背景色（確認待ちの連絡がある間だけ薄ピンクにする）。初回描画と
-// その場での部分更新（refreshPortalItemAvailability）の両方で使う共通の組み立て関数。
-function buildPortalCardStyle(hasPendingForModel) {
-  return hasPendingForModel
+// カード全体の縁取り・背景色（要望により、残り申請可能数がちょうど0になった時だけ薄ピンクに
+// する。一部だけ申請中で残りがまだある間は通常の白のまま）。初回描画とその場での部分更新
+// （refreshPortalItemAvailability）の両方で使う共通の組み立て関数。
+function buildPortalCardStyle(noneAvailable) {
+  return noneAvailable
     ? 'border:1.2px solid #e5a9c0;border-radius:12px;margin-bottom:10px;background:#fdeef4;overflow:hidden'
     : 'border:1.2px solid var(--border);border-radius:12px;margin-bottom:10px;background:var(--white);overflow:hidden';
 }
@@ -14566,10 +14763,14 @@ function refreshPortalItemAvailability(idx) {
   // 要望：「残りが0になった時にピンクになるようにしましたが、すぐにピンクにはなりません
   // でした。更新をしないと変わらないのでしょうか？数は更新しなくても変わるので、ピンクに
   // 変えられるのであれば変えてください」への対応。カード全体の縁取り・背景色と、見出し・
-  // カード内の「⏳」バッジも、一覧全体の再描画を待たずにその場で切り替える
+  // カード内の「⏳」バッジも、一覧全体の再描画を待たずにその場で切り替える。
+  // 要望：「ピンクに変わるのは残りの数が0個になったらでお願いします」への対応。カードの
+  // 縁取り・背景色（ピンク）は、一部だけ申請中の間（残りがまだある間）はつけず、残り
+  // 申請可能数がちょうど0になった時だけにする（noneAvailableで判定）。「⏳」バッジの方は
+  // 従来通りhasPendingForModel（申請中が少しでもあれば表示）のままにする。
   const pendingBadge = getPortalPendingBadgeHtml(it.model);
   const cardEl = document.getElementById('portal-item-card-' + idx);
-  if (cardEl) cardEl.style.cssText = buildPortalCardStyle(hasPendingForModel);
+  if (cardEl) cardEl.style.cssText = buildPortalCardStyle(noneAvailable);
   const headerBadgeEl = document.getElementById('portal-header-badge-' + idx);
   if (headerBadgeEl) headerBadgeEl.style.display = pendingBadge ? '' : 'none';
   const pendingBadgeWrapEl = document.getElementById('portal-pending-badge-wrap-' + idx);
@@ -14959,13 +15160,18 @@ function renderPortalItemsList(pairs) {
     const pendingForModel = (window._portalPendingRequests || []).filter(r => (r.model || '') === (it.model || ''));
     const pendingQtyForModel = getPortalPendingQtyForModel(it.model);
     const hasPendingForModel = pendingForModel.length > 0;
-    const cardStyle = buildPortalCardStyle(hasPendingForModel);
     // 要望：「取引先の方が、実際に預けている数より多い数を申請できるようになっている。預けて
     // いる数より多くの数を申請できないようにしてほしい」への対応。店舗がまだ確認していない
     // （精算・返却どちらでも）申請中の数量を差し引いた「これ以上申請できる残りの数量」
     // （getPortalAvailableQty）を、以降の入力欄の上限・初期値として使う。
     const availableQty = getPortalAvailableQty(it);
     const noneAvailable = availableQty <= 0;
+    // 要望：「ピンクに変わるのは残りの数が0個になったらでお願いします。残りが0個になって
+    // いない時は、残り○個と今のような色で分かりやすく表示させてください」への対応。カード
+    // 全体を目立たせる薄ピンクの縁取り・背景は、残り申請可能数がちょうど0になった時だけに
+    // 限定する（一部だけ申請中の間は、カードは通常の白のまま。「残り○個」の文字色だけで
+    // 分かるようにする）。
+    const cardStyle = buildPortalCardStyle(noneAvailable);
     // 要望：「申請中の間だけ『残り0個』に変更してほしい」への対応。申請中の連絡がある間は
     // 見出し行に「残り○個」を大きく出し、預けている元の数量・申請中の数量はその横に添える
     // 形にする（実際の預かり数量そのものは、店舗が確認するまで変更しない。あくまで見た目の
