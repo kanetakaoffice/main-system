@@ -1543,7 +1543,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
           <div id="wh-item-model-results" style="margin-top:6px"></div>
         </div>
         <div id="wh-quick-register" style="display:none;margin-top:10px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px">
-          <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">この商品はまだ登録されていません。JANコードから商品情報を自動検索します</div>
+          <div id="wh-qr-intro" style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">この商品はまだ登録されていません。JANコードから商品情報を自動検索します</div>
           <div style="display:flex;gap:6px;margin-bottom:8px">
             <div style="position:relative;flex:1">
               <input type="text" id="wh-qr-model" placeholder="見つからない場合は型番を入力して再検索" oninput="toggleFieldClearBtn('wh-qr-model','wh-qr-model-clear')" style="width:100%;padding-right:34px;box-sizing:border-box">
@@ -1553,9 +1553,13 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
           </div>
           <div id="wh-qr-status" style="font-size:11px;color:var(--text-muted);margin-bottom:8px"></div>
           <div id="wh-qr-buyback-ref" style="display:none;margin-bottom:8px"></div>
+          <!-- 要望：「メーカー・商品名・型番・JANコードは後から商品登録・在庫一覧で登録するので、
+               納品書を早く作成できるようにとりあえずの登録をしたい」への対応。JANコードか型番の
+               どちらかさえあれば登録できるよう、商品名・現在庫数の必須マークを外し、
+               空欄のままでも登録できることを案内する -->
           <div class="field" style="margin-bottom:8px">
-            <div class="field-label" style="font-size:11px">商品名 <span class="req">*</span></div>
-            <input type="text" id="wh-qr-name" placeholder="商品名">
+            <div class="field-label" style="font-size:11px">商品名（空欄でも登録できます）</div>
+            <input type="text" id="wh-qr-name" placeholder="商品名（後から登録する場合は空欄でOK）">
           </div>
           <div style="display:flex;gap:8px;margin-bottom:8px">
             <div class="field" style="flex:1">
@@ -1565,7 +1569,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
               <input type="text" id="wh-qr-maker-other" placeholder="新しいメーカー名" oninput="handleMakerOtherInput('wh-qr')" style="display:none;margin-top:6px">
             </div>
             <div class="field" style="flex:1">
-              <div class="field-label" style="font-size:11px">現在庫数 <span class="req">*</span></div>
+              <div class="field-label" style="font-size:11px">現在庫数（空欄は0個）</div>
               <input type="number" id="wh-qr-stock" placeholder="0">
             </div>
           </div>
@@ -3660,10 +3664,35 @@ function showWhQuickRegister(jan) {
   _whQuickRegisterJan = jan;
   const panel = document.getElementById('wh-quick-register');
   if (panel) panel.style.display = 'block';
+  // 要望：「JANコードか型番の入力をしたら、そのまま登録できるようにしてほしい」への対応で
+  // 型番のみからもこのパネルを開けるようになったため、案内文をJANの有無で出し分ける
+  // （型番のみの場合は自動検索がすぐには走らないため、その旨を伝える）
+  const introEl = document.getElementById('wh-qr-intro');
+  if (introEl) {
+    introEl.textContent = jan
+      ? 'この商品はまだ登録されていません。JANコードから商品情報を自動検索します'
+      : 'この商品はまだ登録されていません。型番で再検索するか、商品名・メーカーは空欄のまま登録することもできます（後から商品登録・在庫一覧で入力できます）';
+  }
   renderMakerSelectUI('wh-qr');
   const catEl = document.getElementById('wh-qr-category');
   if (catEl) catEl.selectedIndex = 0;
   populateSubcatSelect('wh-qr-subcategory', CATEGORY_LIST[0]);
+}
+// 型番検索で該当商品が見つからなかった場合に、その型番を引き継いだまま仮登録パネルを開く
+// （JANコードでの仮登録と同じ経路・同じ緩和されたバリデーションをそのまま使う）
+function showWhQuickRegisterFromModel(model) {
+  showWhQuickRegister('');
+  const modelField = document.getElementById('wh-qr-model');
+  if (modelField) { modelField.value = model || ''; toggleFieldClearBtn('wh-qr-model', 'wh-qr-model-clear'); }
+}
+function showWhQuickRegisterFromModelSearchInput() {
+  const input = document.getElementById('wh-item-model-search');
+  const model = input ? input.value.trim() : '';
+  if (!model) return;
+  showWhQuickRegisterFromModel(model);
+  if (input) input.value = '';
+  const resultsEl = document.getElementById('wh-item-model-results');
+  if (resultsEl) resultsEl.innerHTML = '';
 }
 function hideWhQuickRegister() {
   _whQuickRegisterJan = '';
@@ -3685,6 +3714,10 @@ function cancelWhQuickRegister() {
   if (input) input.value = '';
   const status = document.getElementById('wh-item-status');
   if (status) status.textContent = '';
+  const modelSearchInput = document.getElementById('wh-item-model-search');
+  if (modelSearchInput) modelSearchInput.value = '';
+  const modelResultsEl = document.getElementById('wh-item-model-results');
+  if (modelResultsEl) modelResultsEl.innerHTML = '';
 }
 
 // JANコードが手元にない・読み取りにくい場合でも、登録済みの商品を型番や商品名の一部から
@@ -3702,7 +3735,15 @@ function searchWhItemByModel() {
     (p.name && p.name.toLowerCase().includes(q))
   ).slice(0, 8);
   if (!matches.length) {
-    resultsEl.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:6px 2px">該当する商品が見つかりません</div>`;
+    // 要望：「納品書作成で登録されていない商品を登録する際に、型番の入力をしたら、そのまま
+    // 登録できるようにしてほしい」への対応。JANコードと同じく、型番で検索して見つからなかった
+    // 場合もその場で仮登録（商品名・メーカーは空欄のままでもよい）できるようにする
+    resultsEl.innerHTML = `
+      <div style="font-size:12px;color:var(--text-muted);padding:6px 2px 8px">該当する商品が見つかりません</div>
+      <div onclick="showWhQuickRegisterFromModelSearchInput()" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;background:var(--surface);border:1px dashed var(--border);border-radius:8px;cursor:pointer">
+        <div style="font-size:12.5px;color:var(--text)">この型番で商品を仮登録する</div>
+        <div style="font-size:12px;color:var(--gold-dark);font-weight:600;white-space:nowrap;flex-shrink:0">＋ 登録</div>
+      </div>`;
     return;
   }
   resultsEl.innerHTML = matches.map(p => `
@@ -3833,28 +3874,38 @@ async function searchWhQuickRegister() {
   }
 }
 
-// 商品名・現在庫数を必須として新規登録し、そのまま納品明細に追加する
+// 要望：「納品書作成で登録されていない商品を登録する際に、JANコードか型番を入力したら、
+// そのまま（メーカー・商品名は空欄でも）登録して納品書を作成できるようにしてほしい。
+// メーカー・商品名・型番・JANコードは後から商品登録／在庫一覧のところで登録する」への対応。
+// 以前は商品名・現在庫数の両方を必須としていたが、JANコードか型番のどちらか一方さえ
+// 分かれば、その場では最低限の情報（在庫の把握・後から商品を特定するための手がかり）だけで
+// 仮登録できるようにした。商品名・メーカー・現在庫数は空欄のまま登録でき、現在庫数を
+// 空欄にした場合は在庫0として登録し、入庫記録（stockMoves）も作らない。
+// 空欄のまま登録した商品名・型番・JANコードは、後から商品登録／在庫一覧で入力・変更すると、
+// 既に作成済みの納品書側にも自動で反映される（deliverySlipItemName/Model/Janを参照）。
 async function submitWhQuickRegister() {
   const name = document.getElementById('wh-qr-name').value.trim();
+  const model = document.getElementById('wh-qr-model').value.trim();
+  const jan = _whQuickRegisterJan || '';
   const stockVal = document.getElementById('wh-qr-stock').value;
   const status = document.getElementById('wh-qr-status');
-  if (!name || stockVal === '') {
-    if (status) { status.textContent = '商品名と現在庫数は必須です'; status.style.color = 'var(--danger)'; }
+  if (!jan && !model) {
+    if (status) { status.textContent = 'JANコードまたは型番のいずれかは入力してください'; status.style.color = 'var(--danger)'; }
     return;
   }
-  const stock = parseInt(stockVal) || 0;
+  const stock = stockVal === '' ? 0 : (parseInt(stockVal) || 0);
   const data = {
     maker: document.getElementById('wh-qr-maker').value.trim(),
     name,
-    model: document.getElementById('wh-qr-model').value.trim(),
-    jan: _whQuickRegisterJan,
+    model,
+    jan,
     stock,
     lowStock: null,
     cost: 0,
     category: document.getElementById('wh-qr-category')?.value || '家電',
     subcategory: document.getElementById('wh-qr-subcategory')?.value || '',
     location: '',
-    memo: '納品書作成画面から新規登録',
+    memo: '納品書作成画面から新規登録（仮登録）',
     image: '',
     createdAt: Date.now()
   };
@@ -3871,11 +3922,15 @@ async function submitWhQuickRegister() {
       })});
     }
     await loadInventory();
-    const newProd = products.find(p => p._key === newKey) || products.find(p => p.jan === data.jan);
+    const newProd = products.find(p => p._key === newKey) || (data.jan && products.find(p => p.jan === data.jan));
     if (newProd) addWhItemRow(newProd);
     hideWhQuickRegister();
     const input = document.getElementById('wh-item-jan');
     if (input) input.value = '';
+    const modelSearchInput = document.getElementById('wh-item-model-search');
+    if (modelSearchInput) modelSearchInput.value = '';
+    const modelResultsEl = document.getElementById('wh-item-model-results');
+    if (modelResultsEl) modelResultsEl.innerHTML = '';
     const itemStatus = document.getElementById('wh-item-status');
     if (itemStatus) itemStatus.textContent = '';
     showToast('商品を登録し、明細に追加しました');
@@ -3905,7 +3960,9 @@ function addWhItemRow(prod) {
   }
   renderWhDelivItems();
   saveWhDelivDraft();
-  showToast(`${prod.name} を追加しました（${existing ? existing.qty : 1}個）`);
+  // 商品名が空欄のまま仮登録した商品も追加できるよう、表示名が無い場合は型番・JANコードで代用する
+  const displayName = prod.name || prod.model || (prod.jan ? 'JAN:' + prod.jan : '') || '商品';
+  showToast(`${displayName} を追加しました（${existing ? existing.qty : 1}個）`);
 }
 
 // 「傷・潰れなどで1個だけ単価を変える」で切り分けた行を削除（取り消す）した場合は、
@@ -4298,6 +4355,32 @@ function clearWhItemDamagePhoto(idx) {
   saveWhDelivDraft();
 }
 
+// 納品書関連（stockMovesのtype:'out'・'consign'レコード）の型番・商品名・JANコードを求める
+// 共通ヘルパー。要望「メーカー・商品名・型番・JANコードは後から商品登録／在庫一覧のところで
+// 登録するので、とりあえずの登録で納品書を作成したい。後から登録・変更したら、空欄になっている
+// 納品書のところにも（それに限らず全て）反映されるようにしてほしい」への対応。
+// レコード自身に値が記録されていればそれを優先し（型番は納品書の明細でその場修正できるため、
+// 個別に直した値を商品マスタの値で上書きしないようにする＝buildDeliverySlipDataFromSlipIdの
+// 従来の型番解決と同じ考え方）、記録が空の場合だけ商品マスタ（products）の現在の値を補う。
+// これにより、仮登録時に空欄だった商品名・型番・JANコードを後から商品登録／在庫一覧で
+// 入力・変更すると、次にこれらの関数を呼ぶ画面（発行済みの納品書一覧・プレビュー・印刷・
+// Excel／freee出力・編集時の読み込みなど）へ自動的に反映される。
+function deliverySlipItemModel(m) {
+  return (m && m.model) || (products.find(p => p._key === (m && m.productKey)) || {}).model || '';
+}
+function deliverySlipItemName(m) {
+  return (m && m.productName) || (products.find(p => p._key === (m && m.productKey)) || {}).name || '';
+}
+function deliverySlipItemJan(m) {
+  return (m && m.jan) || (products.find(p => p._key === (m && m.productKey)) || {}).jan || '';
+}
+// 型番・商品名・JANコードのいずれも空だった場合の、一覧・検索など1つの文字列で表示したい
+// 場面向けの表示ラベル（型番→商品名→JANコード→未登録の順で採用する）
+function deliverySlipItemDisplayLabel(m) {
+  return deliverySlipItemModel(m) || deliverySlipItemName(m) ||
+    (deliverySlipItemJan(m) ? 'JAN:' + deliverySlipItemJan(m) : '') || '(商品名未登録)';
+}
+
 // 指定slipIdに属する明細を、_whDelivItemsへ戻せる形に変換して返す共通処理。
 // 通常のtype:'out'出庫記録に加え、「委託」の印を付けたまま発行した行
 // （type:'consign', status:'holding'のstockMoveで、同じslipIdが埋め込まれているもの）も
@@ -4312,8 +4395,8 @@ function deliverySlipMovesToItems(slipId) {
   const consignMoves = (stockMoves || []).filter(m => m.slipId === slipId && m.type === 'consign' && m.status === 'holding');
   const moves = outMoves.concat(consignMoves).sort(compareDeliverySlipItemOrder);
   return moves.map(m => ({
-    productKey: m.productKey, jan: m.jan, name: m.productName,
-    model: m.model || (products.find(p => p._key === m.productKey) || {}).model || '',
+    productKey: m.productKey, jan: deliverySlipItemJan(m), name: deliverySlipItemName(m),
+    model: deliverySlipItemModel(m),
     qty: m.qty, unitPrice: m.unitPrice || 0, amount: m.amount || 0,
     damageMode: m.damageDetail ? 'detail' : (m.damagePhoto ? 'photo' : null),
     damageDetail: m.damageDetail || '', damagePhoto: m.damagePhoto || '',
@@ -4346,7 +4429,7 @@ async function submitWhDeliverySlip() {
   if (!date) { showToast('日付を入力してください'); return; }
   if (!_whDelivItems.length) { showToast('商品を1つ以上追加してください'); return; }
   for (const it of _whDelivItems) {
-    if (!it.qty || it.qty < 1) { showToast(`${it.name}の数量を確認してください`); return; }
+    if (!it.qty || it.qty < 1) { showToast(`${it.name || it.model || '商品'}の数量を確認してください`); return; }
   }
 
   const wasExplicitEdit = !!_editingSlipId;
@@ -4859,7 +4942,11 @@ function buildDeliverySlipDataFromSlipId(slipId) {
   const items = moves.map(m => ({
     // 型番は納品書の明細でその場修正できるようになったため、記録済みの値を優先する。
     // それより前に発行された古い記録にはmodelが保存されていないため、その場合のみ商品マスタから補う
-    model: m.model || (products.find(p => p._key === m.productKey) || {}).model || '',
+    // （deliverySlipItemModel／Name／Janも同じ優先順位。仮登録時に空欄だった商品名・型番・
+    // JANコードを後から商品登録・在庫一覧で入力すると、ここでも自動的に反映される）
+    model: deliverySlipItemModel(m),
+    name: deliverySlipItemName(m),
+    jan: deliverySlipItemJan(m),
     qty: m.qty, unitPrice: m.unitPrice, amount: m.amount,
     // 傷・つぶれの詳細（テキスト）のみ納品書に載せる。写真（damagePhoto）はここで一切扱わない
     damageDetail: m.damageDetail || '',
@@ -5089,7 +5176,7 @@ function renderDeliverySlipLoadChecklist(items) {
   listEl.innerHTML = (items || []).map(it => `
     <label style="display:flex;align-items:center;gap:8px;padding:5px 2px;font-size:12.5px;color:var(--text);cursor:pointer">
       <input type="checkbox" ${it.loadChecked ? 'checked' : ''} onchange="toggleDeliverySlipLoadCheck('${it._key}', this.checked)" style="width:17px;height:17px;flex-shrink:0;accent-color:var(--success)">
-      <span style="flex:1;min-width:0;overflow-wrap:break-word;word-break:break-all;${it.loadChecked ? 'text-decoration:line-through;color:var(--text-muted)' : ''}">${escapeHtmlMain(it.model || '商品')}（${it.qty}個）</span>
+      <span style="flex:1;min-width:0;overflow-wrap:break-word;word-break:break-all;${it.loadChecked ? 'text-decoration:line-through;color:var(--text-muted)' : ''}">${escapeHtmlMain(it.model || it.name || (it.jan ? 'JAN:' + it.jan : '') || '(商品名未登録)')}（${it.qty}個）</span>
     </label>
   `).join('');
   updateDsLoadCheckProgress(items || []);
@@ -5782,7 +5869,9 @@ function renderWhDelivHistory() {
   const matchedItemsBySlip = {};
   if (qNorm) {
     slips = slips.filter(s => {
-      const matches = s.items.filter(it => normalizeModelStr(it.model || it.productName || '').includes(qNorm));
+      // 仮登録時に型番・商品名が空欄だった明細も、後から商品登録・在庫一覧で入力した
+      // 現在の型番・商品名（deliverySlipItemModel／Name）で検索に一致するようにする
+      const matches = s.items.filter(it => normalizeModelStr(deliverySlipItemModel(it) || deliverySlipItemName(it) || '').includes(qNorm));
       if (!matches.length) return false;
       matchedItemsBySlip[s.slipId] = matches;
       return true;
@@ -5822,11 +5911,11 @@ function renderWhDelivHistory() {
 
   listEl.innerHTML = visibleSlips.map(s => {
     const matched = matchedItemsBySlip[s.slipId];
-    const matchedHtml = matched ? `<div class="wh-deliv-row-matched" style="margin-top:4px;font-size:11px;color:var(--gold-dark)">該当：${matched.map(it => `${escapeHtmlMain(it.model || it.productName || '')} ${it.qty}個`).join('／')}</div>` : '';
+    const matchedHtml = matched ? `<div class="wh-deliv-row-matched" style="margin-top:4px;font-size:11px;color:var(--gold-dark)">該当：${matched.map(it => `${escapeHtmlMain(deliverySlipItemModel(it) || deliverySlipItemName(it) || '')} ${it.qty}個`).join('／')}</div>` : '';
     const isOpen = _whDelivHistoryExpanded.has(s.slipId);
     const itemsHtml = s.items.map(it => `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
-        <span style="flex:1;min-width:0;overflow-wrap:break-word;word-break:break-all;font-size:12.5px;color:var(--text)">${escapeHtmlMain(it.model || it.productName || '商品')}${it.type === 'consign' ? ' <span style="color:var(--teal);font-weight:700">📦委託</span>' : ''}</span>
+        <span style="flex:1;min-width:0;overflow-wrap:break-word;word-break:break-all;font-size:12.5px;color:var(--text)">${escapeHtmlMain(deliverySlipItemDisplayLabel(it))}${it.type === 'consign' ? ' <span style="color:var(--teal);font-weight:700">📦委託</span>' : ''}</span>
         <span style="flex-shrink:0;font-size:12px;color:var(--text-muted)">${it.qty}個${it.type !== 'consign' ? `／¥${(it.amount||0).toLocaleString('ja-JP')}` : ''}</span>
       </div>`).join('');
     return `
