@@ -8462,6 +8462,14 @@ async function importBuybackRecords(records) {
     if (statusEl) statusEl.textContent = `取り込み中… ${done}/${total}件`;
   }
   window._buybackPriceRef = null; // 一覧検索用のキャッシュを無効化（次回開いた時に最新を取得し直す）
+  // 要望「CSVが更新されないなら、毎回読み込ませるための通知が欲しい」への対応。
+  // 取り込みが完了するたびに、最後に取り込んだ日時を専用の場所（/buybackImportMeta）に
+  // 記録しておく。これをCloud Functions側が毎日チェックし、一定期間（1日）以上更新が
+  // ないままだと管理者にプッシュ通知でお知らせする仕組みになっている。
+  await fetch(authedUrl('/buybackImportMeta.json'), {
+    method: 'PATCH',
+    body: JSON.stringify({ lastImportedAt: importedAt, lastImportedBy: currentSessionEmail() })
+  }).catch(() => null);
   if (statusEl) statusEl.textContent = `取り込みが完了しました（${total}件、${new Date(importedAt).toLocaleString('ja-JP')} 時点のデータ）`;
   if (progressWrap) setTimeout(() => { progressWrap.style.display = 'none'; }, 1500);
 }
