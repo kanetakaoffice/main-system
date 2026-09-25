@@ -101,6 +101,24 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
   .wh-deliv-click-cell > .wh-deliv-row-matched { flex-basis: 100%; margin-top: 0 !important; }
   .wh-deliv-row-status-cell { order: 0; width: auto; flex: 0 0 auto; margin-top: 0; padding-bottom: 0; }
 }
+
+/* 要望：「私たちが見る委託リストの画面で、パソコンを画面いっぱいにすると見にくいので、
+   納品書作成のところみたいにできますか」への対応。携帯幅では今まで通り、取引先カードの
+   見出し（取引先名の右に「内容を見る」ボタン）・商品行（型番の右に原価欄）・操作ボタン
+   （精算／返却／数量を編集）のいずれも、要素いっぱいに引き伸ばした今までの見た目のまま
+   にしておく。PC幅（860px以上）だけ、上のrenderWhDelivHistory側の対応と同じ考え方で、
+   justify-content:space-betweenやflex:1による「画面の端から端まで無理に引き伸ばす」
+   配置をやめ、要素どうしを自然な余白で近くに寄せて表示するよう切り替える
+   （JSの再描画をはさまずCSSのメディアクエリだけで画面幅の変化に追従できるようにするため、
+   renderWhConsignList・whConsignItemRowHtml側のHTML構造自体は変えず、ここでの
+   スタイル切り替えだけで対応している）。 */
+@media (min-width: 860px) {
+  .wh-consign-client-header { justify-content: flex-start !important; gap: 16px; }
+  .wh-consign-row-top { justify-content: flex-start !important; gap: 28px; }
+  .wh-consign-row-top-main { flex: 0 1 auto !important; max-width: 420px; }
+  .wh-consign-row-actions { justify-content: flex-start; }
+  .wh-consign-row-actions > button { flex: 0 0 auto !important; padding-left: 22px; padding-right: 22px; }
+}
 .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(135deg, #b0b0b0, #a0a0a0); border-top: 2px solid #c8c8c8; display: flex; padding-bottom: env(safe-area-inset-bottom, 0); box-shadow: 0 -2px 12px rgba(0,0,0,0.12); }
 .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 8px 0 6px; background: none; border: none; cursor: pointer; color: #4a4a4a; font-size: 9px; font-weight: 500; -webkit-tap-highlight-color: transparent; }
 .nav-btn.active { color: #f0f0f0; }
@@ -6400,8 +6418,8 @@ function whConsignItemRowHtml(m) {
     : '';
   return `
     <div style="${rowStyle}">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
-        <div style="min-width:0;flex:1">
+      <div class="wh-consign-row-top" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+        <div class="wh-consign-row-top-main" style="min-width:0;flex:1">
           <div style="color:var(--text);font-weight:600">${escapeHtmlMain(consignItemModelLive(m))}</div>
           <div style="color:var(--text-muted);font-size:11px;margin-top:2px">${fmtDateJP(m.date)}／${m.qty}個${m.memo ? '／' + escapeHtmlMain(m.memo) : ''}</div>
         </div>
@@ -6412,7 +6430,7 @@ function whConsignItemRowHtml(m) {
         </div>
       </div>
       ${pendingNote}
-      <div style="display:flex;gap:8px;margin-top:8px">
+      <div class="wh-consign-row-actions" style="display:flex;gap:8px;margin-top:8px">
         <button onclick="openSettleConsign('${m._key}')" style="flex:1;padding:6px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">精算（売れた）</button>
         <button onclick="returnConsign('${m._key}')" style="flex:1;padding:6px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">返却（在庫に戻す）</button>
         <button onclick="openEditConsignQty('${m._key}')" style="flex:0.7;padding:6px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">数量を編集</button>
@@ -6600,7 +6618,7 @@ function renderWhConsignList() {
       const totalQty = items.reduce((sum, m) => sum + (m.qty || 0), 0);
       return `
         <div style="border:1.2px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer" onclick="toggleWhConsignClient(${idx})">
+          <div class="wh-consign-client-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer" onclick="toggleWhConsignClient(${idx})">
             <div style="display:flex;align-items:center;gap:6px;min-width:0">
               <span class="accordion-arrow${isOpen ? ' open' : ''}" style="font-size:10px;flex-shrink:0">▼</span>
               <div style="font-size:14px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${items.length}件／合計${totalQty}個</span></div>
