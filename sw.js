@@ -22,10 +22,20 @@ try {
   });
 
   const messaging = firebase.messaging();
-  // アプリ（タブ）を閉じている・見ていない間に届いたプッシュ通知を、OSの通知として表示する
+  // アプリ（タブ）を閉じている・見ていない間に届いたプッシュ通知を、OSの通知として表示する。
+  //
+  // ── iPhoneで同じ通知が2つ届いてしまう問題への対応 ──
+  // これまでサーバー側はFCMの「notification」という形式でメッセージを送っていたが、この形式は
+  // ブラウザ（Service Worker）側が何もしなくても自動的にOSの通知を表示してしまう仕組みが
+  // あり、それに加えてこのonBackgroundMessageの中でも自分でshowNotificationを呼んでいたため、
+  // 「自動表示された1つ」＋「自分で表示した1つ」の合計2つが表示されてしまうことがあった。
+  // （Macでは自動表示側が働かず1つだけになっていた一方、iPhoneでは両方とも働いてしまって
+  // いたと見られる。）これを避けるため、サーバー側は「data」という、自動表示が一切起きない
+  // 形式で送るように変更し、通知の表示は必ずこのonBackgroundMessageの中の1箇所だけで行う
+  // ようにした。あわせて、読み取り先もpayload.notificationではなくpayload.dataに変更している。
   messaging.onBackgroundMessage((payload) => {
-    const title = (payload.notification && payload.notification.title) || '株式会社KANETAKA';
-    const body = (payload.notification && payload.notification.body) || '';
+    const title = (payload.data && payload.data.title) || '株式会社KANETAKA';
+    const body = (payload.data && payload.data.body) || '';
     self.registration.showNotification(title, { body, icon: './icon-192.png' });
   });
 } catch (e) {
