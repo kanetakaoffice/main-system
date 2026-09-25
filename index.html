@@ -537,7 +537,15 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <!-- 要望「買取価格CSVの状態を、HOMEのQuick Menuの上に小さく表示したい」への対応。
          最終取り込み日時（/buybackImportMeta/lastImportedAt）を毎回HOME表示時に取得し、
          1日以上経っていれば注意色で、それ以内であれば通常の色で表示する。 -->
-    <div id="buyback-csv-status" style="display:none;font-size:11px;color:var(--text-muted);margin-bottom:10px;padding:7px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--border)"></div>
+    <!-- 要望「HOMEのこの表示から、そのままCSVを取り込めるようにしたい」への対応。
+         右側のボタンから直接ファイルを選択でき、取り込みの進み具合もこの欄に表示する。 -->
+    <div id="buyback-csv-status" style="display:none;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--text-muted);margin-bottom:10px;padding:6px 8px 6px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--border)">
+      <span id="buyback-csv-status-text"></span>
+      <label style="flex-shrink:0;padding:5px 10px;font-size:11.5px;font-weight:700;border:1.5px solid var(--gold-dark);border-radius:8px;background:var(--white);color:var(--gold-dark);cursor:pointer;white-space:nowrap">
+        📥 CSVを取り込む
+        <input type="file" accept=".csv" onchange="handleHomeBuybackCsvSelected(event)" style="display:none">
+      </label>
+    </div>
     <div class="card">
       <div class="card-title">Quick Menu</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 16px 16px">
@@ -8446,7 +8454,7 @@ function buildBuybackRecordsFromCsv(rows) {
 // JANコードごとのレコードを、Firebaseの複数箇所同時更新（PATCH）でまとめて書き込む。
 // 1回のリクエストで大量のJANコードを送ろうとすると重くなるため、一定件数ずつ分割して
 // 送信し、進捗（何件中何件が完了したか）を画面に表示する。
-async function importBuybackRecords(records) {
+async function importBuybackRecords(records, onProgress) {
   const jans = Object.keys(records);
   const total = jans.length;
   const batchSize = 300;
@@ -8464,6 +8472,7 @@ async function importBuybackRecords(records) {
     done += chunkJans.length;
     if (progressBar) progressBar.style.width = Math.round(done / total * 100) + '%';
     if (statusEl) statusEl.textContent = `取り込み中… ${done}/${total}件`;
+    if (typeof onProgress === 'function') onProgress(done, total);
   }
   window._buybackPriceRef = null; // 一覧検索用のキャッシュを無効化（次回開いた時に最新を取得し直す）
   // 要望「CSVが更新されないなら、毎回読み込ませるための通知が欲しい」への対応。
@@ -8497,6 +8506,7 @@ function handleBuybackCsvSelected(event) {
       }
       if (statusEl) statusEl.textContent = `${count}件のデータを取り込みます…`;
       await importBuybackRecords(records);
+      updateBuybackCsvStatus(); // HOMEの最終更新日時の表示も最新にしておく
     } catch (e) {
       console.error('買取価格CSV取り込みエラー', e);
       if (statusEl) statusEl.textContent = '取り込みに失敗しました：' + (e && e.message ? e.message : e);
@@ -12662,15 +12672,18 @@ async function renderHomeScreen() {
 // Cloud Functions側のリマインド通知（checkBuybackCsvFreshness）としきい値（1日）を揃えている。
 async function updateBuybackCsvStatus() {
   const el = document.getElementById('buyback-csv-status');
-  if (!el) return;
+  const textEl = document.getElementById('buyback-csv-status-text');
+  if (!el || !textEl) return;
+  // HOMEからの取り込み中は、進み具合の表示を上書きしない
+  if (_homeBuybackImporting) return;
   try {
     const res = await fetch(authedUrl('/buybackImportMeta/lastImportedAt.json'));
     const lastImportedAt = await res.json();
-    el.style.display = 'block';
+    el.style.display = 'flex';
     if (!lastImportedAt) {
       el.style.color = 'var(--warning, #b45309)';
       el.style.borderColor = 'var(--warning, #b45309)';
-      el.textContent = '📊 買取価格CSV：まだ取り込まれていません（「買取価格」画面から取り込めます）';
+      textEl.textContent = '📊 買取価格CSV：まだ取り込まれていません';
       return;
     }
     const ageMs = Date.now() - lastImportedAt;
@@ -12679,15 +12692,58 @@ async function updateBuybackCsvStatus() {
     if (stale) {
       el.style.color = 'var(--warning, #b45309)';
       el.style.borderColor = 'var(--warning, #b45309)';
-      el.textContent = `📊 買取価格CSV：最終更新 ${dateStr}（1日以上経過しています。更新をおすすめします）`;
+      textEl.textContent = `📊 買取価格CSV：最終更新 ${dateStr}（1日以上経過・更新をおすすめします）`;
     } else {
       el.style.color = 'var(--text-muted)';
       el.style.borderColor = 'var(--border)';
-      el.textContent = `📊 買取価格CSV：最終更新 ${dateStr}`;
+      textEl.textContent = `📊 買取価格CSV：最終更新 ${dateStr}`;
     }
   } catch (e) {
     el.style.display = 'none';
   }
+}
+
+// HOMEの「📥 CSVを取り込む」ボタンから呼ばれる。取り込み処理そのものは「買取価格」画面と
+// 全く同じもの（parseCsvText／buildBuybackRecordsFromCsv／importBuybackRecords）を使い、
+// 進み具合だけをHOMEの表示欄に出す。完了後は最終更新日時の表示を最新にする。
+var _homeBuybackImporting = false;
+function handleHomeBuybackCsvSelected(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = ''; // 同じファイルを選び直した時にもonchangeが発火するようにする
+  if (!file) return;
+  const el = document.getElementById('buyback-csv-status');
+  const textEl = document.getElementById('buyback-csv-status-text');
+  const setText = (t) => { if (textEl) textEl.textContent = t; };
+  if (el) { el.style.color = 'var(--text-muted)'; el.style.borderColor = 'var(--border)'; }
+  _homeBuybackImporting = true;
+  setText('📊 ファイルを読み込んでいます…');
+  const finish = () => { _homeBuybackImporting = false; };
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const rows = parseCsvText(String(reader.result || ''));
+      const records = buildBuybackRecordsFromCsv(rows);
+      const count = Object.keys(records).length;
+      if (!count) {
+        finish();
+        setText('📊 取り込める行が見つかりませんでした。CSVの形式をご確認ください');
+        return;
+      }
+      setText(`📊 ${count}件のデータを取り込みます…`);
+      await importBuybackRecords(records, (done, total) => {
+        setText(`📊 取り込み中… ${done}/${total}件`);
+      });
+      finish();
+      showToast(`買取価格CSVを取り込みました（${count}件）`);
+      updateBuybackCsvStatus();
+    } catch (e) {
+      finish();
+      console.error('買取価格CSV取り込みエラー（HOME）', e);
+      setText('📊 取り込みに失敗しました：' + (e && e.message ? e.message : e));
+    }
+  };
+  reader.onerror = () => { finish(); setText('📊 ファイルの読み込みに失敗しました'); };
+  reader.readAsText(file, 'UTF-8');
 }
 
 // 一般ユーザー（倉庫作業員）向けのHOME：在庫整理・Amazon/EC出荷・梱包作業に必要な情報だけに絞り、
