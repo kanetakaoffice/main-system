@@ -6,6 +6,19 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
+<script>
+// 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
+// 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
+// クラスを付け、CSS側で下と左右に余白を足して、ボタンを角の丸みやホームバーから離す。
+(function () {
+  try {
+    var ua = navigator.userAgent || '';
+    var isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var standalone = navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+    if (isIOS && standalone) document.documentElement.classList.add('ios-standalone');
+  } catch (e) {}
+})();
+</script>
 <meta name="theme-color" content="#e8e8e8"><!-- v20260711 -->
 <title>株式会社KANETAKA</title>
 <link rel="manifest" href="manifest.json">
@@ -140,6 +153,11 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
 .nav-badge { position: absolute; top: 4px; right: calc(50% - 20px); background: var(--danger); color: #fff; font-size: 9px; font-weight: 700; border-radius: 20px; padding: 1px 4px; min-width: 14px; text-align: center; display: none; }
 .nav-btn-wrap { position: relative; flex: 1; display: flex; justify-content: center; }
 .main { padding-top: calc(env(safe-area-inset-top, 0px) + 58px); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 68px); min-height: 100vh; }
+/* ホーム画面から開いたiPhoneでは、画面下の角が丸くなっている部分とホームバーに下メニューの両端の
+   ボタンが重なって見切れてしまうため、下と左右に余白を足す（head内の小さなスクリプトで付けるクラスで切り替え） */
+.ios-standalone .bottom-nav { padding-bottom: max(env(safe-area-inset-bottom, 0px), 20px); padding-left: 12px; padding-right: 12px; }
+.ios-standalone .main { padding-bottom: calc(max(env(safe-area-inset-bottom, 0px), 20px) + 68px); }
+.ios-standalone .toast { bottom: calc(max(env(safe-area-inset-bottom, 0px), 20px) + 76px); }
 .screen { display: none; padding: 16px; }
 .screen.active { display: block; }
 .card { background: var(--white); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
