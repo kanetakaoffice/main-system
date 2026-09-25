@@ -16,6 +16,12 @@
      共有・PDF保存にその場で自動的に切り替わる（printRenderedDeliverySlipへのフォールバック） -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<!-- 要望「取引先からの新規申請・取消・修正の通知を、アプリを閉じていても届くようにしたい」
+     への対応。Firebase Cloud Messaging（プッシュ通知）用のSDK。読み込みに失敗しても
+     （オフライン・回線状況等）他の機能に一切影響しないよう、これらを使う側のコードは
+     必ずtypeof firebaseのチェックとtry/catchを通してから使う作りにしてある。 -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -2686,6 +2692,64 @@ function showConsignEditedNotification(req) {
   } catch (e) { console.error('notification error', e); }
 }
 
+// 要望「取引先からの新規申請・取消・修正の通知を、アプリを閉じていても届くようにしたい」
+// への対応。これまでのブラウザ通知（Notification API、30秒ごとのポーリングと組み合わせた
+// もの）は、このアプリのタブを開いている間しか届かなかった。Firebase Cloud Messaging（FCM）
+// を使ったプッシュ通知を追加し、アプリを閉じていても・端末がスリープしていてもポップアップで
+// 届くようにする。サーバー側（Cloud Functions）で新規・取消・修正を検知して送信する作りの
+// ため、このアプリ（クライアント）側では「どの端末に送ればよいか」をFirebaseに登録する
+// （トークンを発行してデータベースに保存する）ところまでを担当する。
+// firebase-app-compat.js・firebase-messaging-compat.jsの読み込みに失敗した場合（オフライン・
+// 対応していないブラウザ等）でも、既存のブラウザ通知や他の機能には一切影響しないよう、
+// 必ずtypeof firebaseの確認とtry/catchを通してから使う。
+const FCM_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBQ3flrqjgVV-fgfVF3DvDsowLsQASYLUk",
+  authDomain: "trip-app-a1746.firebaseapp.com",
+  databaseURL: "https://trip-app-a1746-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "trip-app-a1746",
+  storageBucket: "trip-app-a1746.firebasestorage.app",
+  messagingSenderId: "529959327002",
+  appId: "1:529959327002:web:9e98a8aa9b6afae54208a3"
+};
+const FCM_VAPID_KEY = "BELrUEhXeyx3mfqG_jz6FIJiqgxqiYabZ-YYjyW1NH_D6VACqLWblQ2tQSaZ3OeJMWy4eIar42U_3qdSM-VvMF8";
+
+// 既存のsw.js（プッシュ通知をバックグラウンドで受け取れるよう、あわせて更新している）の
+// 登録を、ページを開いた時点で一度だけ行っておき、プッシュ通知の登録時にも使い回す
+window._swRegistrationPromise = ('serviceWorker' in navigator)
+  ? navigator.serviceWorker.register('./sw.js').catch(() => null)
+  : Promise.resolve(null);
+
+let _fcmMessagingInstance = null;
+function getFcmMessagingIfAvailable() {
+  if (_fcmMessagingInstance) return _fcmMessagingInstance;
+  try {
+    if (typeof firebase === 'undefined' || !firebase.messaging) return null;
+    if (!firebase.apps || !firebase.apps.length) firebase.initializeApp(FCM_FIREBASE_CONFIG);
+    _fcmMessagingInstance = firebase.messaging();
+    return _fcmMessagingInstance;
+  } catch (e) { console.error('FCM init error:', e); return null; }
+}
+
+// プッシュ通知の宛先（トークン）を発行し、データベース（/fcmTokens）に保存する。
+// Cloud Functions側はここに保存されたトークン宛にすべて送信する（このボタン自体、
+// 一般ユーザー（倉庫作業員）の端末には表示していないため、保存されるのは実質的に
+// 管理者の端末だけになる）。失敗しても画面には出さず、既存のブラウザ通知の有効化自体は
+// 成功として扱う（プッシュ通知はあくまで追加のおまけ機能のため）。
+async function registerPushNotificationToken() {
+  try {
+    const messaging = getFcmMessagingIfAvailable();
+    if (!messaging) return;
+    const reg = await window._swRegistrationPromise;
+    if (!reg) return;
+    const token = await messaging.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
+    if (!token) return;
+    await fetch(authedUrl('/fcmTokens/' + encodeURIComponent(token) + '.json'), {
+      method: 'PUT',
+      body: JSON.stringify({ email: currentSessionEmail(), updatedAt: Date.now() })
+    });
+  } catch (e) { console.error('FCM token registration failed:', e); }
+}
+
 // Notification.requestPermission()はユーザー操作（クリック等）をきっかけに呼ぶ必要があるため、
 // 卸売管理画面のボタンから明示的に呼び出す
 async function requestConsignNotifyPermission() {
@@ -2693,11 +2757,19 @@ async function requestConsignNotifyPermission() {
   try {
     const perm = await Notification.requestPermission();
     updateConsignNotifyPromptVisibility();
-    if (perm === 'granted') showToast('通知を有効にしました');
+    if (perm === 'granted') {
+      showToast('通知を有効にしました');
+      registerPushNotificationToken();
+    }
     else if (perm === 'denied') showToast('通知が許可されませんでした（ブラウザの設定からいつでも変更できます）');
   } catch (e) { console.error(e); }
 }
 
+// 要望「アプリを閉じていても通知が届くようにしたい」への対応。以前からブラウザ通知を
+// 許可済みだった端末は、上のrequestConsignNotifyPermission()を通らないため、プッシュ通知の
+// トークンがまだ登録されていない。このバナー表示チェックが呼ばれる（委託リスト画面や
+// ホーム画面を開いた）タイミングで、許可済みであれば1回だけ静かに登録を試みる。
+let _fcmSilentRegisterAttempted = false;
 function updateConsignNotifyPromptVisibility() {
   const supported = 'Notification' in window;
   const show = supported && Notification.permission === 'default';
@@ -2707,6 +2779,10 @@ function updateConsignNotifyPromptVisibility() {
     const el = document.getElementById(id);
     if (el) el.style.display = show ? 'flex' : 'none';
   });
+  if (supported && Notification.permission === 'granted' && !_fcmSilentRegisterAttempted) {
+    _fcmSilentRegisterAttempted = true;
+    registerPushNotificationToken();
+  }
 }
 
 // 30秒ごとに（画面を問わず）consignRequestsだけを軽く取得し直し、新着・取消・修正があれば
