@@ -2662,34 +2662,24 @@ function playConsignNotifySound() {
   } catch (e) { /* 自動再生ポリシー等でブロックされても無視する */ }
 }
 
+// 【重要】この3つの関数は、以前はここで直接 new Notification(...) を呼び出して
+// ポップアップを表示していたが、Firebase Cloud Messaging（プッシュ通知）を導入したことで
+// サーバー側（Cloud Functions）からも同じ内容のポップアップが送られるようになった。
+// 両方が同時に動くと、アプリを開いている間だけ同じ通知が2つ表示されてしまう不具合が
+// あったため、ここでのポップアップ表示は取りやめ、音・バッジの更新だけ行うようにした。
+// 実際のポップアップ表示は、常にサーバー側のプッシュ通知（sw.jsのonBackgroundMessage）
+// に一本化している。
 function showConsignBrowserNotification(newCount, latestReq) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  try {
-    const body = (newCount === 1 && latestReq)
-      ? `${latestReq.client || ''}／${latestReq.model || ''}／${latestReq.qty || ''}個（${latestReq.type === 'settle' ? '精算' : '返却'}）`
-      : `${newCount}件の新しい連絡があります`;
-    const n = new Notification('🔔 取引先から連絡が届きました', { body });
-    n.onclick = () => { window.focus(); n.close(); };
-  } catch (e) { console.error('notification error', e); }
+  // ポップアップはプッシュ通知側に一本化したため、ここでは何もしない
 }
 
 // 要望「取引先の方が取り消したり、修正した時の通知は来ますか？来るようにしてほしい」への対応
 function showConsignCanceledNotification(req) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  try {
-    const body = `${req.client || ''}／${req.model || ''}／${req.qty || ''}個（${req.type === 'settle' ? '精算' : '返却'}）`;
-    const n = new Notification('❌ 取引先が申請を取り消しました', { body });
-    n.onclick = () => { window.focus(); n.close(); };
-  } catch (e) { console.error('notification error', e); }
+  // ポップアップはプッシュ通知側に一本化したため、ここでは何もしない
 }
 
 function showConsignEditedNotification(req) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  try {
-    const body = `${req.client || ''}／${req.model || ''}／${req.qty || ''}個（${req.type === 'settle' ? '精算' : '返却'}）の内容が修正されました`;
-    const n = new Notification('✏️ 取引先が申請内容を修正しました', { body });
-    n.onclick = () => { window.focus(); n.close(); };
-  } catch (e) { console.error('notification error', e); }
+  // ポップアップはプッシュ通知側に一本化したため、ここでは何もしない
 }
 
 // 要望「取引先からの新規申請・取消・修正の通知を、アプリを閉じていても届くようにしたい」
@@ -2930,13 +2920,11 @@ function markBizEntriesSeen() {
   updateBizNavBadge(count);
 }
 
+// consign側と同じ理由（プッシュ通知との二重表示を防ぐため）で、ここでのポップアップ
+// 表示は取りやめ、音・バッジの更新だけ行う。実際のポップアップはサーバー側の
+// notifyStaffExpensePush等のプッシュ通知に一本化している。
 function showBizBrowserNotification(newCount) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  try {
-    const body = newCount === 1 ? '経費・仕入・売上のいずれかが1件登録されました' : `${newCount}件の新しい登録があります`;
-    const n = new Notification('🔔 スタッフが経費・仕入・売上を登録しました', { body });
-    n.onclick = () => { window.focus(); n.close(); };
-  } catch (e) { console.error('notification error', e); }
+  // ポップアップはプッシュ通知側に一本化したため、ここでは何もしない
 }
 
 // 30秒ごとに、既に読み込み済みの経費・仕入・売上データからスタッフ登録件数だけを再計算し、
