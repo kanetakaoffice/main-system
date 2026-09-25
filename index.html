@@ -2743,10 +2743,20 @@ async function registerPushNotificationToken() {
     if (!reg) return;
     const token = await messaging.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
     if (!token) return;
+    // 同じ端末でホーム画面アイコンの作り直しやブラウザデータの消去などが起きると、
+    // Firebaseが新しいトークンを発行することがあり、古いトークンがデータベースに残ったまま
+    // になって同じ端末に通知が二重に届く原因になる。ここで「この端末が前回登録したトークン」
+    // をlocalStorageに覚えておき、今回取得したトークンと違っていれば、古い方をデータベース
+    // から削除してから新しい方を保存することで、常に端末ごとに1件だけになるようにする。
+    const prevToken = localStorage.getItem('kanetaka_fcm_token');
+    if (prevToken && prevToken !== token) {
+      await fetch(authedUrl('/fcmTokens/' + encodeURIComponent(prevToken) + '.json'), { method: 'DELETE' }).catch(() => null);
+    }
     await fetch(authedUrl('/fcmTokens/' + encodeURIComponent(token) + '.json'), {
       method: 'PUT',
       body: JSON.stringify({ email: currentSessionEmail(), updatedAt: Date.now() })
     });
+    localStorage.setItem('kanetaka_fcm_token', token);
   } catch (e) { console.error('FCM token registration failed:', e); }
 }
 
