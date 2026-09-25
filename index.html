@@ -534,6 +534,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div style="font-size:13px;color:var(--text-muted)" id="home-date">-</div>
       <div style="font-size:20px;font-weight:700;color:var(--text);margin-top:2px;letter-spacing:0.03em">HOME</div>
     </div>
+    <!-- 要望「買取価格CSVの状態を、HOMEのQuick Menuの上に小さく表示したい」への対応。
+         最終取り込み日時（/buybackImportMeta/lastImportedAt）を毎回HOME表示時に取得し、
+         1日以上経っていれば注意色で、それ以内であれば通常の色で表示する。 -->
+    <div id="buyback-csv-status" style="display:none;font-size:11px;color:var(--text-muted);margin-bottom:10px;padding:7px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--border)"></div>
     <div class="card">
       <div class="card-title">Quick Menu</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 16px 16px">
@@ -12650,6 +12654,40 @@ async function renderHomeScreen() {
   // HOMEを開いた時点のスタッフ登録件数を既読にし、通知許可の案内バナーの表示も更新する
   markBizEntriesSeen();
   updateConsignNotifyPromptVisibility();
+  updateBuybackCsvStatus();
+}
+
+// 要望「買取価格CSVの状態を、HOMEのQuick Menuの上に小さく表示したい」への対応。
+// 最後にCSVを取り込んだ日時（/buybackImportMeta/lastImportedAt）だけを軽く取得して表示する。
+// Cloud Functions側のリマインド通知（checkBuybackCsvFreshness）としきい値（1日）を揃えている。
+async function updateBuybackCsvStatus() {
+  const el = document.getElementById('buyback-csv-status');
+  if (!el) return;
+  try {
+    const res = await fetch(authedUrl('/buybackImportMeta/lastImportedAt.json'));
+    const lastImportedAt = await res.json();
+    el.style.display = 'block';
+    if (!lastImportedAt) {
+      el.style.color = 'var(--warning, #b45309)';
+      el.style.borderColor = 'var(--warning, #b45309)';
+      el.textContent = '📊 買取価格CSV：まだ取り込まれていません（「買取価格」画面から取り込めます）';
+      return;
+    }
+    const ageMs = Date.now() - lastImportedAt;
+    const stale = ageMs >= 24 * 60 * 60 * 1000;
+    const dateStr = new Date(lastImportedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    if (stale) {
+      el.style.color = 'var(--warning, #b45309)';
+      el.style.borderColor = 'var(--warning, #b45309)';
+      el.textContent = `📊 買取価格CSV：最終更新 ${dateStr}（1日以上経過しています。更新をおすすめします）`;
+    } else {
+      el.style.color = 'var(--text-muted)';
+      el.style.borderColor = 'var(--border)';
+      el.textContent = `📊 買取価格CSV：最終更新 ${dateStr}`;
+    }
+  } catch (e) {
+    el.style.display = 'none';
+  }
 }
 
 // 一般ユーザー（倉庫作業員）向けのHOME：在庫整理・Amazon/EC出荷・梱包作業に必要な情報だけに絞り、
