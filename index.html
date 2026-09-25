@@ -111,13 +111,21 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
    配置をやめ、要素どうしを自然な余白で近くに寄せて表示するよう切り替える
    （JSの再描画をはさまずCSSのメディアクエリだけで画面幅の変化に追従できるようにするため、
    renderWhConsignList・whConsignItemRowHtml側のHTML構造自体は変えず、ここでの
-   スタイル切り替えだけで対応している）。 */
+   スタイル切り替えだけで対応している）。
+   さらに要望：「精算・返却・数量を編集のボタンを原価の横に配置できますか」への対応。
+   携帯幅では今まで通りボタンは型番・原価の行の下に別行（横いっぱい）で表示するが、
+   PC幅だけ、ボタンの行を強制的に折り返させていたflex-basis:100%を解除し、型番・原価と
+   同じ行内に収まる余白があればそのまま横に並ぶようにする（wh-consign-row-topに
+   flex-wrap:wrapを指定してあるため、幅が足りない場合はボタン欄がそのまま自動的に
+   次の行に折り返され、レイアウトが崩れることはない）。申請中メモ（pending note）は
+   ボタンより後ろ（order）に来るよう、orderの値をPC幅だけ入れ替えている。 */
 @media (min-width: 860px) {
   .wh-consign-client-header { justify-content: flex-start !important; gap: 16px; }
   .wh-consign-row-top { justify-content: flex-start !important; gap: 28px; }
   .wh-consign-row-top-main { flex: 0 1 auto !important; max-width: 420px; }
-  .wh-consign-row-actions { justify-content: flex-start; }
+  .wh-consign-row-actions { justify-content: flex-start; flex-basis: auto !important; margin-top: 0 !important; order: 3 !important; gap: 10px; }
   .wh-consign-row-actions > button { flex: 0 0 auto !important; padding-left: 22px; padding-right: 22px; }
+  .wh-consign-row-pending { order: 4 !important; }
 }
 .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(135deg, #b0b0b0, #a0a0a0); border-top: 2px solid #c8c8c8; display: flex; padding-bottom: env(safe-area-inset-bottom, 0); box-shadow: 0 -2px 12px rgba(0,0,0,0.12); }
 .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 8px 0 6px; background: none; border: none; cursor: pointer; color: #4a4a4a; font-size: 9px; font-weight: 500; -webkit-tap-highlight-color: transparent; }
@@ -6413,27 +6421,31 @@ function whConsignItemRowHtml(m) {
   const rowStyle = pendingQty > 0
     ? 'padding:10px 8px;margin:2px 0;border-bottom:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff8e1;border:1.2px solid #e0c56a'
     : 'padding:10px 0;border-bottom:1px solid var(--border);font-size:13px';
+  // 要望「精算・返却・数量を編集のボタンを原価の横に配置できますか」への対応。
+  // pendingNote・row-actionsをどちらもwh-consign-row-top自身のflex子要素にし、orderで
+  // 表示順を制御する（携帯幅：型番/原価の行 → 申請中メモ → ボタン、PC幅：型番/原価/ボタンが
+  // 横並び → その下に申請中メモ、の順になるようCSS側でorderを入れ替えている）。
   const pendingNote = pendingQty > 0
-    ? `<div style="margin-top:6px;font-size:11.5px;font-weight:700;color:#b8860b">⏳ このうち${pendingQty}個は取引先から${pendingLabel}の申請中です（確認すると正式にお預かり数から引かれます）</div>`
+    ? `<div class="wh-consign-row-pending" style="flex-basis:100%;order:3;margin-top:6px;font-size:11.5px;font-weight:700;color:#b8860b">⏳ このうち${pendingQty}個は取引先から${pendingLabel}の申請中です（確認すると正式にお預かり数から引かれます）</div>`
     : '';
   return `
     <div style="${rowStyle}">
-      <div class="wh-consign-row-top" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
-        <div class="wh-consign-row-top-main" style="min-width:0;flex:1">
+      <div class="wh-consign-row-top" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div class="wh-consign-row-top-main" style="min-width:0;flex:1;order:1">
           <div style="color:var(--text);font-weight:600">${escapeHtmlMain(consignItemModelLive(m))}</div>
           <div style="color:var(--text-muted);font-size:11px;margin-top:2px">${fmtDateJP(m.date)}／${m.qty}個${m.memo ? '／' + escapeHtmlMain(m.memo) : ''}</div>
         </div>
-        <div style="flex-shrink:0;text-align:right">
+        <div style="flex-shrink:0;text-align:right;order:2">
           <div style="font-size:9px;color:var(--text-muted);margin-bottom:2px">原価（円）</div>
           <input type="number" min="0" value="${costVal}" placeholder="任意" oninput="updateWhConsignCostPrice('${m._key}', this.value)" style="width:78px;padding:5px 6px;font-size:12px;border:1.2px solid var(--border);border-radius:6px;text-align:right">
           <div style="font-size:9px;color:var(--text-muted);margin-top:2px">取引先には非表示</div>
         </div>
-      </div>
-      ${pendingNote}
-      <div class="wh-consign-row-actions" style="display:flex;gap:8px;margin-top:8px">
-        <button onclick="openSettleConsign('${m._key}')" style="flex:1;padding:6px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">精算（売れた）</button>
-        <button onclick="returnConsign('${m._key}')" style="flex:1;padding:6px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">返却（在庫に戻す）</button>
-        <button onclick="openEditConsignQty('${m._key}')" style="flex:0.7;padding:6px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">数量を編集</button>
+        ${pendingNote}
+        <div class="wh-consign-row-actions" style="display:flex;gap:8px;margin-top:8px;flex-basis:100%;order:4">
+          <button onclick="openSettleConsign('${m._key}')" style="flex:1;padding:6px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">精算（売れた）</button>
+          <button onclick="returnConsign('${m._key}')" style="flex:1;padding:6px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">返却（在庫に戻す）</button>
+          <button onclick="openEditConsignQty('${m._key}')" style="flex:0.7;padding:6px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">数量を編集</button>
+        </div>
       </div>
     </div>`;
 }
