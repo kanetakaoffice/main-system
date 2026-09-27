@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-27i">
+<meta name="app-build" content="2026-09-28b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -6671,6 +6671,24 @@ function renderWhConsignNewItemsPreview() {
 // 既存の「現在预けている商品」（stockMoves側のholdingレコード）を、取引先ごとにまとめた
 // 簡易な一覧として表示する。操作ボタン（精算・返却・数量編集など）は持たせず、あくまで
 // 新しく追加する際に「何が既にあるか」を確認するための参照用の表示
+// 要望「取引先が増えたときに見やすくしてほしい」への対応（案1）。左で取引先を選んでいれば、その
+// 取引先の分だけを表示する。選ぶ前は取引先名と合計だけを並べ、タップするとその取引先の中身が開く。
+// 同じ型番は預けた日が違っても1行（合計個数）にまとめる。
+let _whConsignMirrorOpen = new Set();
+function toggleWhConsignMirrorClient(encClient) {
+  const client = decodeURIComponent(encClient);
+  if (_whConsignMirrorOpen.has(client)) _whConsignMirrorOpen.delete(client); else _whConsignMirrorOpen.add(client);
+  renderWhConsignHoldingMirror();
+}
+function consignModelGroupsOf(items) {
+  const groups = {}; const order = [];
+  items.forEach(m => {
+    const gk = normalizeModelStr(consignItemModelLive(m)) || ('__' + m._key);
+    if (!groups[gk]) { groups[gk] = []; order.push(gk); }
+    groups[gk].push(m);
+  });
+  return order.map(gk => ({ gk, items: groups[gk], qty: groups[gk].reduce((s, m) => s + (m.qty || 0), 0) }));
+}
 function renderWhConsignHoldingMirror() {
   const bodyEl = document.getElementById('wh-consign-holding-mirror-body');
   if (!bodyEl) return;
@@ -6686,21 +6704,39 @@ function renderWhConsignHoldingMirror() {
     if (!groups[key]) { groups[key] = []; order.push(key); }
     groups[key].push(m);
   });
+  order.forEach(k => groups[k].sort((a,b) => (b.createdAt||0) - (a.createdAt||0)));
   order.sort((a,b) => (groups[b][0].createdAt||0) - (groups[a][0].createdAt||0));
-  bodyEl.innerHTML = order.map(client => {
+  const selected = (document.getElementById('wh-consign-client')?.value || '').trim();
+  const rowsHtml = items => consignModelGroupsOf(items).map(g => `
+      <div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:12px;color:var(--text)">
+        <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(consignItemModelLive(g.items[0]))}</div>
+        <div style="flex-shrink:0;color:var(--text-muted)">${g.qty}個</div>
+      </div>`).join('');
+  const clientBlock = (client, open, clickable) => {
     const items = groups[client];
     const totalQty = items.reduce((s, m) => s + (m.qty || 0), 0);
-    const rows = items.map(m => `
-      <div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:12px;color:var(--text)">
-        <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(consignItemModelLive(m))}</div>
-        <div style="flex-shrink:0;color:var(--text-muted)">${m.qty}個</div>
-      </div>`).join('');
+    const enc = encodeURIComponent(client).replace(/'/g, '%27');
     return `
-      <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border)">
-        <div style="font-size:12.5px;font-weight:700;color:var(--text);margin-bottom:4px">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted)">　合計${totalQty}個</span></div>
-        ${rows}
+      <div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+        <div ${clickable ? `onclick="toggleWhConsignMirrorClient('${enc}')"` : ''} style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--text);${clickable ? 'cursor:pointer' : ''};${open ? 'margin-bottom:4px' : ''}">
+          ${clickable ? `<span class="accordion-arrow${open ? ' open' : ''}" style="font-size:9px">▼</span>` : ''}
+          <span style="flex:1;min-width:0">${escapeHtmlMain(client)}</span>
+          <span style="font-weight:400;color:var(--text-muted)">合計${totalQty}個</span>
+        </div>
+        ${open ? rowsHtml(items) : ''}
       </div>`;
-  }).join('');
+  };
+  if (selected && groups[selected]) {
+    const others = order.length - 1;
+    bodyEl.innerHTML = clientBlock(selected, true, false) + (others > 0 ? `<div style="font-size:11px;color:var(--text-muted)">ほかに${others}社に預けています（取引先の選択を外すと一覧で見られます）</div>` : '');
+    return;
+  }
+  if (selected) {
+    bodyEl.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:4px 0 10px">${escapeHtmlMain(selected)}に現在預けている商品はありません</div>` + order.map(c => clientBlock(c, _whConsignMirrorOpen.has(c), true)).join('');
+    return;
+  }
+  // 取引先が1社だけのときは、最初から開いておく
+  bodyEl.innerHTML = order.map(c => clientBlock(c, order.length === 1 || _whConsignMirrorOpen.has(c), order.length > 1)).join('');
 }
 
 // 預け（委託）をまとめて記録：通常の出庫と同様に在庫は減らすが、type='consign' として通常の出庫（販売）とは区別する
@@ -6884,6 +6920,10 @@ function clearWhConsignClientSearch(idx) {
   input.focus();
 }
 
+// 要望「現在預けている商品を開いたときの表示を、右側の一覧のようにシンプルにしてほしい。
+// 『2件に分かれています』も見にくい」への対応（案2）。同じ型番は預けた日が違っても1行にまとめ、
+// 「型番……合計個数 ›」だけを表示する。行をタップしたときだけ、預けた日ごとの内訳・原価・
+// 精算／返却／数量を編集のボタンが開く。まとめた行での精算は古く預けた分から順に数を減らす。
 function renderWhConsignClientItemsList(idx) {
   const client = _whConsignClientOrder[idx];
   const root = document.getElementById('wh-consign-client-items-' + idx);
@@ -6891,44 +6931,115 @@ function renderWhConsignClientItemsList(idx) {
   const holding = (stockMoves || []).filter(m => m.type === 'consign' && m.status === 'holding' && (m.client || '（取引先未設定）') === client)
     .sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
   const q = (_whConsignClientSearchQuery[client] || '').trim().toLowerCase();
-  // 型番はハイフン・スペース・カッコ・大文字小文字の違いを無視して一致させる
   const qNorm = normalizeModelStr(q);
   const filtered = qNorm ? holding.filter(m => normalizeModelStr(consignItemModelLive(m)).includes(qNorm)) : holding;
+  const groups = consignModelGroupsOf(filtered);
   const countEl = document.getElementById('wh-consign-client-search-count-' + idx);
-  if (countEl) countEl.textContent = q ? `${filtered.length}件見つかりました` : '';
-  if (!filtered.length) {
+  if (countEl) countEl.textContent = q ? `${groups.length}件見つかりました` : '';
+  if (!groups.length) {
     root.innerHTML = `<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:16px 0">該当する型番が見つかりませんでした</div>`;
     return;
   }
-  // 同じ型番（正規化して判定）のholdingレコードをまとめて1行にする。1件しかない型番は
-  // これまで通りそのまま表示し、2件以上ある場合だけ合計数量のまとめ行にする
-  const modelGroups = {};
-  const modelOrder = [];
-  filtered.forEach(m => {
-    const gk = normalizeModelStr(consignItemModelLive(m)) || '__unknown__';
-    if (!modelGroups[gk]) { modelGroups[gk] = []; modelOrder.push(gk); }
-    modelGroups[gk].push(m);
-  });
-  root.innerHTML = modelOrder.map(gk => {
-    const items = modelGroups[gk];
-    if (items.length === 1) return whConsignItemRowHtml(items[0]);
-    const totalQty = items.reduce((s, m) => s + (m.qty || 0), 0);
-    const setKey = idx + '::' + gk;
+  const btn = (label, onclick, flex) => `<button onclick="event.stopPropagation();${onclick}" style="flex:${flex || 1};padding:6px 8px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer;white-space:nowrap">${label}</button>`;
+  const costInput = m => `<label onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);flex-shrink:0">原価<input type="number" min="0" value="${m.costPrice != null ? m.costPrice : ''}" placeholder="任意" oninput="updateWhConsignCostPrice('${m._key}', this.value)" style="width:84px;padding:4px 6px;font-size:12px;border:1.2px solid var(--border);border-radius:6px;text-align:right"></label>`;
+  root.innerHTML = groups.map(g => {
+    const items = g.items.slice().sort((a, b) => ((a.date || '').localeCompare(b.date || '')) || ((a.createdAt || 0) - (b.createdAt || 0)));
+    const keys = items.map(m => m._key);
+    const pending = (consignRequests || []).filter(r => r.status === 'pending' && keys.includes(r.moveKey));
+    const pendingQty = pending.reduce((s, r) => s + (r.qty || 0), 0);
+    const pendingLabel = pending.some(r => r.type === 'settle') && pending.some(r => r.type === 'return') ? '精算・返却' : pending.some(r => r.type === 'settle') ? '精算' : '返却';
+    const setKey = idx + '::' + g.gk;
     const isOpen = _whConsignExpandedModelGroups.has(setKey);
-    return `
-      <div style="border-bottom:1px solid var(--border)">
-        <div style="padding:10px 0;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer" onclick="toggleWhConsignModelGroup(${idx}, '${gk}')">
-          <div style="min-width:0">
-            <div style="color:var(--text);font-weight:600">${escapeHtmlMain(consignItemModelLive(items[0]))}</div>
-            <div style="color:var(--text-muted);font-size:11px;margin-top:2px">合計${totalQty}個（${items.length}件に分かれています）</div>
+    const keysArg = keys.join(',');
+    // 要望「取引先はいつも委託リスト（取引先ポータル）から申請してくれるので、こちらの画面に
+    // 精算・返却・数量を編集のボタンが常に並んでいる必要はない」への対応。普段は預けた日と原価
+    // だけを見せ、ボタンは「その他の操作」を押したときだけ出す（電話で連絡を受けた・こちらから
+    // 引き上げた・記録した数を直したい、といった例外のときに使う）。
+    const moreOpen = _whConsignMoreOpen.has(setKey);
+    const moreLink = `<button type="button" onclick="event.stopPropagation();toggleWhConsignMore(${idx}, '${g.gk}')" style="background:none;border:none;padding:0;margin-top:8px;font-size:11.5px;color:var(--text-muted);text-decoration:underline;cursor:pointer">${moreOpen ? '▲ その他の操作を閉じる' : '▼ その他の操作（アプリ以外で連絡を受けた・数を直す）'}</button>`;
+    let detail = '';
+    if (isOpen) {
+      if (items.length === 1) {
+        const m = items[0];
+        detail = `
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text-muted)">
+            <span>預けた日 ${fmtDateJP(m.date)}${m.memo ? '／' + escapeHtmlMain(m.memo) : ''}</span>${costInput(m)}<span style="font-size:10px">（原価は取引先には表示されません）</span>
           </div>
-          <span class="accordion-arrow${isOpen ? ' open' : ''}" style="font-size:10px;flex-shrink:0">▼</span>
+          ${moreLink}
+          ${moreOpen ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            ${btn('精算（売れた）', `openSettleConsign('${m._key}')`, '0 1 auto')}${btn('返却（在庫に戻す）', `returnConsign('${m._key}')`, '0 1 auto')}${btn('数量を編集', `openEditConsignQty('${m._key}')`, '0 1 auto')}
+          </div>` : ''}`;
+      } else {
+        const lines = items.map(m => `
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px dashed var(--border);font-size:12px">
+            <span style="min-width:120px;color:var(--text)">${fmtDateJP(m.date)}に預けた分　<b>${m.qty}個</b>${m.memo ? `<span style="color:var(--text-muted)">／${escapeHtmlMain(m.memo)}</span>` : ''}</span>
+            ${costInput(m)}
+            ${moreOpen ? `<span style="display:flex;gap:6px;margin-left:auto">
+              ${btn('精算', `openSettleConsign('${m._key}')`)}${btn('返却', `returnConsign('${m._key}')`)}${btn('数量を編集', `openEditConsignQty('${m._key}')`)}
+            </span>` : ''}
+          </div>`).join('');
+        detail = `
+          ${lines}
+          ${moreLink}
+          ${moreOpen ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            ${btn(`まとめて精算（${g.qty}個まで）`, `openSettleConsignGroup('${keysArg}')`, '0 1 auto')}${btn('まとめて返却', `returnConsignGroup('${keysArg}')`, '0 1 auto')}
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">まとめて精算・返却は、古く預けた分から順に数を減らします。日付ごとに操作する場合は上の内訳のボタンを使ってください。</div>` : ''}`;
+      }
+    }
+    return `
+      <div style="border-bottom:1px solid var(--border);${pendingQty > 0 ? 'background:#fff8e1;' : ''}">
+        <div onclick="toggleWhConsignModelGroup(${idx}, '${g.gk}')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 4px;cursor:pointer">
+          <div style="min-width:0;flex:1;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(consignItemModelLive(items[0]))}</div>
+          ${pendingQty > 0 ? `<span style="flex-shrink:0;font-size:11px;font-weight:700;color:#b8860b">⏳ ${pendingQty}個 ${pendingLabel}申請中</span>` : ''}
+          <span style="flex-shrink:0;font-size:13px;color:var(--text)">${g.qty}個</span>
+          <span style="flex-shrink:0;color:var(--text-muted);font-size:14px;transition:transform .15s;${isOpen ? 'transform:rotate(90deg)' : ''}">›</span>
         </div>
-        <div class="accordion-body${isOpen ? ' open' : ''}">
-          ${items.map(whConsignItemRowHtml).join('')}
-        </div>
+        ${isOpen ? `<div style="padding:4px 4px 12px">${pendingQty > 0 ? `<div style="font-size:11.5px;font-weight:700;color:#b8860b;margin-bottom:8px">このうち${pendingQty}個は取引先から${pendingLabel}の申請中です（確認すると正式にお預かり数から引かれます）</div>` : ''}${detail}</div>` : ''}
       </div>`;
   }).join('');
+}
+
+let _whConsignMoreOpen = new Set();
+function toggleWhConsignMore(idx, gk) {
+  const k = idx + '::' + gk;
+  if (_whConsignMoreOpen.has(k)) _whConsignMoreOpen.delete(k); else _whConsignMoreOpen.add(k);
+  renderWhConsignClientItemsList(idx);
+}
+
+// まとめた行の「まとめて返却」：その型番の預け中をすべて在庫に戻す（それぞれ預けた事務所へ）
+function returnConsignGroup(keysArg) {
+  const moves = String(keysArg).split(',').map(k => (stockMoves || []).find(x => x._key === k)).filter(m => m && m.status === 'holding');
+  if (!moves.length) return;
+  const total = moves.reduce((s, m) => s + (m.qty || 0), 0);
+  showConfirm(`${consignItemModelLive(moves[0])}の${total}個をすべて在庫に戻しますか？\n（一部だけ戻す場合は、内訳から日付ごとに操作してください）`).then(async ok => {
+    if (!ok) return;
+    try {
+      for (const m of moves) {
+        await applyStockDeltaAtLoc(m.productKey, m.loc, m.qty);
+        await fetch(authedUrl('/stockMoves/' + m._key + '.json'), { method: 'PATCH', body: JSON.stringify({ status: 'returned', returnedAt: Date.now() }) });
+      }
+      await loadInventory();
+      renderWhConsignList();
+      showToast(`${total}個を在庫に戻しました`);
+    } catch (e) { showToast('処理に失敗しました'); console.error(e); }
+  });
+}
+
+// まとめた行の「まとめて精算」：精算の画面（数量・売れた日・確定価格・原価）は今までと同じものを使い、
+// 確定したときに古く預けた分から順に数量を割り振る（confirmSettleConsign側で_settleGroupKeysを見る）
+let _settleGroupKeys = null;
+function openSettleConsignGroup(keysArg) {
+  const moves = String(keysArg).split(',').map(k => (stockMoves || []).find(x => x._key === k)).filter(m => m && m.status === 'holding')
+    .sort((a, b) => ((a.date || '').localeCompare(b.date || '')) || ((a.createdAt || 0) - (b.createdAt || 0)));
+  if (!moves.length) return;
+  openSettleConsign(moves[0]._key);
+  _settleGroupKeys = moves.map(m => m._key);
+  const total = moves.reduce((s, m) => s + (m.qty || 0), 0);
+  const desc = document.getElementById('wh-settle-desc');
+  if (desc) desc.textContent = `${moves[0].productName || ''}／${moves[0].client || ''}／預けている数量: 合計${total}個（古く預けた分から順に精算します）`;
+  const qtyInput = document.getElementById('wh-settle-qty');
+  if (qtyInput) { qtyInput.max = total; qtyInput.value = total; }
 }
 
 function renderWhConsignList() {
@@ -6941,7 +7052,7 @@ function renderWhConsignList() {
   const history = (stockMoves || []).filter(m => m.type === 'consign' && m.status && m.status !== 'holding')
     .sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
 
-  if (summaryEl) summaryEl.textContent = holding.length ? `${holding.length}件` : '';
+  if (summaryEl) summaryEl.textContent = holding.length ? `合計${holding.reduce((t, m) => t + (m.qty || 0), 0)}個` : '';
   // 右側プレビュー欄（パソコン幅専用）の「現在预けている一覧」も、holdingの内容が変わる
   // たびに（精算・返却・数量編集・新規の預けの記録など）合わせて更新しておく
   renderWhConsignHoldingMirror();
@@ -7006,7 +7117,7 @@ function renderWhConsignList() {
           <div class="wh-consign-client-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer" onclick="toggleWhConsignClient(${idx})">
             <div style="display:flex;align-items:center;gap:6px;min-width:0">
               <span class="accordion-arrow${isOpen ? ' open' : ''}" style="font-size:10px;flex-shrink:0">▼</span>
-              <div style="font-size:14px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${items.length}件／合計${totalQty}個</span></div>
+              <div style="font-size:14px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${consignModelGroupsOf(items).length}型番／合計${totalQty}個</span></div>
             </div>
             <button onclick="event.stopPropagation(); showConsignListPreview(decodeURIComponent(escape(atob('${btoa(unescape(encodeURIComponent(client)))}'))))" style="flex-shrink:0;padding:6px 10px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">📄 内容を見る</button>
           </div>
@@ -7987,6 +8098,7 @@ function openSettleConsign(key) {
   const m = stockMoves.find(x => x._key === key);
   if (!m) return;
   _settleTargetKey = key;
+  _settleGroupKeys = null;
   _settleFinalPriceManuallyEdited = false;
   const desc = document.getElementById('wh-settle-desc');
   const qtyInput = document.getElementById('wh-settle-qty');
@@ -8016,6 +8128,7 @@ function closeSettleConsign() {
   const modal = document.getElementById('wh-settle-modal');
   if (modal) modal.style.display = 'none';
   _settleTargetKey = null;
+  _settleGroupKeys = null;
   _consignApprovalPending = null;
   _settleFinalPriceManuallyEdited = false;
 }
@@ -8178,6 +8291,40 @@ async function confirmSettleConsign() {
   const costPriceNum = costPriceTrimmed === '' ? null : parseInt(costPriceTrimmed, 10);
   const costPriceToSave = (costPriceNum != null && !isNaN(costPriceNum) && costPriceNum >= 0) ? costPriceNum : null;
   if (!settleQty || settleQty < 1) { showToast('精算する数量を入力してください'); return; }
+  // まとめて精算（同じ型番で預けた日が違う分をまとめた行から開いた場合）は、古く預けた分から順に割り振る
+  const groupMoves = (_settleGroupKeys || []).map(k => stockMoves.find(x => x._key === k)).filter(x => x && x.status === 'holding');
+  if (groupMoves.length > 1) {
+    const groupTotal = groupMoves.reduce((s, x) => s + (x.qty || 0), 0);
+    if (settleQty > groupTotal) { showToast('預けている数量（合計' + groupTotal + '個）を超えています'); return; }
+    if (!settleDateStr) { showToast('売れた日を入力してください'); return; }
+    if (isNaN(unitPrice)) { showToast('確定価格を入力してください'); return; }
+    const settledAtG = new Date(settleDateStr + 'T00:00:00').getTime();
+    try {
+      let remain = settleQty;
+      for (const gm of groupMoves) {
+        if (remain <= 0) break;
+        const q = Math.min(gm.qty, remain);
+        remain -= q;
+        if (q === gm.qty) {
+          await fetch(authedUrl('/stockMoves/' + gm._key + '.json'), { method: 'PATCH', body: JSON.stringify({
+            status: 'settled', unitPrice, amount: unitPrice * q, settledAt: settledAtG, costPrice: costPriceToSave
+          })});
+        } else {
+          await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
+            productKey: gm.productKey, productName: gm.productName, jan: gm.jan,
+            type: 'consign', status: 'settled', client: gm.client, qty: q, unitPrice, amount: unitPrice * q, loc: gm.loc || '',
+            date: gm.date, memo: gm.memo || '', createdAt: Date.now(), settledAt: settledAtG, costPrice: costPriceToSave
+          })});
+          await fetch(authedUrl('/stockMoves/' + gm._key + '.json'), { method: 'PATCH', body: JSON.stringify({ qty: gm.qty - q, costPrice: costPriceToSave }) });
+        }
+      }
+      closeSettleConsign();
+      await loadInventory();
+      renderWhConsignList();
+      showToast('精算しました（¥' + (unitPrice * settleQty).toLocaleString('ja-JP') + '）');
+    } catch (e) { showToast('処理に失敗しました'); console.error(e); }
+    return;
+  }
   if (settleQty > m.qty) { showToast('預けている数量（' + m.qty + '個）を超えています'); return; }
   if (!settleDateStr) { showToast('売れた日を入力してください'); return; }
   if (isNaN(unitPrice)) { showToast('確定価格を入力してください'); return; }
