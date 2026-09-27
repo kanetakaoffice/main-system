@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-27g">
+<meta name="app-build" content="2026-09-27h">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -4602,13 +4602,29 @@ function fitWhDelivLivePreviewScale() {
   const wrap = document.getElementById('wh-deliv-live-preview-scale-wrap');
   const page = document.getElementById('wh-deliv-live-preview-page');
   if (!wrap || !page) return;
+  // 要望「右側のプレビューに表示されない」への対応。作成欄が閉じている間や画面の切り替え直後など、
+  // プレビュー欄がまだ表示されていない（幅・高さが0の）ときに大きさを計算すると、枠の高さが
+  // ほぼ0のまま固定されて中身が見えなくなっていた。その場合は計算せず、欄が表示されて大きさが
+  // 決まった時点（ResizeObserver）で改めて計算し直す。
   requestAnimationFrame(() => {
     const availW = wrap.clientWidth - 16;
+    if (availW <= 0 || !page.innerHTML) return;
     const scale = Math.min(1, Math.max(0.1, availW / 794));
     page.style.transform = 'scale(' + scale + ')';
-    const h = page.getBoundingClientRect().height / scale;
-    wrap.style.height = Math.round(h * scale + 16) + 'px';
+    const scaledH = page.getBoundingClientRect().height;
+    if (scaledH <= 1) { wrap.style.height = ''; return; }
+    wrap.style.height = Math.round(scaledH + 16) + 'px';
   });
+  if (!wrap._fitObserver && window.ResizeObserver) {
+    let lastW = -1;
+    wrap._fitObserver = new ResizeObserver(() => {
+      const w = wrap.clientWidth;
+      if (w === lastW) return;
+      lastW = w;
+      fitWhDelivLivePreviewScale();
+    });
+    wrap._fitObserver.observe(wrap);
+  }
 }
 
 // 傷・潰れ分の行（splitWhDelivItemで切り分けた行）にだけ表示する、写真 or 詳細を選んで記録するUI。
@@ -4920,6 +4936,8 @@ function toggleWhDelivCreateSection(forceOpen) {
   if (shouldOpen === isOpen) return;
   section.style.display = shouldOpen ? 'block' : 'none';
   if (btn) btn.textContent = shouldOpen ? '－ 閉じる' : '＋ 新規作成';
+  // 開いた直後に右側のプレビューを描き直す（閉じている間に計算した大きさのままにしない）
+  if (shouldOpen) setTimeout(() => { try { renderWhDelivLivePreview(); } catch (e) {} }, 50);
 }
 
 // 要望：「委託リストも納品書作成のように上に新規作成ボタンを作り、その下に取引先に预けている
