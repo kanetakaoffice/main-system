@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28b">
+<meta name="app-build" content="2026-09-28c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -6932,17 +6932,28 @@ function renderWhConsignClientItemsList(idx) {
     .sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
   const q = (_whConsignClientSearchQuery[client] || '').trim().toLowerCase();
   const qNorm = normalizeModelStr(q);
-  const filtered = qNorm ? holding.filter(m => normalizeModelStr(consignItemModelLive(m)).includes(qNorm)) : holding;
+  // 要望「預けている商品を、在庫一覧のようにサブカテゴリー（映像機器・生活家電など）で絞り込みたい」
+  // への対応。商品に登録してあるサブカテゴリーを使い、その取引先に預けている商品がある種類だけを
+  // タブにする（種類が1つしかないときはタブを出さない）。型番検索と組み合わせて使える。
+  const subOf = m => { const p = (products || []).find(x => x._key === m.productKey); return (p && p.subcategory) || ''; };
+  const subCounts = {};
+  holding.forEach(m => { const sb = subOf(m) || '未分類'; subCounts[sb] = (subCounts[sb] || 0) + (m.qty || 0); });
+  const subs = Object.keys(subCounts).sort((a, b) => a === '未分類' ? 1 : b === '未分類' ? -1 : a.localeCompare(b, 'ja'));
+  let activeSub = _whConsignSubcatTab[client] || '';
+  if (activeSub && !subs.includes(activeSub)) { activeSub = ''; delete _whConsignSubcatTab[client]; }
+  const tabsHtml = subs.length >= 2 ? `<div class="inv-subcat-tabs" style="margin:2px 0 6px">${[''].concat(subs).map(sb => `<span class="inv-subcat-tab ${activeSub === sb ? 'active' : ''}" onclick="event.stopPropagation();setWhConsignSubcat(${idx}, '${encodeURIComponent(sb).replace(/'/g, '%27')}')">${sb ? escapeHtmlMain(sb) + `<span style="opacity:.7;margin-left:3px">${subCounts[sb]}</span>` : 'すべて'}</span>`).join('')}</div>` : '';
+  let filtered = qNorm ? holding.filter(m => normalizeModelStr(consignItemModelLive(m)).includes(qNorm)) : holding;
+  if (activeSub) filtered = filtered.filter(m => (subOf(m) || '未分類') === activeSub);
   const groups = consignModelGroupsOf(filtered);
   const countEl = document.getElementById('wh-consign-client-search-count-' + idx);
   if (countEl) countEl.textContent = q ? `${groups.length}件見つかりました` : '';
   if (!groups.length) {
-    root.innerHTML = `<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:16px 0">該当する型番が見つかりませんでした</div>`;
+    root.innerHTML = tabsHtml + `<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:16px 0">該当する型番が見つかりませんでした</div>`;
     return;
   }
   const btn = (label, onclick, flex) => `<button onclick="event.stopPropagation();${onclick}" style="flex:${flex || 1};padding:6px 8px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer;white-space:nowrap">${label}</button>`;
   const costInput = m => `<label onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);flex-shrink:0">原価<input type="number" min="0" value="${m.costPrice != null ? m.costPrice : ''}" placeholder="任意" oninput="updateWhConsignCostPrice('${m._key}', this.value)" style="width:84px;padding:4px 6px;font-size:12px;border:1.2px solid var(--border);border-radius:6px;text-align:right"></label>`;
-  root.innerHTML = groups.map(g => {
+  root.innerHTML = tabsHtml + groups.map(g => {
     const items = g.items.slice().sort((a, b) => ((a.date || '').localeCompare(b.date || '')) || ((a.createdAt || 0) - (b.createdAt || 0)));
     const keys = items.map(m => m._key);
     const pending = (consignRequests || []).filter(r => r.status === 'pending' && keys.includes(r.moveKey));
@@ -7000,6 +7011,14 @@ function renderWhConsignClientItemsList(idx) {
   }).join('');
 }
 
+let _whConsignSubcatTab = {}; // { [client]: 'サブカテゴリー名' }（空なら「すべて」）
+function setWhConsignSubcat(idx, encSub) {
+  const client = _whConsignClientOrder[idx];
+  if (client == null) return;
+  const sub = decodeURIComponent(encSub);
+  if (sub) _whConsignSubcatTab[client] = sub; else delete _whConsignSubcatTab[client];
+  renderWhConsignClientItemsList(idx);
+}
 let _whConsignMoreOpen = new Set();
 function toggleWhConsignMore(idx, gk) {
   const k = idx + '::' + gk;
