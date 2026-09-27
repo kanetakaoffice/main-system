@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-27c">
+<meta name="app-build" content="2026-09-27g">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -305,7 +305,9 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 .inv-card-info { flex: 1; min-width: 0; }
 .inv-name { font-size: 14px; font-weight: 700; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .inv-sub { font-size: 12px; color: var(--text-sub); margin-bottom: 6px; }
-.inv-stock { font-size: 18px; font-weight: 700; color: var(--gold-dark); }
+.inv-stock { font-size: 18px; font-weight: 700; color: var(--gold-dark); white-space: nowrap; }
+/* 写真表示のカードで「0」と「個」、「在庫」と「切れ」が別の行に折り返されないようにする */
+.inv-card .stock-badge { white-space: nowrap; }
 .inv-stock.low { color: var(--danger); }
 .stock-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
 .stock-ok { background: var(--success-bg); color: var(--success); }
@@ -1024,6 +1026,22 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 
 <!-- 設定スクリーン -->
   <div id="screen-settings" class="screen">
+    <!-- 楽天の商品検索APIで商品写真を自動で付けるための、楽天のアプリIDとアクセスキー -->
+    <div class="card">
+      <div class="card-title">商品写真の自動取得（楽天）</div>
+      <div class="field">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">楽天ウェブサービスで発行した「アプリケーションID」と「アクセスキー」を入力してください。在庫一覧の「🖼 写真を自動で付ける」で、JANコードから楽天に出ている商品写真を表示できるようになります。</div>
+        <div class="field-label">アプリケーションID</div>
+        <input type="text" id="rakuten-app-id" placeholder="例：2fc160ec-…" autocomplete="off">
+        <div class="field-label" style="margin-top:10px">アクセスキー</div>
+        <input type="text" id="rakuten-access-key" placeholder="例：pk_…" autocomplete="off">
+        <div id="rakuten-settings-status" style="font-size:12px;color:var(--text-muted);margin-top:8px"></div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-gold" onclick="saveRakutenSettings()" style="flex:1">保存する</button>
+          <button class="btn btn-secondary" onclick="testRakutenSettings()" style="flex:1">試しに1件取得する</button>
+        </div>
+      </div>
+    </div>
     <!-- 保管場所ごとの在庫：事務所の一覧（名前の変更・追加） -->
     <div class="card">
       <div class="card-title">保管場所（事務所）</div>
@@ -1358,11 +1376,17 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
             <button class="btn btn-secondary" style="flex:none;padding:8px 14px;font-size:13px" onclick="openStocktakeModal()">📋 棚卸</button>
             <button class="btn btn-secondary" style="flex:none;padding:8px 14px;font-size:13px" onclick="document.getElementById('inv-bulk-import-file').click()">📥 CSV/Excelから一括登録</button>
             <input type="file" id="inv-bulk-import-file" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkImportFile(event)">
+            <button class="btn btn-secondary" id="inv-auto-photo-btn" style="flex:none;padding:8px 14px;font-size:13px" onclick="startAutoProductPhotos()">🖼 写真を自動で付ける</button>
           </div>
           <button class="btn btn-secondary" style="flex:none;padding:8px 14px;font-size:13px" onclick="openInvCalModal()">📅 カレンダー</button>
           <button class="btn btn-secondary" style="flex:none;padding:8px 14px;font-size:13px" onclick="openOutPrintModal()">🖨 出庫印刷</button>
           <button class="btn btn-secondary" style="flex:none;padding:8px 14px;font-size:13px" onclick="doExportInventory()">📊 Excel出力</button>
         </div>
+      </div>
+      <!-- 楽天の商品写真の自動取得：進み具合と中止ボタン -->
+      <div id="inv-auto-photo-status" style="display:none;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;padding:8px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--border);font-size:12px;color:var(--text-muted)">
+        <span id="inv-auto-photo-text"></span>
+        <button type="button" id="inv-auto-photo-cancel" onclick="_autoPhotoCancel=true" style="flex-shrink:0;padding:4px 10px;font-size:11.5px;border:1px solid var(--border);border-radius:6px;background:var(--white);color:var(--text);cursor:pointer">中止</button>
       </div>
       <div id="inv-reorder-panel" style="display:none;margin-bottom:12px;background:var(--warning-bg);border:1px solid #fde68a;border-radius:10px;padding:10px 12px">
         <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('inv-reorder')">
@@ -4220,12 +4244,16 @@ function addWhItemRow(prod) {
   // 委託の印が付いた行には合流させない（一部だけ委託にする機能により、同じ商品・同じ単価の
   // 行が「通常」「委託」で並んで存在しうるようになったため。委託行が先に来るよう並べ替えられた
   // 場合でも、誤って委託済みの数量に上乗せしてしまわないようにする）
-  const existing = _whDelivItems.find(it => it.productKey === prod._key && it.unitPrice === defaultPrice && !it._consignMarked);
+  // 保管場所ごとの在庫：出庫元（事務所）が同じ行にだけ合流させる。出庫元の初期値は、
+  // 定位置に在庫があれば定位置、無ければ在庫のある事務所（清洲から出すときは行ごとに切り替える）
+  const defLoc = getDefaultOutLoc(prod);
+  const existing = _whDelivItems.find(it => it.productKey === prod._key && it.unitPrice === defaultPrice && !it._consignMarked && (it.loc || defLoc) === defLoc);
   if (existing) {
     existing.qty += 1;
     existing.amount = existing.qty * existing.unitPrice;
+    if (!existing.loc) existing.loc = defLoc;
   } else {
-    _whDelivItems.push({ productKey: prod._key, jan: prod.jan, name: prod.name, model: prod.model || '', qty: 1, unitPrice: defaultPrice, amount: defaultPrice, _uid: _whDelivItemUidSeq++ });
+    _whDelivItems.push({ productKey: prod._key, jan: prod.jan, name: prod.name, model: prod.model || '', qty: 1, unitPrice: defaultPrice, amount: defaultPrice, loc: defLoc, _uid: _whDelivItemUidSeq++ });
   }
   renderWhDelivItems();
   saveWhDelivDraft();
@@ -4334,7 +4362,7 @@ function confirmWhConsignSplit() {
     it.amount = it.qty * it.unitPrice;
     _whDelivItems.splice(idx + 1, 0, {
       productKey: it.productKey, jan: it.jan, name: it.name, model: it.model,
-      qty: qty, unitPrice: it.unitPrice, amount: qty * it.unitPrice,
+      qty: qty, unitPrice: it.unitPrice, amount: qty * it.unitPrice, loc: it.loc,
       _uid: _whDelivItemUidSeq++, _splitFrom: it._uid, _consignMarked: true
     });
   }
@@ -4364,7 +4392,7 @@ function splitWhDelivItem(idx) {
   if (it._uid == null) it._uid = _whDelivItemUidSeq++;
   it.qty -= 1;
   it.amount = it.qty * it.unitPrice;
-  _whDelivItems.splice(idx + 1, 0, { productKey: it.productKey, jan: it.jan, name: it.name, model: it.model, qty: 1, unitPrice: it.unitPrice, amount: it.unitPrice, _uid: _whDelivItemUidSeq++, _splitFrom: it._uid });
+  _whDelivItems.splice(idx + 1, 0, { productKey: it.productKey, jan: it.jan, name: it.name, model: it.model, qty: 1, unitPrice: it.unitPrice, amount: it.unitPrice, loc: it.loc, _uid: _whDelivItemUidSeq++, _splitFrom: it._uid });
   renderWhDelivItems();
   saveWhDelivDraft();
 }
@@ -4453,6 +4481,28 @@ function loadWhDelivDraft() {
   } catch(e) {}
 }
 
+// 納品書の明細1行ごとの「出庫元」（保管場所ごとの在庫）。港区と清洲の商品を混ぜて1枚の納品書に
+// することが多く、港区にもある商品を清洲に新しく届いた分から先に出すこともあるため、行ごとに選べるようにする。
+function whItemLocSelectHtml(it, idx) {
+  if (stockLocations.length < 2) return '';
+  const prod = (products || []).find(p => p._key === it.productKey);
+  if (!it.loc || !stockLocations.some(l => l.id === it.loc)) it.loc = prod ? getDefaultOutLoc(prod) : defaultHomeLoc();
+  const bd = prod ? computeLocBreakdown(prod) : null;
+  // 選択肢に各事務所の今の在庫数を添える（例：港区（在庫3））
+  const opts = stockLocations.map(l => `<option value="${escapeHtmlMain(l.id)}" ${l.id === it.loc ? 'selected' : ''}>${escapeHtmlMain(l.name)}${bd ? `（在庫${bd.byLoc[l.id] || 0}）` : ''}</option>`).join('');
+  return `
+        <div style="flex:1 1 120px;min-width:0">
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">出庫元</div>
+          <select onchange="updateWhItemLoc(${idx}, this.value)" style="width:100%;padding:6px 8px;font-size:13px;border:1.5px solid var(--border);border-radius:6px;box-sizing:border-box">${opts}</select>
+        </div>`;
+}
+function updateWhItemLoc(idx, loc) {
+  const it = _whDelivItems[idx];
+  if (!it) return;
+  it.loc = loc;
+  saveWhDelivDraft();
+}
+
 function renderWhDelivItems() {
   const container = document.getElementById('wh-deliv-items');
   const empty = document.getElementById('wh-deliv-empty');
@@ -4464,47 +4514,44 @@ function renderWhDelivItems() {
     return;
   }
   empty.style.display = 'none';
+  // 要望「納品書に載るのは型番・数量・単価だけなので、入力もその項目だけにしてほしい。
+  // そこで港区・清洲どちらの事務所から出すかを選べるようにしてほしい」への対応。
+  // 1行を「型番・数量・単価・出庫元・金額」だけのコンパクトな形にする（商品名は内部には
+  // 持ったままで、納品書の表示・在庫の記録には影響しない）。幅が狭い画面では自動で折り返す。
+  const lbl = t => `<div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">${t}</div>`;
+  const inputStyle = 'width:100%;padding:6px 8px;font-size:13px;border:1.5px solid var(--border);border-radius:6px;box-sizing:border-box';
   container.innerHTML = _whDelivItems.map((it, idx) => `
     <div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:6px">
-        <div style="flex:2;min-width:0">
-          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">商品名</div>
-          <input type="text" value="${(it.name||'').replace(/"/g,'&quot;')}" oninput="updateWhItemTextField(${idx},'name',this.value)" placeholder="商品名" style="width:100%;padding:6px 8px;font-size:13px;font-weight:600;border:1.5px solid var(--border);border-radius:6px">
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div style="flex:2 1 150px;min-width:0">
+          ${lbl('型番')}
+          <input type="text" value="${(it.model||'').replace(/"/g,'&quot;')}" oninput="updateWhItemTextField(${idx},'model',this.value)" placeholder="型番" title="${(it.name||'').replace(/"/g,'&quot;')}" style="${inputStyle};font-weight:600">
         </div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">型番</div>
-          <input type="text" value="${(it.model||'').replace(/"/g,'&quot;')}" oninput="updateWhItemTextField(${idx},'model',this.value)" placeholder="型番" style="width:100%;padding:6px 8px;font-size:13px;border:1.5px solid var(--border);border-radius:6px">
+        <div style="flex:0 0 72px">
+          ${lbl('数量')}
+          <input type="number" min="1" value="${it.qty}" oninput="updateWhItemField(${idx},'qty',this.value)" style="${inputStyle}">
         </div>
-        <div style="display:flex;flex-direction:column;flex-shrink:0">
-          <button onclick="moveWhDelivItem(${idx},-1)" ${idx===0?'disabled':''} style="background:none;border:none;color:var(--text);font-size:13px;line-height:1;padding:2px 4px;cursor:${idx===0?'default':'pointer'};opacity:${idx===0?0.3:1}">▲</button>
-          <button onclick="moveWhDelivItem(${idx},1)" ${idx===_whDelivItems.length-1?'disabled':''} style="background:none;border:none;color:var(--text);font-size:13px;line-height:1;padding:2px 4px;cursor:${idx===_whDelivItems.length-1?'default':'pointer'};opacity:${idx===_whDelivItems.length-1?0.3:1}">▼</button>
+        ${it._consignMarked ? `
+        <div style="flex:1 1 110px;padding-bottom:4px">
+          <span style="display:inline-block;padding:5px 12px;font-size:12px;font-weight:700;color:var(--teal);background:var(--teal-bg);border-radius:20px">📦 委託</span>
+        </div>` : `
+        <div style="flex:1 1 110px">
+          ${lbl('単価（円）')}
+          <input type="number" min="0" value="${it.unitPrice}" oninput="updateWhItemField(${idx},'unitPrice',this.value)" style="${inputStyle}">
+        </div>`}
+        ${whItemLocSelectHtml(it, idx)}
+        <div style="flex:0 0 auto;min-width:72px;text-align:right">
+          ${lbl('金額')}
+          <div id="wh-item-amount-${idx}" style="font-weight:700;color:var(--text);padding:6px 0">${it._consignMarked ? '—' : '¥' + it.amount.toLocaleString('ja-JP')}</div>
         </div>
-        <button onclick="removeWhDelivItem(${idx})" style="background:none;border:none;color:var(--danger);font-size:16px;cursor:pointer;padding:0 4px;flex-shrink:0">✕</button>
+        <div style="display:flex;align-items:center;flex-shrink:0;padding-bottom:4px">
+          <div style="display:flex;flex-direction:column">
+            <button onclick="moveWhDelivItem(${idx},-1)" ${idx===0?'disabled':''} style="background:none;border:none;color:var(--text);font-size:12px;line-height:1;padding:1px 4px;cursor:${idx===0?'default':'pointer'};opacity:${idx===0?0.3:1}">▲</button>
+            <button onclick="moveWhDelivItem(${idx},1)" ${idx===_whDelivItems.length-1?'disabled':''} style="background:none;border:none;color:var(--text);font-size:12px;line-height:1;padding:1px 4px;cursor:${idx===_whDelivItems.length-1?'default':'pointer'};opacity:${idx===_whDelivItems.length-1?0.3:1}">▼</button>
+          </div>
+          <button onclick="removeWhDelivItem(${idx})" title="この行を削除" style="background:none;border:none;color:var(--danger);font-size:16px;cursor:pointer;padding:0 4px">✕</button>
+        </div>
       </div>
-      ${it._consignMarked ? `
-      <div style="display:flex;gap:8px;align-items:center">
-        <div style="flex:1">
-          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">数量</div>
-          <input type="number" min="1" value="${it.qty}" oninput="updateWhItemField(${idx},'qty',this.value)" style="width:100%;padding:6px 8px;font-size:13px;border:1.5px solid var(--border);border-radius:6px">
-        </div>
-        <div style="flex:2;text-align:center">
-          <span style="display:inline-block;padding:6px 12px;font-size:12px;font-weight:700;color:var(--teal);background:var(--teal-bg);border-radius:20px">📦 委託</span>
-        </div>
-      </div>` : `
-      <div style="display:flex;gap:8px;align-items:flex-end">
-        <div style="flex:1">
-          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">数量</div>
-          <input type="number" min="1" value="${it.qty}" oninput="updateWhItemField(${idx},'qty',this.value)" style="width:100%;padding:6px 8px;font-size:13px;border:1.5px solid var(--border);border-radius:6px">
-        </div>
-        <div style="flex:1">
-          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">単価（円）</div>
-          <input type="number" min="0" value="${it.unitPrice}" oninput="updateWhItemField(${idx},'unitPrice',this.value)" style="width:100%;padding:6px 8px;font-size:13px;border:1.5px solid var(--border);border-radius:6px">
-        </div>
-        <div style="flex:1;text-align:right">
-          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">金額</div>
-          <div id="wh-item-amount-${idx}" style="font-weight:700;color:var(--text);padding:6px 0">¥${it.amount.toLocaleString('ja-JP')}</div>
-        </div>
-      </div>`}
       <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px">
         ${(!it._consignMarked && it.qty > 1) ? `<button onclick="splitWhDelivItem(${idx})" style="background:none;border:none;color:var(--text-muted);font-size:11px;text-decoration:underline;cursor:pointer;padding:0">傷・潰れなどで1個だけ単価を変える</button>` : ''}
         ${it._consignMarked
@@ -4541,10 +4588,10 @@ function renderWhDelivLivePreview() {
   const date = document.getElementById('wh-deliv-date')?.value || todayStr();
   const subject = document.getElementById('wh-deliv-subject')?.value || '';
   pageEl.innerHTML = dsSlipBodyHtml(client, date, subject, '');
-  const items = _whDelivItems.map(it => ({
-    model: it.model, qty: it.qty, unitPrice: it.unitPrice,
-    isConsignNote: !!it._consignMarked, damageDetail: it.damageDetail || ''
-  }));
+  const items = mergeSlipItemsForPrint(_whDelivItems.map(it => ({
+    model: it.model, name: it.name, qty: it.qty, unitPrice: it.unitPrice, amount: it.amount, productKey: it.productKey,
+    isConsignNote: !!it._consignMarked, damageDetail: (it.damageMode === 'detail' ? it.damageDetail : '') || ''
+  })));
   renderDeliverySlipColumns(pageEl, items);
   fitWhDelivLivePreviewScale();
 }
@@ -4670,6 +4717,8 @@ function deliverySlipMovesToItems(slipId) {
     damageMode: m.damageDetail ? 'detail' : (m.damagePhoto ? 'photo' : null),
     damageDetail: m.damageDetail || '', damagePhoto: m.damagePhoto || '',
     _consignMarked: m.type === 'consign',
+    // 出庫元の事務所（この機能を入れる前に発行した納品書は、取り消し時と同じく定位置として扱う）
+    loc: m.loc || getHomeLoc((products || []).find(p => p._key === m.productKey) || {}),
     _uid: _whDelivItemUidSeq++
   }));
 }
@@ -4761,12 +4810,27 @@ async function submitWhDeliverySlip() {
     if (editingSlipId) await cancelDeliverySlip(editingSlipId);
 
     const stockBeforeByProduct = {};
+    // 保管場所ごとの在庫：明細ごとに選んだ出庫元の事務所から減らす（同じ商品を港区・清洲の両方から出す場合もある）
+    const qtyByProdLoc = {};
+    _whDelivItems.forEach(it => {
+      const byL = qtyByProdLoc[it.productKey] = qtyByProdLoc[it.productKey] || {};
+      byL[it.loc || ''] = (byL[it.loc || ''] || 0) + it.qty;
+    });
     await Promise.all(Object.keys(newQtyByProduct).map(async pk => {
       const prod = products.find(p => p._key === pk);
       const before = prod ? prod.stock : 0;
       stockBeforeByProduct[pk] = before;
-      const newStock = before - newQtyByProduct[pk];
-      await fetch(authedUrl('/products/' + pk + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) });
+      if (!prod) {
+        await fetch(authedUrl('/products/' + pk + '/stock.json'), { method: 'PUT', body: JSON.stringify(before - newQtyByProduct[pk]) });
+        return;
+      }
+      let tmp = { ...prod };
+      Object.keys(qtyByProdLoc[pk] || {}).forEach(l => {
+        const useLoc = (l && stockLocations.some(x => x.id === l)) ? l : getHomeLoc(tmp);
+        const st = locStateAfterDelta(tmp, useLoc, -qtyByProdLoc[pk][l]);
+        tmp = { ...tmp, stock: st.stock, locQty: st.locQty };
+      });
+      await saveProductLocState(prod, tmp.stock, tmp.locQty);
     }));
 
     // 明細を1件ずつPOSTする際、Promise.allで並行して送信しているため、サーバー側への到達順は
@@ -4785,13 +4849,13 @@ async function submitWhDeliverySlip() {
     await Promise.all(_whDelivItems.map((it, idx) => fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify(
       it._consignMarked ? {
         productKey: it.productKey, productName: it.name, jan: it.jan, model: it.model || '',
-        type: 'consign', status: 'holding', client, qty: it.qty, date, memo: '',
+        type: 'consign', status: 'holding', client, qty: it.qty, date, memo: '', loc: it.loc || '',
         stockBefore: stockBeforeByProduct[it.productKey], stockAfter: stockBeforeByProduct[it.productKey] - newQtyByProduct[it.productKey],
         createdAt: Date.now(), slipId, slipNo, itemSeq: idx
       } : {
         productKey: it.productKey, productName: it.name, model: it.model || '', jan: it.jan,
         type: 'out', channel: '卸売', client, subject, qty: it.qty, unitPrice: it.unitPrice, amount: it.amount,
-        slipId, slipNo, date, memo: '', stockBefore: stockBeforeByProduct[it.productKey], stockAfter: stockBeforeByProduct[it.productKey] - newQtyByProduct[it.productKey], createdAt: Date.now(), itemSeq: idx,
+        slipId, slipNo, date, memo: '', loc: it.loc || '', stockBefore: stockBeforeByProduct[it.productKey], stockAfter: stockBeforeByProduct[it.productKey] - newQtyByProduct[it.productKey], createdAt: Date.now(), itemSeq: idx,
         // 傷・つぶれの記録：詳細（テキスト）は納品書にも表示されるが、写真は社内記録用のみで納品書には出さない
         damageDetail: it.damageMode === 'detail' ? (it.damageDetail || '') : '',
         damagePhoto: it.damageMode === 'photo' ? (it.damagePhoto || '') : ''
@@ -5224,9 +5288,35 @@ function buildDeliverySlipDataFromSlipId(slipId) {
     // への対応。プレビュー画面の積み込みチェックリストで、明細のどの行に対応するかを
     // 特定するための出庫記録のキー。チェック状態（loadChecked）自体もこのキーの記録に保存する
     _key: m._key,
-    loadChecked: !!m.loadChecked
+    loadChecked: !!m.loadChecked,
+    productKey: m.productKey, loc: m.loc || ''
   }));
-  return { client: moves[0].client, date: moves[0].date, subject: moves[0].subject || '', slipNo: moves[0].slipNo || '', items };
+  // items：印刷・PDF・Excel・freee用（出庫元だけが違う同じ商品・同じ単価の行は1行にまとめる）
+  // checkItems：積み込みチェック用（出庫元ごとに分けたまま。どの事務所から何個積むか分かるように）
+  return { client: moves[0].client, date: moves[0].date, subject: moves[0].subject || '', slipNo: moves[0].slipNo || '', items: mergeSlipItemsForPrint(items), checkItems: items };
+}
+
+// 要望「港区から1個・清洲から2個のように出庫元を分けた同じ商品は、納品書では1行（数量3）で
+// 表示したい」への対応。出庫元は社内向けの情報で納品書には載らないため、同じ商品・同じ単価・
+// 同じ型番の通常の行は1行にまとめる。単価が違う行（傷・潰れの値引きなど）、傷・つぶれの詳細が
+// 付いた行、委託の印が付いた行はまとめない。並び順は最初に出てきた行の位置に合わせる。
+function mergeSlipItemsForPrint(items) {
+  const out = [];
+  const index = {};
+  (items || []).forEach(it => {
+    const mergeable = !it.isConsignNote && !it.damageDetail && it.productKey;
+    const key = mergeable ? [it.productKey, it.unitPrice || 0, it.model || '', it.name || ''].join('|') : null;
+    if (key && index[key] != null) {
+      const t = out[index[key]];
+      t.qty = (t.qty || 0) + (it.qty || 0);
+      t.amount = (t.amount || 0) + (it.amount || 0);
+      t.loadChecked = t.loadChecked && it.loadChecked;
+      return;
+    }
+    if (key) index[key] = out.length;
+    out.push({ ...it });
+  });
+  return out;
 }
 
 // 要望：「納品書作成のところで、作成した納品書をExcelで出力できるようにしてほしい」への対応。
@@ -5271,7 +5361,7 @@ function exportDeliverySlipExcel() {
   // 要望：「全商品にチェックが付いていない状態でエクセル出力をしようとした場合」への対応
   // （出力自体はブロックせず、未チェックが残っている場合だけ一言添える）。出力完了のトースト
   // 表示自体は1つにまとめる（別々に出すと、後から出す方が先の警告をすぐ上書きしてしまうため）。
-  const uncheckedCount = (_dsPreviewChannel === CONSIGN_INVOICE_CHANNEL) ? 0 : items.filter(it => !it.loadChecked).length;
+  const uncheckedCount = (_dsPreviewChannel === CONSIGN_INVOICE_CHANNEL) ? 0 : (data.checkItems || items).filter(it => !it.loadChecked).length;
   showToast(uncheckedCount > 0
     ? `納品書のExcelを出力しました（⚠️積み込み未チェックが${uncheckedCount}件あります）`
     : '納品書のExcelを出力しました');
@@ -5433,7 +5523,7 @@ function showDeliverySlipPreview(slipId) {
   if (loadCheckSection) {
     loadCheckSection.style.display = (_dsPreviewChannel === CONSIGN_INVOICE_CHANNEL) ? 'none' : 'block';
   }
-  renderDeliverySlipLoadChecklist(data.items);
+  renderDeliverySlipLoadChecklist(data.checkItems);
 }
 
 // プレビュー中の納品書明細を、実際に積み込みながら1つずつ確認できるチェックリストとして描画する。
@@ -5445,7 +5535,7 @@ function renderDeliverySlipLoadChecklist(items) {
   listEl.innerHTML = (items || []).map(it => `
     <label style="display:flex;align-items:center;gap:8px;padding:5px 2px;font-size:12.5px;color:var(--text);cursor:pointer">
       <input type="checkbox" ${it.loadChecked ? 'checked' : ''} onchange="toggleDeliverySlipLoadCheck('${it._key}', this.checked)" style="width:17px;height:17px;flex-shrink:0;accent-color:var(--success)">
-      <span style="flex:1;min-width:0;overflow-wrap:break-word;word-break:break-all;${it.loadChecked ? 'text-decoration:line-through;color:var(--text-muted)' : ''}">${escapeHtmlMain(it.model || it.name || (it.jan ? 'JAN:' + it.jan : '') || '(商品名未登録)')}（${it.qty}個）</span>
+      <span style="flex:1;min-width:0;overflow-wrap:break-word;word-break:break-all;${it.loadChecked ? 'text-decoration:line-through;color:var(--text-muted)' : ''}">${escapeHtmlMain(it.model || it.name || (it.jan ? 'JAN:' + it.jan : '') || '(商品名未登録)')}（${it.loc && stockLocations.length > 1 ? escapeHtmlMain(locName(it.loc)) + 'から' : ''}${it.qty}個）</span>
     </label>
   `).join('');
   updateDsLoadCheckProgress(items || []);
@@ -5506,7 +5596,7 @@ async function toggleDeliverySlipLoadCheck(key, checked) {
   }
   if (!_dsPreviewSlipId) return;
   const data = buildDeliverySlipDataFromSlipId(_dsPreviewSlipId);
-  if (data) renderDeliverySlipLoadChecklist(data.items);
+  if (data) renderDeliverySlipLoadChecklist(data.checkItems);
 }
 
 // 要望：「（チェック状態は）保存できるようにして欲しいですが、後から最初からやり直すこともできる
@@ -5515,10 +5605,10 @@ async function toggleDeliverySlipLoadCheck(key, checked) {
 function resetDeliverySlipLoadChecks() {
   if (!_dsPreviewSlipId) return;
   const data = buildDeliverySlipDataFromSlipId(_dsPreviewSlipId);
-  if (!data || !data.items.length) return;
+  if (!data || !data.checkItems.length) return;
   showConfirm('積み込みチェックをすべて未チェックの状態に戻しますか？').then(async ok => {
     if (!ok) return;
-    await Promise.all(data.items.map(it => {
+    await Promise.all(data.checkItems.map(it => {
       const move = (stockMoves || []).find(m => m._key === it._key);
       if (move) move.loadChecked = false;
       return fetch(authedUrl('/stockMoves/' + it._key + '/loadChecked.json'), { method: 'PUT', body: JSON.stringify(false) });
@@ -5538,7 +5628,7 @@ function warnIfDeliverySlipLoadChecksIncomplete() {
   if (!_dsPreviewSlipId || _dsPreviewChannel === CONSIGN_INVOICE_CHANNEL) return;
   const data = buildDeliverySlipDataFromSlipId(_dsPreviewSlipId);
   if (!data) return;
-  const uncheckedCount = data.items.filter(it => !it.loadChecked).length;
+  const uncheckedCount = data.checkItems.filter(it => !it.loadChecked).length;
   if (uncheckedCount > 0) {
     showToast(`⚠️ 積み込み未チェックの商品が${uncheckedCount}件あります`);
   }
@@ -5778,11 +5868,25 @@ async function cancelDeliverySlip(slipId) {
   // 同じ商品が複数行にまたがっていても正しく計算できるよう、商品ごとにまとめて在庫を戻す
   const qtyByProduct = {};
   moves.forEach(m => { qtyByProduct[m.productKey] = (qtyByProduct[m.productKey] || 0) + m.qty; });
+  // 保管場所ごとの在庫：出した事務所（記録が無い古い納品書は定位置）に戻す
+  const qtyByProdLoc = {};
+  moves.forEach(m => {
+    const byL = qtyByProdLoc[m.productKey] = qtyByProdLoc[m.productKey] || {};
+    byL[m.loc || ''] = (byL[m.loc || ''] || 0) + m.qty;
+  });
   await Promise.all(Object.keys(qtyByProduct).map(async pk => {
     const prod = products.find(p => p._key === pk);
-    const newStock = (prod ? prod.stock : 0) + qtyByProduct[pk];
-    await fetch(authedUrl('/products/' + pk + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) });
-    if (prod) prod.stock = newStock;
+    if (!prod) {
+      await fetch(authedUrl('/products/' + pk + '/stock.json'), { method: 'PUT', body: JSON.stringify(qtyByProduct[pk]) });
+      return;
+    }
+    let tmp = { ...prod };
+    Object.keys(qtyByProdLoc[pk] || {}).forEach(l => {
+      const useLoc = (l && stockLocations.some(x => x.id === l)) ? l : getHomeLoc(tmp);
+      const st = locStateAfterDelta(tmp, useLoc, qtyByProdLoc[pk][l]);
+      tmp = { ...tmp, stock: st.stock, locQty: st.locQty };
+    });
+    await saveProductLocState(prod, tmp.stock, tmp.locQty);
   }));
   await Promise.all(moves.map(m => fetch(authedUrl('/stockMoves/' + m._key + '.json'), { method: 'DELETE' })));
   const movesKeySet = new Set(moves.map(m => m._key));
@@ -6595,11 +6699,13 @@ async function submitConsign() {
       const prod = products.find(p => p._key === it.productKey);
       const stockBefore = prod ? prod.stock : null;
       const newStock = (stockBefore || 0) - it.qty;
+      // 保管場所ごとの在庫：定位置に在庫があれば定位置、無ければ在庫のある事務所から預ける（返却時はそこへ戻す）
+      const loc = prod ? getDefaultOutLoc(prod) : '';
       return Promise.all([
-        fetch(authedUrl('/products/' + it.productKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) }),
+        prod ? applyStockDeltaAtLoc(it.productKey, loc, -it.qty) : fetch(authedUrl('/products/' + it.productKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) }),
         fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
           productKey: it.productKey, productName: it.name, jan: it.jan, model: it.model || '',
-          type: 'consign', status: 'holding', client, qty: it.qty, date, memo,
+          type: 'consign', status: 'holding', client, qty: it.qty, date, memo, loc,
           stockBefore, stockAfter: newStock, createdAt: Date.now()
         })})
       ]);
@@ -7414,18 +7520,18 @@ async function approveConsignRequest(portalId, requestId) {
         if (!isPartial) {
           // 全数量を返却
           await Promise.all([
-            fetch(authedUrl('/products/' + m.productKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) }),
+            applyStockDeltaAtLoc(m.productKey, m.loc, requestedQty),
             fetch(authedUrl('/stockMoves/' + m._key + '.json'), { method: 'PATCH', body: JSON.stringify({ status: 'returned', returnedAt: Date.now() }) })
           ]);
         } else {
           // 一部だけ返却：残りは引き続き「預け中」として数量を減らして残す
           // （精算の一部精算と同じ考え方。返却済み分は新しいレコードとして切り分ける）
           await Promise.all([
-            fetch(authedUrl('/products/' + m.productKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) }),
+            applyStockDeltaAtLoc(m.productKey, m.loc, requestedQty),
             fetch(authedUrl('/stockMoves/' + m._key + '.json'), { method: 'PATCH', body: JSON.stringify({ qty: m.qty - requestedQty }) }),
             fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
               productKey: m.productKey, productName: m.productName, jan: m.jan, model: m.model || '',
-              type: 'consign', status: 'returned', client: m.client, qty: requestedQty,
+              type: 'consign', status: 'returned', client: m.client, qty: requestedQty, loc: m.loc || '',
               date: m.date, memo: m.memo || '', createdAt: Date.now(), returnedAt: Date.now()
             })})
           ]);
@@ -7824,7 +7930,7 @@ function returnConsign(key) {
     const newStock = (prod ? prod.stock : 0) + m.qty;
     try {
       await Promise.all([
-        fetch(authedUrl('/products/' + m.productKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) }),
+        applyStockDeltaAtLoc(m.productKey, m.loc, m.qty),
         fetch(authedUrl('/stockMoves/' + key + '.json'), { method: 'PATCH', body: JSON.stringify({ status: 'returned', returnedAt: Date.now() }) })
       ]);
       await loadInventory();
@@ -8000,7 +8106,7 @@ async function confirmEditConsignQty() {
   const newStock = (prod ? prod.stock : 0) - delta;
   try {
     await Promise.all([
-      fetch(authedUrl('/products/' + m.productKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) }),
+      (prod ? applyStockDeltaAtLoc(m.productKey, m.loc, -delta) : fetch(authedUrl('/products/' + m.productKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) })),
       fetch(authedUrl('/stockMoves/' + key + '.json'), { method: 'PATCH', body: JSON.stringify({ qty: newQty }) })
     ]);
 
@@ -8009,11 +8115,13 @@ async function confirmEditConsignQty() {
       const p2 = products.find(p => p._key === it.productKey);
       const stockBefore2 = p2 ? p2.stock : null;
       const newStock2 = (stockBefore2 || 0) - it.qty;
+      // 保管場所ごとの在庫：定位置に在庫があれば定位置、無ければ在庫のある事務所から預ける
+      it._loc = p2 ? getDefaultOutLoc(p2) : '';
       return Promise.all([
-        fetch(authedUrl('/products/' + it.productKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock2) }),
+        (p2 ? applyStockDeltaAtLoc(it.productKey, it._loc, -it.qty) : fetch(authedUrl('/products/' + it.productKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock2) })),
         fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
           productKey: it.productKey, productName: it.name, jan: it.jan, model: it.model || '',
-          type: 'consign', status: 'holding', client: m.client, qty: it.qty, date: m.date, memo: m.memo || '',
+          type: 'consign', status: 'holding', client: m.client, qty: it.qty, date: m.date, memo: m.memo || '', loc: it._loc || '',
           stockBefore: stockBefore2, stockAfter: newStock2, createdAt: Date.now()
         })})
       ]);
@@ -8068,7 +8176,7 @@ async function confirmSettleConsign() {
       // 残った預け中のレコードにも同じ値を反映する（委託リストの行の原価表示ともずれないように）。
       const newMoveResp = await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
         productKey: m.productKey, productName: m.productName, jan: m.jan,
-        type: 'consign', status: 'settled', client: m.client, qty: settleQty, unitPrice, amount,
+        type: 'consign', status: 'settled', client: m.client, qty: settleQty, unitPrice, amount, loc: m.loc || '',
         date: m.date, memo: m.memo || '', createdAt: Date.now(), settledAt, costPrice: costPriceToSave
       })});
       await fetch(authedUrl('/stockMoves/' + key + '.json'), { method: 'PATCH', body: JSON.stringify({ qty: m.qty - settleQty, costPrice: costPriceToSave }) });
@@ -8189,7 +8297,7 @@ function confirmUndoReturnConsign(key) {
     try {
       const newStock = currentStock - m.qty;
       await Promise.all([
-        fetch(authedUrl('/products/' + m.productKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) }),
+        applyStockDeltaAtLoc(m.productKey, m.loc, -m.qty),
         fetch(authedUrl('/stockMoves/' + key + '.json'), { method: 'PATCH', body: JSON.stringify({ status: 'holding', returnedAt: null }) })
       ]);
       await loadInventory();
@@ -8238,7 +8346,7 @@ function confirmDeleteConsignHistory(key) {
     try {
       const newStock = currentStock - m.qty;
       await Promise.all([
-        fetch(authedUrl('/products/' + m.productKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) }),
+        applyStockDeltaAtLoc(m.productKey, m.loc, -m.qty),
         fetch(authedUrl('/stockMoves/' + key + '.json'), { method: 'DELETE' })
       ]);
       await loadInventory();
@@ -9030,6 +9138,8 @@ async function submitProduct() {
     }
     // 大型商品などで定位置を変えて登録したあと、次の商品まで同じ定位置にならないよう標準に戻す
     fillLocSelect('inv-home-loc', defaultHomeLoc());
+    // 写真を撮らずに登録した商品には、楽天の商品写真を自動で付けておく（設定済みの場合のみ・裏で実行）
+    if (newKey && data.jan && !data.image) autoAttachPhotoForNewProduct(newKey, data.jan);
     ['inv-maker','inv-name','inv-model','inv-jan','inv-stock','inv-threshold','inv-cost','inv-location','inv-memo'].forEach(id => document.getElementById(id).value = '');
     const catEl = document.getElementById('inv-category'); if(catEl) catEl.selectedIndex = 0;
     populateSubcatSelect('inv-subcategory', CATEGORY_LIST[0]);
@@ -9619,6 +9729,16 @@ function locStateAfterDelta(p, locId, delta) {
   }
   return locStateFromByLoc(p, byLoc);
 }
+// 商品のキーと事務所を指定して、在庫を増減して保存する（納品書・委託の預け・返却などで使う）。
+// 事務所が未指定（この機能を入れる前の記録など）の場合は定位置として扱う。
+async function applyStockDeltaAtLoc(prodKey, loc, delta) {
+  const prod = (products || []).find(p => p._key === prodKey);
+  if (!prod) return null;
+  const useLoc = (loc && stockLocations.some(l => l.id === loc)) ? loc : getHomeLoc(prod);
+  const st = locStateAfterDelta(prod, useLoc, delta);
+  await saveProductLocState(prod, st.stock, st.locQty);
+  return st.stock;
+}
 // 自動で選ぶ出庫元：定位置に在庫があれば定位置、無ければ在庫のいちばん多い事務所
 function getDefaultOutLoc(p) {
   if (!p) return defaultHomeLoc();
@@ -9810,6 +9930,140 @@ async function saveStockLocationSettings() {
   } catch (e) { showToast('保存に失敗しました'); }
 }
 
+// ============================================================
+// 商品写真の自動取得（楽天市場 商品検索API）
+// 要望「在庫一覧の写真表示で写真が出ない。買取スキャナーから写真を読み込めないか」への対応。
+// 買取スキャナーのCSVには写真の列が無いため、JANコードで楽天市場の商品を検索し、見つかった
+// 商品の写真の場所（URL）を products/{key}/imageUrl に保存して表示する（写真そのものはコピー
+// しない。社内の在庫管理で見るためだけに使う）。自分で撮った写真（p.image）があればそちらを優先。
+// 楽天の新しい仕様（2026年）では、アプリケーションIDに加えてアクセスキーが必須で、
+// 「Webアプリケーション」として登録した場合は、許可したWebサイト（このアプリのドメイン）からの
+// 呼び出しだけが受け付けられる。
+// ============================================================
+const RAKUTEN_ITEM_SEARCH_ENDPOINTS = [
+  'https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20220601',
+  'https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20260701'
+];
+let _rakutenCfg = null;
+let _autoPhotoRunning = false;
+var _autoPhotoCancel = false;
+async function loadRakutenSettings(force) {
+  if (_rakutenCfg && !force) return _rakutenCfg;
+  try {
+    const v = await fetch(authedUrl('/appSettings/rakuten.json')).then(r => r.json());
+    _rakutenCfg = { applicationId: (v && v.applicationId) || '', accessKey: (v && v.accessKey) || '' };
+  } catch (e) { _rakutenCfg = _rakutenCfg || { applicationId: '', accessKey: '' }; }
+  return _rakutenCfg;
+}
+async function saveRakutenSettings() {
+  const applicationId = (document.getElementById('rakuten-app-id')?.value || '').trim();
+  const accessKey = (document.getElementById('rakuten-access-key')?.value || '').trim();
+  const st = document.getElementById('rakuten-settings-status');
+  try {
+    await fetch(authedUrl('/appSettings/rakuten.json'), { method: 'PUT', body: JSON.stringify({ applicationId, accessKey }) });
+    _rakutenCfg = { applicationId, accessKey };
+    if (st) st.textContent = '保存しました。「試しに1件取得する」で動作を確認できます。';
+    showToast('楽天の設定を保存しました');
+  } catch (e) { if (st) st.textContent = '保存に失敗しました'; }
+}
+// JANコードで楽天市場を検索し、最初に見つかった商品の写真URLを返す。
+// 戻り値：{ url } 見つかった／{ url: null } 見つからなかった／{ error } 設定や通信のエラー
+async function fetchRakutenImageByJan(jan) {
+  const cfg = await loadRakutenSettings();
+  if (!cfg.applicationId || !cfg.accessKey) return { error: '設定画面で楽天のアプリケーションIDとアクセスキーを入力してください' };
+  let lastErr = '';
+  for (const endpoint of RAKUTEN_ITEM_SEARCH_ENDPOINTS) {
+    const url = endpoint + '?' + new URLSearchParams({
+      applicationId: cfg.applicationId, accessKey: cfg.accessKey,
+      keyword: String(jan), hits: '5', imageFlag: '1', format: 'json', formatVersion: '2'
+    }).toString();
+    let res;
+    try { res = await fetch(url); } catch (e) { lastErr = '楽天に接続できませんでした'; continue; }
+    if (res.status === 404) { lastErr = '楽天の窓口が見つかりませんでした'; continue; }
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok) {
+      const msg = (data && (data.error_description || data.error || data.message)) || ('エラー ' + res.status);
+      // 該当商品なし（wrong_parameterなど）は「見つからなかった」扱い、それ以外は設定エラー
+      if (res.status === 400 && /not found|wrong_parameter/i.test(JSON.stringify(data || ''))) return { url: null };
+      return { error: `楽天からエラーが返りました（${msg}）。アプリID・アクセスキー・許可されたWebサイトの設定を確認してください` };
+    }
+    const items = (data && (data.Items || data.items)) || [];
+    for (const it of items) {
+      const item = it.Item || it;
+      const imgs = item.mediumImageUrls || item.smallImageUrls || [];
+      const first = imgs.map(x => (typeof x === 'string' ? x : x && x.imageUrl)).find(Boolean);
+      if (first) return { url: first.replace(/\?_ex=\d+x\d+/, '?_ex=300x300') };
+    }
+    return { url: null };
+  }
+  return { error: lastErr || '写真を取得できませんでした' };
+}
+async function testRakutenSettings() {
+  await saveRakutenSettings();
+  const st = document.getElementById('rakuten-settings-status');
+  const sample = (products || []).find(p => p.jan) || null;
+  const jan = sample ? sample.jan : '4902370548495';
+  if (st) st.textContent = `JAN ${jan} で検索しています…`;
+  const r = await fetchRakutenImageByJan(jan);
+  if (!st) return;
+  if (r.error) st.innerHTML = `<span style="color:var(--danger)">${escapeHtmlMain(r.error)}</span>`;
+  else if (!r.url) st.textContent = `つながりました（JAN ${jan} の商品は楽天に見つかりませんでした）`;
+  else st.innerHTML = `<span style="color:var(--success)">つながりました。</span><br><img src="${escapeHtmlMain(r.url)}" referrerpolicy="no-referrer" style="width:96px;height:96px;object-fit:contain;margin-top:6px;border:1px solid var(--border);border-radius:6px">`;
+}
+// 写真の無い商品（自分で撮った写真も、楽天の写真もまだ無い、JANが登録済みの商品）に、まとめて写真を付ける。
+// 楽天側の利用制限（1秒に1回程度）に合わせて1件ずつ間を空けて調べる。見つからなかった商品は
+// 30日間は調べ直さない（imageTriedAt）。
+async function startAutoProductPhotos() {
+  if (_autoPhotoRunning) return;
+  const cfg = await loadRakutenSettings(true);
+  if (!cfg.applicationId || !cfg.accessKey) { showToast('先に設定画面で楽天のアプリケーションIDとアクセスキーを入力してください'); return; }
+  const now = Date.now();
+  const targets = (products || []).filter(p => p.jan && !p.image && !p.imageUrl && !(p.imageTriedAt && now - p.imageTriedAt < 30 * 24 * 60 * 60 * 1000));
+  if (!targets.length) { showToast('写真を付ける対象の商品はありません（JANがあって写真の無い商品が対象です）'); return; }
+  const mins = Math.max(1, Math.ceil(targets.length * 1.2 / 60));
+  if (!await showConfirm(`写真の無い${targets.length}件の商品に、楽天の商品写真を付けます（約${mins}分かかります。途中で中止もできます）。よろしいですか？`)) return;
+  _autoPhotoRunning = true; _autoPhotoCancel = false;
+  const box = document.getElementById('inv-auto-photo-status');
+  const text = document.getElementById('inv-auto-photo-text');
+  if (box) box.style.display = 'flex';
+  let found = 0, notFound = 0, done = 0, stoppedErr = '';
+  for (const p of targets) {
+    if (_autoPhotoCancel) break;
+    if (text) text.textContent = `🖼 写真を探しています… ${done}/${targets.length}件（見つかった ${found}件）`;
+    const r = await fetchRakutenImageByJan(p.jan);
+    if (r.error) { stoppedErr = r.error; break; }
+    const patch = r.url ? { imageUrl: r.url, imageTriedAt: Date.now() } : { imageTriedAt: Date.now() };
+    try {
+      await fetch(authedUrl('/products/' + p._key + '.json'), { method: 'PATCH', body: JSON.stringify(patch) });
+      Object.assign(p, patch);
+    } catch (e) {}
+    if (r.url) found++; else notFound++;
+    done++;
+    if (done % 10 === 0 && document.getElementById('screen-inv-list')?.classList.contains('active')) renderInventoryList();
+    await new Promise(res => setTimeout(res, 1100));
+  }
+  _autoPhotoRunning = false;
+  if (box) box.style.display = 'none';
+  if (document.getElementById('screen-inv-list')?.classList.contains('active')) renderInventoryList();
+  if (stoppedErr) showToast(stoppedErr);
+  else showToast(`${_autoPhotoCancel ? '中止しました。' : ''}${done}件を調べ、${found}件に写真を付けました${notFound ? `（${notFound}件は楽天に見つかりませんでした）` : ''}`);
+}
+// 新しく商品を登録したとき（写真を撮っていなければ）、その商品にも楽天の写真を付けておく
+async function autoAttachPhotoForNewProduct(key, jan) {
+  try {
+    if (!key || !jan) return;
+    const cfg = await loadRakutenSettings();
+    if (!cfg.applicationId || !cfg.accessKey) return;
+    const r = await fetchRakutenImageByJan(jan);
+    if (r.error) return;
+    const patch = r.url ? { imageUrl: r.url, imageTriedAt: Date.now() } : { imageTriedAt: Date.now() };
+    await fetch(authedUrl('/products/' + key + '.json'), { method: 'PATCH', body: JSON.stringify(patch) });
+    const p = (products || []).find(x => x._key === key);
+    if (p) Object.assign(p, patch);
+  } catch (e) { /* 写真は補助的な機能なので、失敗しても登録自体には影響させない */ }
+}
+
 // 商品カードのHTMLを生成する共通関数（在庫一覧／商品登録の右側リストで共通利用）
 // opts.editable が true かつ管理者の場合のみ編集・削除ボタンを表示する
 // 商品ごとの在庫アラートしきい値（未設定なら共通のデフォルト値を使う）
@@ -9892,13 +10146,13 @@ function buildInvCard(p, opts) {
   return `
     <div class="inv-card">
       <div class="inv-card-body">
-        ${p.image ? `<img class="inv-card-img" src="${p.image}">` : `<div class="inv-card-img" style="display:flex;align-items:center;justify-content:center;font-size:24px">📦</div>`}
+        ${(p.image || p.imageUrl) ? `<img class="inv-card-img" src="${escapeHtmlMain(p.image || p.imageUrl)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='<div class=&quot;inv-card-img&quot; style=&quot;display:flex;align-items:center;justify-content:center;font-size:24px&quot;>📦</div>'">` : `<div class="inv-card-img" style="display:flex;align-items:center;justify-content:center;font-size:24px">📦</div>`}
         <div class="inv-card-info">
           <div class="inv-name">${p.name || '（商品名未入力）'}</div>
           ${missingBadgeHtml}
           ${(p.category && p.category!=='家電') ? `<span style="font-size:10px;padding:1px 7px;border-radius:20px;background:var(--surface);color:var(--text-muted);border:1px solid var(--border);margin-bottom:3px;display:inline-block">${p.category}</span>` : ''}
           <div class="inv-sub">${p.maker||''} ${p.model ? '/ ' + p.model : ''}</div>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <div style="display:flex;align-items:center;gap:6px 8px;margin-bottom:6px;flex-wrap:wrap">
             <span class="inv-stock ${p.stock<=threshold?'low':''}">${p.stock}個</span>
             <span class="stock-badge ${stockClass}">${stockLabel}</span>
             ${invRowLocChipHtml(p)}
@@ -10209,7 +10463,7 @@ function renderInventoryList() {
     const sorted = [...rowsSrc].sort(compareProducts);
     // グリッド（写真）表示のときは、商品登録画面の写真つきカードを流用してカード形式で並べる
     const itemsHtml = isGrid
-      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">${sorted.map(p => buildInvCard(p, {editable:true})).join('')}</div>`
+      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:10px">${sorted.map(p => buildInvCard(p, {editable:true})).join('')}</div>`
       : sorted.map(buildInvRow).join('');
     return `
       <div class="inv-accordion ${isOpen?'open':''}">
@@ -15000,6 +15254,12 @@ function initSettingsScreen() {
   if (locWrap) locWrap.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">読み込み中…</div>';
   fetch(authedUrl('/stockLocations.json')).then(r => r.json()).then(v => { setStockLocationsFromDb(v); renderStockLocationSettings(); })
     .catch(() => renderStockLocationSettings());
+  loadRakutenSettings(true).then(cfg => {
+    const idEl = document.getElementById('rakuten-app-id');
+    const keyEl = document.getElementById('rakuten-access-key');
+    if (idEl) idEl.value = cfg.applicationId || '';
+    if (keyEl) keyEl.value = cfg.accessKey || '';
+  });
 }
 
 async function reAuth(email, password) {
