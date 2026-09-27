@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28c">
+<meta name="app-build" content="2026-09-28d">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -3361,7 +3361,7 @@ let customSubcats = {};
 // カテゴリー・サブカテゴリーの定義。サブカテゴリー名は仮の案（正式名称が決まり次第ここだけ書き換えれば全画面に反映される）
 const CATEGORY_LIST = ['家電','家具','車用品','ゴルフウェア','ピラティスウェア'];
 const CATEGORY_SUBCATS = {
-  '家電': ['映像機器','生活家電','調理家電','OA機器','カメラ・フィルム','美容家電','モバイル端末'],
+  '家電': ['映像機器','生活家電','調理家電','パソコン・オフィス機器','カメラ・撮影機材','美容家電','スマホ・タブレット'],
   // 家具・車用品はサブカテゴリー未決定のため、決まり次第ここに追加する（それまでは分類なしで表示）
   '家具': [],
   '車用品': [],
@@ -3382,6 +3382,53 @@ function getSubcatsFor(cat) {
 function getSubcatGroupsFor(cat) {
   const entry = CATEGORY_SUBCATS[cat];
   return (entry && !Array.isArray(entry)) ? entry : null;
+}
+// 要望「サブカテゴリーの名前を変えたい」への対応（2026/9）。古い名前 → 新しい名前の対応表。
+// 分類の定義（上のCATEGORY_SUBCATS）と、その場で追加した項目（customSubcats）の名前を置き換え、
+// 古い名前のまま登録されている商品も、読み込んだときに新しい名前へ付け替える（migrateRenamedSubcats）。
+// 付け替えが済めば古い名前の商品はいなくなるので、何度実行しても問題ない。
+const SUBCAT_RENAMES = {
+  '家電': {
+    'OA機器': 'パソコン・オフィス機器',
+    'アクセサリー': 'PC・AV周辺パーツ',
+    'モバイル端末': 'スマホ・タブレット',
+    'カメラ・フィルム': 'カメラ・撮影機材'
+  }
+};
+function renamedSubcat(cat, sub) {
+  const map = SUBCAT_RENAMES[cat] || {};
+  return Object.prototype.hasOwnProperty.call(map, sub) ? map[sub] : sub;
+}
+// customSubcats（その場で追加した項目）の中の古い名前を置き換える。変わった場合はtrueを返す
+function renameCustomSubcatsInPlace() {
+  let changed = false;
+  Object.keys(customSubcats || {}).forEach(cat => {
+    const extra = customSubcats[cat];
+    const fix = arr => {
+      const out = [];
+      (arr || []).forEach(sb => { const n = renamedSubcat(cat, sb); if (n !== sb) changed = true; if (!out.includes(n)) out.push(n); });
+      return out;
+    };
+    if (Array.isArray(extra)) customSubcats[cat] = fix(extra);
+    else if (extra && typeof extra === 'object') Object.keys(extra).forEach(g => { extra[g] = fix(extra[g]); });
+  });
+  return changed;
+}
+async function migrateRenamedSubcats() {
+  const tasks = [];
+  if (renameCustomSubcatsInPlace()) {
+    tasks.push(fetch(authedUrl('/customSubcats.json'), { method: 'PUT', body: JSON.stringify(customSubcats) }).catch(() => null));
+  }
+  (products || []).forEach(p => {
+    const cat = p.category || CATEGORY_LIST[0];
+    const n = renamedSubcat(cat, p.subcategory || '');
+    if (p.subcategory && n !== p.subcategory) {
+      p.subcategory = n;
+      tasks.push(fetch(authedUrl('/products/' + p._key + '/subcategory.json'), { method: 'PUT', body: JSON.stringify(n) }).catch(() => null));
+    }
+  });
+  if (tasks.length) await Promise.all(tasks);
+  return tasks.length;
 }
 // Firebaseから読み込んだcustomSubcatsの内容を、起動時の分類定義（CATEGORY_SUBCATS）に合流させる。
 // 既存の項目と重複するものは追加しない（何度呼んでも安全）。
@@ -3678,6 +3725,8 @@ async function loadInventory() {
     wholesaleClients = objToArr(c);
     overseasClients = objToArr(oc);
     customSubcats = cs || {};
+    // サブカテゴリーの名前変更：古い名前のままの項目・商品を新しい名前に付け替える（画面表示より先に行う）
+    try { await migrateRenamedSubcats(); } catch (e) { console.error('subcat rename migrate error', e); }
     consignRequests = flattenConsignRequests(cr);
     freeeInvoiceGroups = objToArr(fig);
     // 事務所を選ばない処理（納品書など）で合計だけが変わった分の内訳を保存し直す（保管場所ごとの在庫）
