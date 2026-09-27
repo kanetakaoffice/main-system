@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-27a">
+<meta name="app-build" content="2026-09-27c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -193,6 +193,8 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
 .home-side-empty { padding: 14px 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); text-align: center; }
 .home-side-more { display: block; width: 100%; padding: 10px 16px; border: none; border-top: 1px solid var(--border); background: none; color: var(--gold-dark); font-size: 12px; font-weight: 700; font-family: inherit; text-align: right; cursor: pointer; }
 .home-side-more:hover { background: var(--surface); }
+.home-away-card { align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: #9a3412; margin-bottom: 10px; padding: 7px 8px 7px 12px; border-radius: 8px; background: #fff7ed; border: 1px solid #fed7aa; }
+@media (min-width: 1280px) { .home-away-card { display: none !important; } }
 .home-side-tag { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; font-size: 10.5px; font-weight: 700; border: 1px solid currentColor; }
 .screen { display: none; padding: 16px; }
 .screen.active { display: block; }
@@ -600,6 +602,9 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <input type="file" accept=".csv" onchange="handleHomeBuybackCsvSelected(event)" style="display:none">
       </label>
     </div>
+    <!-- 保管場所ごとの在庫：定位置以外の事務所に置いたままの商品（運び待ち）があるときだけ出す。
+         パソコンの広い画面では右列の一覧に同じ内容が出るので、この欄は隠す（home-away-card） -->
+    <div id="home-away-card" class="home-away-card" style="display:none"></div>
     <!-- 要望「パソコンで画面いっぱいに広げると横に間延びして見にくい」への対応。
          画面幅1280px以上のときだけ、HOMEを左右2列（左：今までの内容／右：確認待ちの連絡・
          出荷待ち・在庫アラートの一覧）に並べる。それより狭い幅（スマホ・画面半分）では
@@ -1019,6 +1024,18 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 
 <!-- 設定スクリーン -->
   <div id="screen-settings" class="screen">
+    <!-- 保管場所ごとの在庫：事務所の一覧（名前の変更・追加） -->
+    <div class="card">
+      <div class="card-title">保管場所（事務所）</div>
+      <div class="field">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">在庫を事務所ごとに管理します。名前を変えたいときは書き換えて「保存する」を押してください。一番上の事務所が、新しく登録する商品の標準の定位置になります。</div>
+        <div id="stock-location-settings"></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+          <input type="text" id="stock-loc-new-name" placeholder="事務所を追加（例：倉庫B）" style="flex:1">
+        </div>
+        <button class="btn btn-gold" onclick="saveStockLocationSettings()" style="margin-top:12px;width:100%">保存する</button>
+      </div>
+    </div>
     <div class="card">
       <div class="card-title">アカウント情報</div>
       <div class="field">
@@ -1145,6 +1162,19 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
           <input type="number" id="inv-stock" placeholder="0" min="0">
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px">空欄の場合は0として登録されます。在庫数はあとから商品一覧の編集で変更できます</div>
         </div>
+        <!-- 保管場所（事務所）ごとの在庫：どの事務所に届いた（置いた）分かと、その商品の定位置 -->
+        <div class="field-divider"></div>
+        <div class="field" style="padding-top:16px">
+          <div class="field-label">入荷先の事務所</div>
+          <select id="inv-in-loc" onchange="rememberInLoc(this.value)"></select>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">荷物が届いた（置いた）事務所を選んでください。この端末では次回も同じ事務所が選ばれた状態になります</div>
+        </div>
+        <div class="field-divider" id="inv-home-loc-divider"></div>
+        <div class="field" id="inv-home-loc-wrap" style="padding-top:16px">
+          <div class="field-label">定位置（普段置いておく事務所）</div>
+          <select id="inv-home-loc"></select>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">洗濯機・冷蔵庫など運ばずにそのまま置いておく大型商品は、届いた事務所（清洲など）を選んでください。定位置以外の事務所にある分は「運び待ち」として表示されます</div>
+        </div>
         <div class="field-divider"></div>
         <div class="field" style="padding-top:16px">
           <div class="field-label">在庫アラートのしきい値</div>
@@ -1174,8 +1204,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         </div>
         <div class="field-divider"></div>
         <div class="field" style="padding-top:16px">
-          <div class="field-label">保管場所</div>
-          <input type="text" id="inv-location" placeholder="例：倉庫A・棚3段目">
+          <div class="field-label">置き場所メモ（棚など）</div>
+          <input type="text" id="inv-location" placeholder="例：棚3段目">
         </div>
         <div class="field-divider"></div>
         <div class="field" style="padding-top:16px">
@@ -1217,6 +1247,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span id="move-alert-msg"></span>
       </div>
+      <!-- 保管場所ごとの在庫：運び待ちの商品をまとめて移動する入口 -->
+      <button type="button" class="btn btn-secondary" onclick="openBulkTransferModal()" style="width:100%;margin-bottom:12px;padding:11px;font-size:13px">🚚 事務所間でまとめて移動<span id="move-away-count" style="margin-left:4px;font-weight:700"></span></button>
       <div class="card">
         <div class="card-title">商品スキャン</div>
         <div class="field">
@@ -1230,7 +1262,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
           <div id="move-jan-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
           <div id="move-product-info" style="margin-top:12px;padding:12px;background:var(--gold-bg);border-radius:8px;display:none">
             <div style="font-weight:700;font-size:15px" id="move-product-name"></div>
-            <div style="font-size:13px;color:var(--text-sub);margin-top:4px">現在庫: <span id="move-current-stock" style="font-weight:700;color:var(--gold-dark)"></span>個</div>
+            <div style="font-size:13px;color:var(--text-sub);margin-top:4px">現在庫: <span id="move-current-stock" style="font-weight:700;color:var(--gold-dark)"></span>個<span id="move-current-loc" style="margin-left:8px;font-size:12px;color:var(--text-muted)"></span></div>
           </div>
           <div style="margin-top:14px">
             <div class="field-label">型番・商品名で検索</div>
@@ -1253,8 +1285,25 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
             <option value="">選択してください</option>
             <option value="in">入庫</option>
             <option value="out">出庫</option>
+            <option value="transfer">事務所間の移動</option>
             <option value="adjust">在庫調整</option>
           </select>
+        </div>
+        <!-- 保管場所ごとの在庫：入庫・出庫・在庫調整はどの事務所か、移動はどこからどこへか -->
+        <div class="field-divider" id="move-loc-divider" style="display:none"></div>
+        <div class="field" id="move-loc-wrap" style="padding-top:16px;display:none">
+          <div class="field-label" id="move-loc-label">事務所 <span class="req">*</span></div>
+          <select id="move-loc"></select>
+          <div id="move-loc-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px"></div>
+        </div>
+        <div class="field-divider" id="move-transfer-divider" style="display:none"></div>
+        <div class="field" id="move-transfer-wrap" style="padding-top:16px;display:none">
+          <div class="field-label">移動元 → 移動先 <span class="req">*</span></div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <select id="move-from-loc" style="flex:1"></select>
+            <span style="flex-shrink:0;color:var(--text-muted)">→</span>
+            <select id="move-to-loc" style="flex:1"></select>
+          </div>
         </div>
         <div class="field-divider" id="move-channel-divider" style="display:none"></div>
         <div class="field" id="move-channel-wrap" style="padding-top:16px;display:none">
@@ -1343,6 +1392,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
             <option value="value">在庫金額が高い順</option>
             <option value="new">登録日が新しい順</option>
           </select>
+          <!-- 保管場所ごとの在庫：事務所での絞り込み（選ぶと、その事務所に在庫のある商品だけを、その事務所の個数で表示） -->
+          <select id="inv-loc-filter" onchange="renderInventoryList()" style="width:auto;padding:4px 8px;font-size:12px"><option value="">すべての事務所</option></select>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
           <button type="button" onclick="toggleAllInvCats(true)" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:6px;background:var(--white);color:var(--text-muted);cursor:pointer">すべて展開</button>
@@ -2487,8 +2538,13 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <button type="button" id="prod-edit-jan-clear" onclick="clearFieldAndNotify('prod-edit-jan','prod-edit-jan-clear')" aria-label="JANコードをクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
       </div></div>
     <div class="field-divider"></div>
-    <div class="field" style="padding-top:12px"><div class="field-label">在庫数 <span class="req">*</span></div>
-      <input type="number" id="prod-edit-stock" min="0"></div>
+    <div class="field" style="padding-top:12px"><div class="field-label">定位置（普段置いておく事務所）</div>
+      <select id="prod-edit-home-loc" style="font-size:13px;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;width:100%"></select></div>
+    <div class="field-divider"></div>
+    <div class="field" style="padding-top:12px"><div class="field-label">事務所ごとの在庫数 <span class="req">*</span></div>
+      <div id="prod-edit-loc-stocks" style="display:flex;flex-wrap:wrap;gap:8px 14px"></div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:6px">合計 <span id="prod-edit-stock-total" style="font-weight:700;color:var(--text)">0</span>個</div>
+      <input type="hidden" id="prod-edit-stock"></div>
     <div class="field-divider"></div>
     <div class="field" style="padding-top:12px"><div class="field-label">在庫アラートのしきい値</div>
       <input type="number" id="prod-edit-threshold" min="0" placeholder="未設定の場合は3個">
@@ -2505,7 +2561,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div class="field" style="padding-top:12px"><div class="field-label">サブカテゴリ</div>
       <select id="prod-edit-subcategory" onchange="handleSubcatSelectChange(this)" style="font-size:13px;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;width:100%"></select></div>
     <div class="field-divider"></div>
-    <div class="field" style="padding-top:12px"><div class="field-label">保管場所</div>
+    <div class="field" style="padding-top:12px"><div class="field-label">置き場所メモ（棚など）</div>
       <input type="text" id="prod-edit-location"></div>
     <div class="field-divider"></div>
     <div class="field" style="padding-top:12px"><div class="field-label">備考</div>
@@ -2516,10 +2572,32 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     </div>
   </div>
 </div>
+<!-- 保管場所ごとの在庫：事務所間でまとめて移動（例：清洲に届いた商品を港区へ運んだとき） -->
+<div id="bulk-transfer-modal" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom)) 16px">
+  <div style="background:var(--white);border-radius:16px;padding:20px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.2)">
+    <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">🚚 事務所間でまとめて移動</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">運んだ商品の個数を入れて「移動する」を押してください。定位置以外の事務所にある商品（運び待ち）は、あらかじめ全部の個数が入っています。運ばなかった商品は0にしてください。</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <select id="bulk-transfer-from" onchange="renderBulkTransferList()" style="flex:1"></select>
+      <span style="flex-shrink:0;color:var(--text-muted)">→</span>
+      <select id="bulk-transfer-to" style="flex:1"></select>
+    </div>
+    <input type="text" id="bulk-transfer-search" placeholder="🔍 型番・商品名で検索" oninput="renderBulkTransferList()" style="margin-bottom:10px">
+    <div id="bulk-transfer-list"></div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button onclick="submitBulkTransfer()" style="flex:1;padding:13px;background:linear-gradient(135deg,#d8d8d8,#a8a8a8);color:#1a1a1a;border:none;border-radius:var(--radius-sm);font-size:15px;font-weight:700;cursor:pointer">移動する</button>
+      <button onclick="closeBulkTransferModal()" style="flex:1;padding:13px;background:var(--surface);color:var(--text);border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:15px;cursor:pointer">キャンセル</button>
+    </div>
+  </div>
+</div>
 <div id="stocktake-modal" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom)) 16px">
   <div style="background:var(--white);border-radius:16px;padding:20px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.2)">
     <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">棚卸（実地在庫の確認）</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">実際に数えた在庫数を入力してください。システム上の在庫数と異なる商品だけが対象になります。</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">実際に数えた在庫数を入力してください。システム上の在庫数と異なる商品だけが対象になります。</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px;color:var(--text)">
+      <span style="flex-shrink:0">数える事務所</span>
+      <select id="stocktake-loc" onchange="renderStocktakeList()" style="flex:1"></select>
+    </div>
     <input type="text" id="stocktake-search" placeholder="🔍 商品名・JANコードで検索" oninput="renderStocktakeList()" style="margin-bottom:12px">
     <div id="stocktake-list"></div>
     <div style="display:flex;gap:10px;margin-top:16px">
@@ -3554,15 +3632,17 @@ function showInvScreen(name) {
 
 async function loadInventory() {
   try {
-    const [p, m, c, oc, cs, cr, fig] = await Promise.all([
+    const [p, m, c, oc, cs, cr, fig, locs] = await Promise.all([
       fetch(authedUrl('/products.json')).then(r => r.json()),
       fetch(authedUrl('/stockMoves.json')).then(r => r.json()),
       fetch(authedUrl('/wholesaleClients.json')).then(r => r.json()),
       fetch(authedUrl('/overseasClients.json')).then(r => r.json()),
       fetch(authedUrl('/customSubcats.json')).then(r => r.json()),
       fetch(authedUrl('/consignRequests.json')).then(r => r.json()).catch(() => null),
-      fetch(authedUrl('/freeeInvoiceGroups.json')).then(r => r.json()).catch(() => null)
+      fetch(authedUrl('/freeeInvoiceGroups.json')).then(r => r.json()).catch(() => null),
+      fetch(authedUrl('/stockLocations.json')).then(r => r.json()).catch(() => null)
     ]);
+    setStockLocationsFromDb(locs);
     products   = objToArr(p);
     stockMoves = objToArr(m);
     wholesaleClients = objToArr(c);
@@ -3570,6 +3650,9 @@ async function loadInventory() {
     customSubcats = cs || {};
     consignRequests = flattenConsignRequests(cr);
     freeeInvoiceGroups = objToArr(fig);
+    // 事務所を選ばない処理（納品書など）で合計だけが変わった分の内訳を保存し直す（保管場所ごとの在庫）
+    normalizeAllLocQty().catch(e => console.error('locQty normalize error', e));
+    refreshLocSelects();
     applyCustomSubcats();
     refreshOpenSubcatSelects();
     renderWhClientDatalist();
@@ -8224,6 +8307,8 @@ function setInvAddExistingMode(found) {
   if (stockInput) stockInput.placeholder = '追加する数量を入力';
   const btn = document.getElementById('inv-submit-btn');
   if (btn) btn.textContent = '入荷を記録する（既存商品）';
+  // 既存商品への入荷では定位置は変えないので、定位置の欄は隠し、今の事務所ごとの在庫を案内する
+  setInvHomeLocVisible(false, found);
 }
 
 // 要望：「登録済み商品の情報を、JANスキャン画面から直接修正したい」への対応。
@@ -8277,6 +8362,18 @@ function clearInvAddExistingMode() {
   if (stockInput) stockInput.placeholder = '0';
   const btn = document.getElementById('inv-submit-btn');
   if (btn) btn.textContent = '商品を登録する';
+  setInvHomeLocVisible(true);
+}
+function setInvHomeLocVisible(show, found) {
+  const wrap = document.getElementById('inv-home-loc-wrap');
+  const div = document.getElementById('inv-home-loc-divider');
+  if (wrap) wrap.style.display = show ? '' : 'none';
+  if (div) div.style.display = show ? '' : 'none';
+  if (show) fillLocSelect('inv-home-loc', defaultHomeLoc());
+  const label = document.getElementById('inv-stock-label');
+  if (label && !show && found) {
+    label.innerHTML = `入荷数（追加する数量） <span class="req">*</span><span style="font-weight:400;color:var(--text-muted);margin-left:6px;font-size:11px">現在：${escapeHtmlMain(locBreakdownText(found))}</span>`;
+  }
 }
 
 // 商品登録のJANコード欄：入力があるときだけ✕ボタンを表示する
@@ -8835,7 +8932,11 @@ async function submitProduct() {
     if (!prod) { showAlert('inv-alert-box','inv-alert-msg','対象の商品が見つかりませんでした。JANを入力し直してください','error'); clearInvAddExistingMode(); return; }
     const addQty = parseInt(stock) || 0;
     if (addQty <= 0) { showAlert('inv-alert-box','inv-alert-msg','入荷数は1以上を入力してください','error'); return; }
-    const newStock = prod.stock + addQty;
+    // 入荷先の事務所に加える（保管場所ごとの在庫）
+    const inLoc = document.getElementById('inv-in-loc')?.value || getDefaultInLoc();
+    rememberInLoc(inLoc);
+    const locState = locStateAfterDelta(prod, inLoc, addQty);
+    const newStock = locState.stock;
 
     // 要望：「登録済み商品の情報を、JANスキャン画面から直接修正したい」への対応。
     // 「✏️ 修正する」で編集を許可した場合のみ商品名・型番・メーカーの入力欄が変更できる
@@ -8852,12 +8953,13 @@ async function submitProduct() {
     }
 
     try {
+      const stockBefore = prod.stock;
       const updatePromises = [
-        fetch(authedUrl('/products/' + existingKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) }),
+        saveProductLocState(prod, newStock, locState.locQty),
         fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
           productKey: existingKey, productName: prod.name, jan: prod.jan,
-          type: 'in', qty: addQty, date: todayStr(), memo: '商品登録画面から入荷',
-          stockBefore: prod.stock, stockAfter: newStock, createdAt: Date.now()
+          type: 'in', qty: addQty, date: todayStr(), memo: '商品登録画面から入荷', loc: inLoc,
+          stockBefore, stockAfter: newStock, createdAt: Date.now()
         })})
       ];
       const masterUpdated = Object.keys(masterUpdates).length > 0;
@@ -8876,7 +8978,7 @@ async function submitProduct() {
       toggleInvJanClearBtn();
       toggleFieldClearBtn('inv-model', 'inv-model-clear');
       await loadInventory();
-      showToast(masterUpdated ? '入荷を記録し、商品情報を修正しました（在庫: ' + newStock + '個）' : '入荷を記録しました（在庫: ' + newStock + '個）');
+      showToast((masterUpdated ? '入荷を記録し、商品情報を修正しました' : locName(inLoc) + 'への入荷を記録しました') + '（在庫: ' + locBreakdownText(prod) + '）');
     } catch(e) { showAlert('inv-alert-box','inv-alert-msg','記録に失敗しました','error'); }
     return;
   }
@@ -8906,6 +9008,12 @@ async function submitProduct() {
     image: imageData,
     createdAt: Date.now()
   };
+  // 保管場所ごとの在庫：定位置と、初期在庫を置いた（届いた）事務所
+  const newHomeLoc = document.getElementById('inv-home-loc')?.value || defaultHomeLoc();
+  const newInLoc = document.getElementById('inv-in-loc')?.value || getDefaultInLoc();
+  rememberInLoc(newInLoc);
+  data.homeLoc = newHomeLoc;
+  if (data.stock > 0 && newInLoc !== newHomeLoc) data.locQty = { [newInLoc]: data.stock };
   rememberMakerIfNew(data.maker);
 
   try {
@@ -8916,10 +9024,12 @@ async function submitProduct() {
     if (newKey && data.stock > 0) {
       await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
         productKey: newKey, productName: data.name, jan: data.jan,
-        type: 'in', qty: data.stock, date: todayStr(), memo: '新規登録',
+        type: 'in', qty: data.stock, date: todayStr(), memo: '新規登録', loc: newInLoc,
         stockBefore: 0, stockAfter: data.stock, createdAt: Date.now()
       })});
     }
+    // 大型商品などで定位置を変えて登録したあと、次の商品まで同じ定位置にならないよう標準に戻す
+    fillLocSelect('inv-home-loc', defaultHomeLoc());
     ['inv-maker','inv-name','inv-model','inv-jan','inv-stock','inv-threshold','inv-cost','inv-location','inv-memo'].forEach(id => document.getElementById(id).value = '');
     const catEl = document.getElementById('inv-category'); if(catEl) catEl.selectedIndex = 0;
     populateSubcatSelect('inv-subcategory', CATEGORY_LIST[0]);
@@ -8948,6 +9058,9 @@ function openProductEdit(key) {
   toggleFieldClearBtn('prod-edit-model', 'prod-edit-model-clear');
   toggleFieldClearBtn('prod-edit-jan', 'prod-edit-jan-clear');
   document.getElementById('prod-edit-stock').value = p.stock ?? 0;
+  // 保管場所ごとの在庫：定位置と、事務所ごとの在庫数の入力欄
+  fillLocSelect('prod-edit-home-loc', getHomeLoc(p));
+  renderProdEditLocStocks(p);
   document.getElementById('prod-edit-threshold').value = (typeof p.lowStock === 'number') ? p.lowStock : '';
   document.getElementById('prod-edit-cost').value = p.cost || 0;
   document.getElementById('prod-edit-category').value = p.category || '家電';
@@ -8962,11 +9075,41 @@ function closeProductEdit() {
   if (modal) modal.style.display = 'none';
 }
 
+function renderProdEditLocStocks(p) {
+  const wrap = document.getElementById('prod-edit-loc-stocks');
+  if (!wrap) return;
+  const bd = computeLocBreakdown(p);
+  wrap.innerHTML = stockLocations.map(l => `
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text)">
+      <span style="min-width:2.5em">${escapeHtmlMain(l.name)}</span>
+      <input type="number" class="prod-edit-loc-qty" data-loc="${escapeHtmlMain(l.id)}" value="${bd.byLoc[l.id]}" oninput="updateProdEditStockTotal()" style="width:80px;text-align:center;padding:6px">
+      <span style="font-size:12px;color:var(--text-muted)">個</span>
+    </label>`).join('');
+  updateProdEditStockTotal();
+}
+function readProdEditByLoc() {
+  const byLoc = {};
+  document.querySelectorAll('.prod-edit-loc-qty').forEach(inp => { byLoc[inp.dataset.loc] = parseInt(inp.value) || 0; });
+  return byLoc;
+}
+function updateProdEditStockTotal() {
+  const byLoc = readProdEditByLoc();
+  const total = Object.values(byLoc).reduce((a, b) => a + b, 0);
+  const t = document.getElementById('prod-edit-stock-total');
+  if (t) t.textContent = total;
+  const hidden = document.getElementById('prod-edit-stock');
+  if (hidden) hidden.value = total;
+}
+
 async function saveProductEdit() {
   const key = document.getElementById('prod-edit-key').value;
   const name = document.getElementById('prod-edit-name').value.trim();
+  updateProdEditStockTotal();
   const stock = document.getElementById('prod-edit-stock').value;
   if (!name || stock === '') { showToast('商品名と在庫数は必須です'); return; }
+  // 保管場所ごとの在庫：入力された事務所ごとの個数と定位置から、合計とlocQtyを作り直す
+  const editHomeLoc = document.getElementById('prod-edit-home-loc')?.value || defaultHomeLoc();
+  const editState = locStateFromByLoc({ homeLoc: editHomeLoc }, readProdEditByLoc());
   const patch = {
     maker:    document.getElementById('prod-edit-maker').value.trim(),
     name,
@@ -8979,7 +9122,10 @@ async function saveProductEdit() {
     subcategory: document.getElementById('prod-edit-subcategory')?.value || '',
     location: document.getElementById('prod-edit-location').value.trim(),
     memo:     document.getElementById('prod-edit-memo').value.trim(),
+    homeLoc:  editHomeLoc,
+    locQty:   Object.keys(editState.locQty).length ? editState.locQty : null,
   };
+  patch.stock = editState.stock;
   rememberMakerIfNew(patch.maker);
   try {
     await fetch(authedUrl('/products/'+key+'.json'), {method:'PATCH', body:JSON.stringify(patch)});
@@ -9050,6 +9196,7 @@ function selectMoveProduct(found) {
   info.style.display = 'block';
   info.dataset.key = found._key;
   if (status) status.textContent = '';
+  updateMoveLocFields();
   // 梱包追加フォームにJANと型番を自動入力
   const packJan = document.getElementById('pack-jan-sp');
   const packProduct = document.getElementById('pack-product-sp');
@@ -9147,6 +9294,49 @@ function handleMoveType() {
   if (wrap) wrap.style.display = show ? '' : 'none';
   if (divider) divider.style.display = show ? '' : 'none';
   if (!show) { const ch = document.getElementById('move-channel'); if (ch) ch.selectedIndex = 0; }
+  updateMoveLocFields();
+}
+
+// 入出庫フォームの事務所欄（保管場所ごとの在庫）。種別と選んだ商品に合わせて表示と初期値を切り替える
+function getSelectedMoveProduct() {
+  const info = document.getElementById('move-product-info');
+  const key = info && info.style.display !== 'none' ? info.dataset.key : '';
+  return key ? products.find(p => p._key === key) : null;
+}
+function updateMoveLocFields() {
+  const type = document.getElementById('move-type')?.value || '';
+  const prod = getSelectedMoveProduct();
+  const showLoc = type === 'in' || type === 'out' || type === 'adjust';
+  const showTransfer = type === 'transfer';
+  [['move-loc-wrap', showLoc], ['move-loc-divider', showLoc], ['move-transfer-wrap', showTransfer], ['move-transfer-divider', showTransfer]].forEach(([id, v]) => {
+    const el = document.getElementById(id); if (el) el.style.display = v ? '' : 'none';
+  });
+  const label = document.getElementById('move-loc-label');
+  const hint = document.getElementById('move-loc-hint');
+  const qtyLabel = document.querySelector('#move-qty')?.closest('.field')?.querySelector('.field-label');
+  if (qtyLabel) qtyLabel.innerHTML = type === 'adjust' ? '数量（この事務所の実際の個数） <span class="req">*</span>' : '数量 <span class="req">*</span>';
+  if (showLoc) {
+    let sel;
+    if (type === 'in') { sel = getDefaultInLoc(); if (label) label.innerHTML = '入庫先の事務所 <span class="req">*</span>'; if (hint) hint.textContent = '荷物が届いた（置いた）事務所'; }
+    else if (type === 'out') { sel = getDefaultOutLoc(prod); if (label) label.innerHTML = '出庫元の事務所 <span class="req">*</span>'; if (hint) hint.textContent = '定位置に在庫があれば定位置、無ければ在庫のある事務所が自動で選ばれます'; }
+    else { sel = prod ? getHomeLoc(prod) : defaultHomeLoc(); if (label) label.innerHTML = '調整する事務所 <span class="req">*</span>'; if (hint) hint.textContent = 'この事務所の在庫数を、入力した数量に合わせます（他の事務所の分は変わりません）'; }
+    fillLocSelect('move-loc', sel);
+  }
+  if (showTransfer) {
+    let from = '', to = '';
+    if (prod) {
+      const bd = computeLocBreakdown(prod);
+      from = Object.keys(bd.locQty).sort((a, b) => bd.locQty[b] - bd.locQty[a])[0] || bd.home;
+      to = from === bd.home ? (stockLocations.find(l => l.id !== bd.home) || {}).id : bd.home;
+    } else {
+      from = stockLocations.some(l => l.id === 'kiyosu') ? 'kiyosu' : (stockLocations[1] || stockLocations[0]).id;
+      to = defaultHomeLoc() === from ? (stockLocations.find(l => l.id !== from) || {}).id : defaultHomeLoc();
+    }
+    fillLocSelect('move-from-loc', from);
+    fillLocSelect('move-to-loc', to || from);
+  }
+  const locEl = document.getElementById('move-current-loc');
+  if (locEl) locEl.textContent = prod ? '（' + locBreakdownText(prod) + '）' : '';
 }
 
 // 入出庫（入荷・出荷どちらも対象）で使う、傷・つぶれの写真 or 詳細の記録（任意・どちらか一方のみ）
@@ -9203,20 +9393,46 @@ async function submitMove() {
   if (!prodKey) { showAlert('move-alert-box','move-alert-msg','JANコードに一致する商品が見つかりません','error'); return; }
 
   const prod = products.find(p => p._key === prodKey);
-  let newStock = prod.stock;
-  if (type === 'in') newStock += qty;
-  else if (type === 'out') newStock -= qty;
-  else newStock = qty;
+  // 保管場所ごとの在庫：事務所を指定して増減する（移動は合計を変えずに内訳だけ動かす）
+  const loc = document.getElementById('move-loc')?.value || '';
+  const fromLoc = document.getElementById('move-from-loc')?.value || '';
+  const toLoc = document.getElementById('move-to-loc')?.value || '';
+  const bdBefore = computeLocBreakdown(prod);
+  let locState;
+  if (type === 'transfer') {
+    if (!fromLoc || !toLoc || fromLoc === toLoc) { showAlert('move-alert-box','move-alert-msg','移動元と移動先に別々の事務所を選んでください','error'); return; }
+    if ((bdBefore.byLoc[fromLoc] || 0) < qty) { showAlert('move-alert-box','move-alert-msg', `${locName(fromLoc)}の在庫は${bdBefore.byLoc[fromLoc] || 0}個です。移動する数量を確認してください`,'error'); return; }
+    const byLoc = { ...bdBefore.byLoc };
+    byLoc[fromLoc] -= qty; byLoc[toLoc] = (byLoc[toLoc] || 0) + qty;
+    locState = locStateFromByLoc(prod, byLoc);
+  } else if (type === 'in') {
+    rememberInLoc(loc);
+    locState = locStateAfterDelta(prod, loc, qty);
+  } else if (type === 'out') {
+    const have = bdBefore.byLoc[loc] || 0;
+    if (have < qty && prod.stock >= qty) {
+      const ok = await showConfirm(`${locName(loc)}の在庫は${have}個です。${qty}個出庫しますか？\n（足りない分は他の事務所から出したものとして記録します）`);
+      if (!ok) return;
+    }
+    locState = locStateAfterDelta(prod, loc, -qty);
+  } else {
+    const byLoc = { ...bdBefore.byLoc };
+    byLoc[loc] = qty;
+    locState = locStateFromByLoc(prod, byLoc);
+  }
+  const newStock = locState.stock;
 
   if (newStock < 0) { showAlert('move-alert-box','move-alert-msg','在庫数がマイナスになります','error'); return; }
 
   try {
+    const stockBefore = prod.stock;
     await Promise.all([
-      fetch(authedUrl('/products/' + prodKey + '/stock.json'), { method: 'PUT', body: JSON.stringify(newStock) }),
+      saveProductLocState(prod, newStock, locState.locQty),
       fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
         productKey: prodKey, productName: prod.name, jan,
         type, qty, date, channel: type === 'out' ? channel : '', memo: document.getElementById('move-memo').value.trim(),
-        stockBefore: prod.stock, stockAfter: newStock, createdAt: Date.now(),
+        ...(type === 'transfer' ? { fromLoc, toLoc } : { loc }),
+        stockBefore, stockAfter: newStock, createdAt: Date.now(),
         // 傷・つぶれの記録（任意）。写真・詳細のどちらか一方のみ保持する
         damageDetail: _moveDamage.mode === 'detail' ? (_moveDamage.detail || '') : '',
         damagePhoto: _moveDamage.mode === 'photo' ? (_moveDamage.photo || '') : ''
@@ -9231,7 +9447,7 @@ async function submitMove() {
     resetMoveDamageSection();
     document.getElementById('move-product-info').style.display = 'none';
     await loadInventory();
-    showToast('入出庫を記録しました（在庫: ' + newStock + '個）');
+    showToast((type === 'transfer' ? `${locName(fromLoc)}→${locName(toLoc)}の移動を記録しました` : '入出庫を記録しました') + '（在庫: ' + locBreakdownText(prod) + '）');
   } catch(e) { showAlert('move-alert-box','move-alert-msg','記録に失敗しました','error'); }
 }
 
@@ -9261,6 +9477,339 @@ function getProductReceipts(key) {
     });
 }
 
+// ============================================================
+// 保管場所（事務所）ごとの在庫
+// 要望：「清洲の事務所と港区の事務所の2か所で商品を管理している。どこの事務所に何の商品が
+// 何個あるのかを明確にしたい。清洲に届いた荷物は自分たちで港区まで運んでいる。港区にある
+// 商品が清洲に新しく届くことも多い。大型商品（洗濯機・冷蔵庫など）は運べないので清洲から
+// 直接発送・卸すこともある。港区に直接届く荷物もある」への対応。
+//
+// ■ データの持ち方
+//   ・/stockLocations … 事務所の一覧 [{id, name}]（未設定なら港区・清洲の2か所）
+//   ・products/{key}/stock … これまで通り「全事務所の合計」の在庫数（今までの画面・集計はすべてこの値を使う）
+//   ・products/{key}/homeLoc … その商品の「定位置」（普段置いておく事務所。未設定なら一覧の先頭＝港区）
+//   ・products/{key}/locQty … 定位置「以外」の事務所にある個数だけを {事務所id: 個数} で持つ
+//   定位置にある個数は保存せず、「合計 − 定位置以外の個数」で求める。
+//
+// ■ この持ち方にした理由
+//   納品書・委託・預かり精算・出庫印刷など、在庫の合計を増減させる処理がアプリ内に何か所もある。
+//   それらをすべて事務所対応に書き換えなくても、合計だけが減った場合は「まず定位置から減り、
+//   定位置に無ければ在庫のある他の事務所から減った」、合計だけが増えた場合は「定位置に戻った」
+//   と自動で解釈される（computeLocBreakdown）。これは話し合って決めた「出庫は定位置から。
+//   定位置に無ければ在庫のある方から」という決まりと同じ動きになる。
+//   入荷・移動・事務所を選んだ出庫・棚卸・商品の編集では、事務所を明示して記録する。
+// ============================================================
+const DEFAULT_STOCK_LOCATIONS = [{ id: 'minato', name: '港区' }, { id: 'kiyosu', name: '清洲' }];
+let stockLocations = DEFAULT_STOCK_LOCATIONS.map(l => ({ ...l }));
+const LAST_IN_LOC_KEY = 'kanetaka_last_in_loc';
+
+function setStockLocationsFromDb(v) {
+  const arr = Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : null);
+  const cleaned = (arr || []).filter(l => l && l.id && l.name).map(l => ({ id: String(l.id), name: String(l.name) }));
+  stockLocations = cleaned.length ? cleaned : DEFAULT_STOCK_LOCATIONS.map(l => ({ ...l }));
+}
+function locName(id) {
+  const l = stockLocations.find(x => x.id === id);
+  return l ? l.name : (id || '');
+}
+function defaultHomeLoc() { return (stockLocations[0] && stockLocations[0].id) || 'minato'; }
+function getHomeLoc(p) {
+  const h = p && p.homeLoc;
+  return stockLocations.some(l => l.id === h) ? h : defaultHomeLoc();
+}
+// 入荷先の初期値：その端末で前回選んだ事務所（初めてなら、荷物が届くことの多い清洲。無ければ先頭）
+function getDefaultInLoc() {
+  let last = '';
+  try { last = localStorage.getItem(LAST_IN_LOC_KEY) || ''; } catch (e) {}
+  if (stockLocations.some(l => l.id === last)) return last;
+  if (stockLocations.some(l => l.id === 'kiyosu')) return 'kiyosu';
+  return defaultHomeLoc();
+}
+function rememberInLoc(id) { try { localStorage.setItem(LAST_IN_LOC_KEY, id); } catch (e) {} }
+
+// 事務所ごとの個数を求める。byLoc: {事務所id: 個数}（全事務所ぶん）、locQty: 保存用（定位置以外で1個以上のもの）
+function computeLocBreakdown(p) {
+  const total = Number(p && p.stock) || 0;
+  const home = getHomeLoc(p);
+  const raw = (p && p.locQty) || {};
+  const others = {};
+  stockLocations.forEach(l => {
+    if (l.id !== home) others[l.id] = Math.max(0, Math.floor(Number(raw[l.id]) || 0));
+  });
+  let homeQty = total - Object.values(others).reduce((a, b) => a + b, 0);
+  if (homeQty < 0) {
+    // 定位置の分だけでは足りない＝事務所を選ばずに記録された出庫（納品書など）が他の事務所から
+    // 出たものとみなし、個数の多い事務所から順に減らす
+    let deficit = -homeQty;
+    Object.keys(others).sort((a, b) => others[b] - others[a]).forEach(id => {
+      if (deficit <= 0) return;
+      const take = Math.min(others[id], deficit);
+      others[id] -= take; deficit -= take;
+    });
+    homeQty = -deficit; // 合計自体がマイナスの場合は定位置をマイナスで表示する
+  }
+  const byLoc = {};
+  stockLocations.forEach(l => { byLoc[l.id] = l.id === home ? homeQty : others[l.id]; });
+  const locQty = {};
+  Object.keys(others).forEach(id => { if (others[id] > 0) locQty[id] = others[id]; });
+  return { byLoc, home, locQty, total };
+}
+function sameLocQty(a, b) {
+  const ka = Object.keys(a || {}).filter(k => (a[k] || 0) > 0).sort();
+  const kb = Object.keys(b || {}).filter(k => (b[k] || 0) > 0).sort();
+  if (ka.length !== kb.length) return false;
+  return ka.every((k, i) => k === kb[i] && Number(a[k]) === Number(b[k]));
+}
+// 事務所ごとの個数（byLoc）から、保存する合計・locQtyを作る
+function locStateFromByLoc(p, byLoc) {
+  const home = getHomeLoc(p);
+  let total = 0;
+  const locQty = {};
+  Object.keys(byLoc).forEach(id => {
+    const q = Math.floor(Number(byLoc[id]) || 0);
+    total += q;
+    if (id !== home && q > 0) locQty[id] = q;
+  });
+  return { stock: total, locQty };
+}
+// 合計(stock)とlocQtyをまとめて保存し、手元のproductsにも反映する
+async function saveProductLocState(p, stock, locQty) {
+  const body = { stock, locQty: Object.keys(locQty || {}).length ? locQty : null };
+  await fetch(authedUrl('/products/' + p._key + '.json'), { method: 'PATCH', body: JSON.stringify(body) });
+  p.stock = stock;
+  p.locQty = body.locQty || undefined;
+}
+// 読み込んだ直後に、事務所を選ばない処理で合計だけが減った分などを保存し直しておく
+// （そのままにすると、次に定位置へ入荷したときに内訳がずれるため）
+async function normalizeAllLocQty() {
+  const tasks = [];
+  (products || []).forEach(p => {
+    if (!p || !p.locQty) return;
+    const bd = computeLocBreakdown(p);
+    if (!sameLocQty(bd.locQty, p.locQty)) {
+      p.locQty = Object.keys(bd.locQty).length ? bd.locQty : undefined;
+      tasks.push(fetch(authedUrl('/products/' + p._key + '/locQty.json'), { method: 'PUT', body: JSON.stringify(p.locQty || null) }).catch(() => null));
+    }
+  });
+  if (tasks.length) await Promise.all(tasks);
+}
+// 事務所を指定して在庫を増減する（入荷＝プラス、出庫＝マイナス）。
+// 指定した事務所の個数を超えて出庫した場合は、足りない分を他の事務所から出したものとして扱う。
+function locStateAfterDelta(p, locId, delta) {
+  const bd = computeLocBreakdown(p);
+  const byLoc = { ...bd.byLoc };
+  if (delta >= 0 || locId === bd.home) {
+    if (delta >= 0) byLoc[locId] = (byLoc[locId] || 0) + delta;
+    else {
+      // 定位置から出庫：まず定位置から、足りなければ他の事務所から
+      let need = -delta;
+      const fromHome = Math.min(Math.max(byLoc[bd.home], 0), need);
+      byLoc[bd.home] -= fromHome; need -= fromHome;
+      Object.keys(byLoc).filter(id => id !== bd.home).sort((a, b) => byLoc[b] - byLoc[a]).forEach(id => {
+        if (need <= 0) return;
+        const t = Math.min(byLoc[id], need); byLoc[id] -= t; need -= t;
+      });
+      byLoc[bd.home] -= need; // それでも足りない分は定位置をマイナスにする（合計がマイナスになる場合）
+    }
+  } else {
+    let need = -delta;
+    const fromLoc = Math.min(Math.max(byLoc[locId] || 0, 0), need);
+    byLoc[locId] = (byLoc[locId] || 0) - fromLoc; need -= fromLoc;
+    byLoc[bd.home] -= need; // 足りない分は定位置から（さらに足りなければ定位置がマイナス）
+  }
+  return locStateFromByLoc(p, byLoc);
+}
+// 自動で選ぶ出庫元：定位置に在庫があれば定位置、無ければ在庫のいちばん多い事務所
+function getDefaultOutLoc(p) {
+  if (!p) return defaultHomeLoc();
+  const bd = computeLocBreakdown(p);
+  if (bd.byLoc[bd.home] > 0) return bd.home;
+  const best = Object.keys(bd.byLoc).filter(id => bd.byLoc[id] > 0).sort((a, b) => bd.byLoc[b] - bd.byLoc[a])[0];
+  return best || bd.home;
+}
+function locOptionsHtml(selectedId) {
+  return stockLocations.map(l => `<option value="${escapeHtmlMain(l.id)}" ${l.id === selectedId ? 'selected' : ''}>${escapeHtmlMain(l.name)}</option>`).join('');
+}
+function fillLocSelect(id, selectedId) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = locOptionsHtml(selectedId);
+}
+// 「港区 3／清洲 2」のような内訳の文字列（在庫のある事務所だけ。定位置は在庫0でも出す）
+function locBreakdownText(p) {
+  const bd = computeLocBreakdown(p);
+  return stockLocations
+    .filter(l => l.id === bd.home || bd.byLoc[l.id] !== 0)
+    .map(l => `${l.name} ${bd.byLoc[l.id]}`)
+    .join('／');
+}
+// 定位置以外の事務所に置いてある（＝運び待ち）商品の一覧。大型商品など定位置が清洲の商品は、
+// 清洲にあっても運び待ちには含めない。
+function getItemsAwayFromHome() {
+  const out = [];
+  (products || []).forEach(p => {
+    const bd = computeLocBreakdown(p);
+    Object.keys(bd.locQty).forEach(id => out.push({ p, loc: id, qty: bd.locQty[id], home: bd.home }));
+  });
+  return out;
+}
+
+// 画面上の事務所の選択欄を、事務所の一覧が読み込まれた（変わった）あとにまとめて作り直す
+function refreshLocSelects() {
+  const keep = (id, fallback) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = el.value;
+    fillLocSelect(id, stockLocations.some(l => l.id === cur) ? cur : fallback);
+  };
+  keep('inv-in-loc', getDefaultInLoc());
+  keep('inv-home-loc', defaultHomeLoc());
+  keep('stocktake-loc', defaultHomeLoc());
+  const f = document.getElementById('inv-loc-filter');
+  if (f) {
+    const cur = f.value;
+    f.innerHTML = `<option value="">すべての事務所</option>` + locOptionsHtml(cur);
+    f.value = stockLocations.some(l => l.id === cur) ? cur : '';
+  }
+  const moveType = document.getElementById('move-type');
+  if (moveType && moveType.value) updateMoveLocFields();
+  const awayCount = document.getElementById('move-away-count');
+  if (awayCount) {
+    const n = getItemsAwayFromHome().length;
+    awayCount.textContent = n ? `（運び待ち ${n}件）` : '';
+  }
+}
+
+// ── 事務所間でまとめて移動 ──
+function openBulkTransferModal(fromId, toId) {
+  const modal = document.getElementById('bulk-transfer-modal');
+  if (!modal) return;
+  // 初期値：運び待ちの商品がいちばん多い事務所 → その商品たちの定位置
+  const away = getItemsAwayFromHome();
+  const countByLoc = {};
+  away.forEach(a => { countByLoc[a.loc] = (countByLoc[a.loc] || 0) + 1; });
+  const from = fromId || Object.keys(countByLoc).sort((a, b) => countByLoc[b] - countByLoc[a])[0]
+    || (stockLocations.some(l => l.id === 'kiyosu') ? 'kiyosu' : (stockLocations[1] || stockLocations[0]).id);
+  const to = toId || (from === defaultHomeLoc() ? ((stockLocations.find(l => l.id !== from) || {}).id) : defaultHomeLoc());
+  fillLocSelect('bulk-transfer-from', from);
+  fillLocSelect('bulk-transfer-to', to || from);
+  const search = document.getElementById('bulk-transfer-search');
+  if (search) search.value = '';
+  renderBulkTransferList();
+  modal.style.display = 'flex';
+}
+function closeBulkTransferModal() {
+  const modal = document.getElementById('bulk-transfer-modal');
+  if (modal) modal.style.display = 'none';
+}
+function renderBulkTransferList() {
+  const listEl = document.getElementById('bulk-transfer-list');
+  if (!listEl) return;
+  const from = document.getElementById('bulk-transfer-from')?.value || '';
+  const q = (document.getElementById('bulk-transfer-search')?.value || '').toLowerCase();
+  const qModel = normalizeModelStr(q);
+  const rows = (products || [])
+    .map(p => ({ p, bd: computeLocBreakdown(p) }))
+    .filter(x => (x.bd.byLoc[from] || 0) > 0)
+    .filter(x => !q || (x.p.name || '').toLowerCase().includes(q) || (qModel && normalizeModelStr(x.p.model).includes(qModel)) || (x.p.jan || '').includes(q))
+    .sort((a, b) => {
+      // 運び待ち（定位置が移動元ではない商品）を上に
+      const aw = a.bd.home !== from ? 0 : 1, bw = b.bd.home !== from ? 0 : 1;
+      if (aw !== bw) return aw - bw;
+      return String(a.p.model || a.p.name || '').localeCompare(String(b.p.model || b.p.name || ''), 'ja');
+    });
+  if (!rows.length) {
+    listEl.innerHTML = `<div style="font-size:13px;color:var(--text-muted);padding:16px 0;text-align:center">${escapeHtmlMain(locName(from))}に在庫のある商品はありません</div>`;
+    return;
+  }
+  listEl.innerHTML = rows.map(({ p, bd }) => {
+    const have = bd.byLoc[from];
+    const isAway = bd.home !== from;
+    return `
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(p.model || p.name || '')}${p.model && p.name ? `<span style="font-weight:400;color:var(--text-muted)">　${escapeHtmlMain(p.name)}</span>` : ''}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${escapeHtmlMain(locName(from))}に${have}個・定位置：${escapeHtmlMain(locName(bd.home))}${isAway ? '<span style="color:var(--warning,#b45309);font-weight:700;margin-left:6px">運び待ち</span>' : ''}</div>
+      </div>
+      <input type="number" class="bulk-transfer-qty" data-key="${p._key}" data-max="${have}" value="${isAway ? have : 0}" min="0" max="${have}" style="width:70px;text-align:center;padding:6px">
+      <span style="font-size:12px;color:var(--text-muted);flex-shrink:0">個</span>
+    </div>`;
+  }).join('');
+}
+async function submitBulkTransfer() {
+  const from = document.getElementById('bulk-transfer-from')?.value || '';
+  const to = document.getElementById('bulk-transfer-to')?.value || '';
+  if (!from || !to || from === to) { showToast('移動元と移動先に別々の事務所を選んでください'); return; }
+  const items = [];
+  let over = false;
+  document.querySelectorAll('.bulk-transfer-qty').forEach(inp => {
+    const qty = parseInt(inp.value) || 0;
+    const max = parseInt(inp.dataset.max) || 0;
+    if (qty > max) over = true;
+    if (qty > 0) items.push({ key: inp.dataset.key, qty: Math.min(qty, max) });
+  });
+  if (over) { showToast('移動元にある個数より多い数が入っています'); return; }
+  if (!items.length) { showToast('移動する個数が入力されていません'); return; }
+  const totalQty = items.reduce((a, b) => a + b.qty, 0);
+  if (!await showConfirm(`${locName(from)} → ${locName(to)} へ、${items.length}商品（合計${totalQty}個）を移動します。よろしいですか？`)) return;
+  try {
+    await Promise.all(items.map(it => {
+      const prod = products.find(p => p._key === it.key);
+      if (!prod) return null;
+      const byLoc = { ...computeLocBreakdown(prod).byLoc };
+      byLoc[from] -= it.qty;
+      byLoc[to] = (byLoc[to] || 0) + it.qty;
+      const st = locStateFromByLoc(prod, byLoc);
+      return Promise.all([
+        saveProductLocState(prod, st.stock, st.locQty),
+        fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
+          productKey: prod._key, productName: prod.name || '', jan: prod.jan || '',
+          type: 'transfer', qty: it.qty, fromLoc: from, toLoc: to, date: todayStr(), memo: 'まとめて移動',
+          stockBefore: prod.stock, stockAfter: st.stock, createdAt: Date.now()
+        })})
+      ]);
+    }));
+    closeBulkTransferModal();
+    await loadInventory();
+    if (document.getElementById('screen-inv-list')?.classList.contains('active')) renderInventoryList();
+    if (document.getElementById('screen-home')?.classList.contains('active')) { try { renderHomeSidePanels(); renderHomeAwayCard(); } catch (e) {} }
+    showToast(`${locName(from)}→${locName(to)}へ${items.length}商品（${totalQty}個）を移動しました`);
+  } catch (e) {
+    console.error('bulk transfer error', e);
+    showToast('移動の記録に失敗しました');
+  }
+}
+
+// ── 事務所の追加・名前の変更（設定画面） ──
+function renderStockLocationSettings() {
+  const el = document.getElementById('stock-location-settings');
+  if (!el) return;
+  el.innerHTML = stockLocations.map((l, i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0">
+      <input type="text" class="stock-loc-name" data-id="${escapeHtmlMain(l.id)}" value="${escapeHtmlMain(l.name)}" style="flex:1">
+      ${i === 0 ? '<span style="font-size:11px;color:var(--text-muted);flex-shrink:0">標準の定位置</span>' : ''}
+    </div>`).join('');
+}
+async function saveStockLocationSettings() {
+  const names = {};
+  document.querySelectorAll('.stock-loc-name').forEach(inp => { names[inp.dataset.id] = inp.value.trim(); });
+  const newNameInput = document.getElementById('stock-loc-new-name');
+  const newName = newNameInput ? newNameInput.value.trim() : '';
+  const next = stockLocations.map(l => ({ id: l.id, name: names[l.id] || l.name }));
+  if (newName) {
+    if (next.some(l => l.name === newName)) { showToast('同じ名前の事務所がすでにあります'); return; }
+    next.push({ id: 'loc_' + Date.now().toString(36), name: newName });
+  }
+  try {
+    await fetch(authedUrl('/stockLocations.json'), { method: 'PUT', body: JSON.stringify(next) });
+    setStockLocationsFromDb(next);
+    if (newNameInput) newNameInput.value = '';
+    renderStockLocationSettings();
+    refreshLocSelects();
+    showToast('事務所の設定を保存しました');
+  } catch (e) { showToast('保存に失敗しました'); }
+}
+
 // 商品カードのHTMLを生成する共通関数（在庫一覧／商品登録の右側リストで共通利用）
 // opts.editable が true かつ管理者の場合のみ編集・削除ボタンを表示する
 // 商品ごとの在庫アラートしきい値（未設定なら共通のデフォルト値を使う）
@@ -9280,6 +9829,9 @@ function getInvStockStatus(p) {
 // 請求書類にすぎず、発行日に改めて在庫が動くわけではないため、ここではカウントしない。
 // 含めてしまうと、実際の出庫日ではなく請求書発行日を基準に出庫予測が二重にずれてしまう）
 function estimateStockoutForecast(p) {
+  // 要望「すでに在庫0個の商品に『このペースだと約0日で在庫切れの見込み』と出るのは分かりにくい」
+  // への対応。在庫が0以下の商品はすでに「在庫切れ」と表示されているので、見込みは出さない。
+  if (!(Number(p && p.stock) > 0)) return null;
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 30);
   const cutoffStr = ymdKey(cutoff);
@@ -9290,7 +9842,16 @@ function estimateStockoutForecast(p) {
   const avgDaily = totalOut / 30;
   if (avgDaily <= 0) return null;
   const daysLeft = p.stock / avgDaily;
-  return { avgDaily, daysLeft };
+  return { avgDaily, daysLeft, totalOut };
+}
+
+// 見込みの根拠となる出庫ペースの書き方。1日あたりが0.1個に満たない（30日で1〜2個しか出ていない）
+// 場合に「平均出庫 0.0個/日」と表示されて分かりにくかったため、その場合は30日間の合計個数で表す。
+function formatStockoutRate(forecast) {
+  if (!forecast) return '';
+  return forecast.avgDaily >= 0.1
+    ? `直近30日の平均出庫 ${forecast.avgDaily.toFixed(1)}個/日`
+    : `直近30日の出庫 ${forecast.totalOut}個`;
 }
 
 function buildInvCard(p, opts) {
@@ -9307,7 +9868,7 @@ function buildInvCard(p, opts) {
   const latestDateDisp = fmtDateJP(latestDate);
   const forecast = estimateStockoutForecast(p);
   const forecastDays = forecast ? Math.max(0, Math.round(forecast.daysLeft)) : null;
-  const forecastHtml = forecast ? `<div style="font-size:11px;margin-top:2px;color:${forecastDays<=7?'var(--danger)':forecastDays<=14?'var(--warning)':'var(--text-muted)'}">📉 このペースだと約${forecastDays}日で在庫切れの見込み（直近30日の平均出庫 ${forecast.avgDaily.toFixed(1)}個/日）</div>` : '';
+  const forecastHtml = forecast ? `<div style="font-size:11px;margin-top:2px;color:${forecastDays<=7?'var(--danger)':forecastDays<=14?'var(--warning)':'var(--text-muted)'}">📉 このペースだと約${forecastDays}日で在庫切れの見込み（${formatStockoutRate(forecast)}）</div>` : '';
   const accId = 'prod-' + p._key;
   const receiptHistory = receipts.length > 1 ? `
         <div class="accordion-header" style="padding:6px 0;border-bottom:none" onclick="toggleAccordion('${accId}')">
@@ -9340,7 +9901,9 @@ function buildInvCard(p, opts) {
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
             <span class="inv-stock ${p.stock<=threshold?'low':''}">${p.stock}個</span>
             <span class="stock-badge ${stockClass}">${stockLabel}</span>
+            ${invRowLocChipHtml(p)}
           </div>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:2px">🏢 ${escapeHtmlMain(locBreakdownText(p))}（定位置：${escapeHtmlMain(locName(getHomeLoc(p)))}）</div>
           <div style="font-size:12px;color:var(--text-muted)">
             ${[
               p.location ? '📍 ' + p.location : '',
@@ -9410,7 +9973,7 @@ function buildInvRow(p) {
   const totalVal = (p.cost || 0) * p.stock;
   const forecast = estimateStockoutForecast(p);
   const forecastDays = forecast ? Math.max(0, Math.round(forecast.daysLeft)) : null;
-  const forecastHtml = forecast ? `<div style="font-size:11px;color:${forecastDays<=7?'var(--danger)':forecastDays<=14?'var(--warning)':'var(--text-muted)'}">📉 このペースだと約${forecastDays}日で在庫切れの見込み（直近30日の平均出庫 ${forecast.avgDaily.toFixed(1)}個/日）</div>` : '';
+  const forecastHtml = forecast ? `<div style="font-size:11px;color:${forecastDays<=7?'var(--danger)':forecastDays<=14?'var(--warning)':'var(--text-muted)'}">📉 このペースだと約${forecastDays}日で在庫切れの見込み（${formatStockoutRate(forecast)}）</div>` : '';
   const editBtns = isAdmin() ? `<div style="display:flex;gap:6px;margin-top:6px"><button onclick="openProductEdit('${p._key}')" style="padding:5px 10px;background:#bfdbfe;color:#1e3a5f;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">編集</button><button onclick="deleteProduct('${p._key}')" class="delete-btn" style="padding:5px 10px;font-size:11px">削除</button></div>` : '';
   // 型番を主表示にする（型番未登録の商品は代わりに商品名を主表示にする）
   const primaryLabel = p.model || p.name || '（型番・商品名未入力）';
@@ -9429,7 +9992,8 @@ function buildInvRow(p) {
         <div><span class="inv-row-detail-label">メーカー</span>${p.maker || '（未入力）'}</div>
         ${p.subcategory ? `<div><span class="inv-row-detail-label">サブカテゴリ</span>${p.subcategory}</div>` : ''}
         ${p.jan ? `<div><span class="inv-row-detail-label">JAN</span>${p.jan}</div>` : ''}
-        ${p.location ? `<div><span class="inv-row-detail-label">保管場所</span>${p.location}</div>` : ''}
+        <div><span class="inv-row-detail-label">事務所別</span>${escapeHtmlMain(locBreakdownText(p))}<span style="color:var(--text-muted);margin-left:8px">（定位置：${escapeHtmlMain(locName(getHomeLoc(p)))}）</span></div>
+        ${p.location ? `<div><span class="inv-row-detail-label">置き場所</span>${p.location}</div>` : ''}
         ${p.cost ? `<div><span class="inv-row-detail-label">仕入値</span>¥${p.cost.toLocaleString('ja-JP')}</div>` : ''}
         ${totalVal > 0 ? `<div><span class="inv-row-detail-label">在庫金額</span>¥${totalVal.toLocaleString('ja-JP')}</div>` : ''}
         ${forecastHtml}
@@ -9444,12 +10008,30 @@ function buildInvRow(p) {
           ${missingBadgeHtml}
         </div>
         <div style="text-align:right;flex-shrink:0;display:flex;align-items:center;gap:8px">
-          <span style="font-size:14px;font-weight:700;color:${p.stock<=threshold?'var(--danger)':'var(--text)'}">${p.stock}個</span>
+          ${invRowLocChipHtml(p)}
+          <span style="font-size:14px;font-weight:700;color:${p.stock<=threshold?'var(--danger)':'var(--text)'}">${invRowStockLabel(p)}</span>
           <span class="stock-badge ${stockClass}">${stockLabel}</span>
         </div>
       </div>
       ${detailHtml}
     </div>`;
+}
+
+// 在庫一覧の行の右側：事務所で絞り込んでいるときはその事務所の個数（全体の個数を小さく添える）、
+// 絞り込んでいないときは今まで通り全体の個数を出す
+function invRowStockLabel(p) {
+  const f = document.getElementById('inv-loc-filter')?.value || '';
+  if (!f) return `${p.stock}個`;
+  const n = computeLocBreakdown(p).byLoc[f] || 0;
+  return `${escapeHtmlMain(locName(f))} ${n}個<span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:4px">（全体${p.stock}）</span>`;
+}
+// 定位置以外の事務所に置いてある（運び待ちの）分があれば、その内訳を小さく目立たせて出す
+function invRowLocChipHtml(p) {
+  const bd = computeLocBreakdown(p);
+  const away = Object.keys(bd.locQty);
+  if (!away.length) return '';
+  const txt = away.map(id => `${locName(id)}${bd.locQty[id]}`).join('・');
+  return `<span title="定位置（${escapeHtmlMain(locName(bd.home))}）以外にある個数" style="font-size:10.5px;padding:2px 7px;border-radius:10px;background:#fff7ed;color:#b45309;border:1px solid #fed7aa;font-weight:700;white-space:nowrap">🚚 ${escapeHtmlMain(txt)}</span>`;
 }
 
 // カテゴリー内のサブカテゴリータブを組み立てる。ゴルフウェアのようにグループ化されたカテゴリーは、
@@ -9541,6 +10123,10 @@ function toggleInvMissingInfoFilter() {
 function toggleAllInvCats(open) {
   if (!_invOpenCats) _invOpenCats = {};
   CATEGORY_LIST.forEach(c => { _invOpenCats[c] = open; });
+  // 要望「『すべて折りたたむ』を押したら、型番をタップして開いた商品の詳細もまとめて閉じてほしい」
+  // への対応。カテゴリーだけでなく、開いていた商品の行もすべて閉じる（「すべて展開」のときは
+  // 商品の行までは開かず、今まで通りカテゴリーだけを開く）。
+  if (!open) _invRowExpanded = {};
   renderInventoryList();
 }
 
@@ -9583,6 +10169,9 @@ function renderInventoryList() {
   // 要望：「型番とJANコードのみで登録し、後でメーカー・商品名をまとめて入力したい」への対応。
   // メーカーまたは商品名が未入力の商品だけを一括で抽出できるようにする。
   if (_invMissingInfoFilter) matched = matched.filter(p => !p.name || !p.maker);
+  // 保管場所ごとの在庫：事務所を選んでいれば、その事務所に1個以上ある商品だけにする
+  const locFilter = document.getElementById('inv-loc-filter')?.value || '';
+  if (locFilter) matched = matched.filter(p => (computeLocBreakdown(p).byLoc[locFilter] || 0) > 0);
   countEl.textContent = matched.length + '件';
 
   if (!matched.length) { container.innerHTML = ''; empty.style.display = 'block'; return; }
@@ -9669,6 +10258,8 @@ function openStocktakeModal() {
   if (!modal) return;
   const search = document.getElementById('stocktake-search');
   if (search) search.value = '';
+  const locSel = document.getElementById('stocktake-loc');
+  fillLocSelect('stocktake-loc', (locSel && locSel.value) || defaultHomeLoc());
   renderStocktakeList();
   modal.style.display = 'flex';
 }
@@ -9687,13 +10278,16 @@ function renderStocktakeList() {
 
   if (!sorted.length) { listEl.innerHTML = `<div style="font-size:13px;color:var(--text-muted);padding:12px 0">該当する商品がありません</div>`; return; }
 
+  // 保管場所ごとの在庫：選んだ事務所の個数で棚卸しする
+  const stLoc = document.getElementById('stocktake-loc')?.value || defaultHomeLoc();
+  const locStock = p => computeLocBreakdown(p).byLoc[stLoc] || 0;
   listEl.innerHTML = sorted.map(p => `
     <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</div>
-        <div style="font-size:11px;color:var(--text-muted)">システム上の在庫: ${p.stock}個</div>
+        <div style="font-size:11px;color:var(--text-muted)">システム上の${escapeHtmlMain(locName(stLoc))}の在庫: ${locStock(p)}個（全体 ${p.stock}個）</div>
       </div>
-      <input type="number" id="stocktake-count-${p._key}" data-key="${p._key}" data-system-stock="${p.stock}" value="${p.stock}" min="0" oninput="updateStocktakeDiff('${p._key}')" style="width:70px;text-align:center;padding:6px;border:1.5px solid var(--border);border-radius:6px;font-size:13px">
+      <input type="number" id="stocktake-count-${p._key}" data-key="${p._key}" data-system-stock="${locStock(p)}" value="${locStock(p)}" min="0" oninput="updateStocktakeDiff('${p._key}')" style="width:70px;text-align:center;padding:6px;border:1.5px solid var(--border);border-radius:6px;font-size:13px">
       <div id="stocktake-diff-${p._key}" style="width:56px;flex-shrink:0;font-size:11px;font-weight:700;text-align:center;color:var(--text-muted)"></div>
     </div>
     <div id="stocktake-memo-wrap-${p._key}" style="display:none;padding:0 0 8px;border-bottom:1px solid var(--border)">
@@ -9734,17 +10328,24 @@ async function submitStocktake() {
   });
 
   if (!changes.length) { showToast('差異のある商品はありませんでした'); return; }
-  if (!await showConfirm(`${changes.length}件の在庫を棚卸の結果に合わせて更新します。よろしいですか？`)) return;
+  const stLoc = document.getElementById('stocktake-loc')?.value || defaultHomeLoc();
+  if (!await showConfirm(`${locName(stLoc)}の${changes.length}件の在庫を棚卸の結果に合わせて更新します。よろしいですか？`)) return;
 
   try {
     await Promise.all(changes.map(c => {
       const prod = products.find(p => p._key === c.key);
+      if (!prod) return null;
+      // 選んだ事務所の個数だけを数えた数に合わせ、他の事務所の分はそのまま（合計はその差だけ変わる）
+      const byLoc = { ...computeLocBreakdown(prod).byLoc };
+      byLoc[stLoc] = c.counted;
+      const st = locStateFromByLoc(prod, byLoc);
+      const before = prod.stock;
       return Promise.all([
-        fetch(authedUrl('/products/' + c.key + '/stock.json'), { method: 'PUT', body: JSON.stringify(c.counted) }),
+        saveProductLocState(prod, st.stock, st.locQty),
         fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
           productKey: c.key, productName: prod?.name || '', jan: prod?.jan || '',
-          type: 'adjust', qty: c.counted, date: todayStr(), memo: c.memo || '棚卸による調整',
-          stockBefore: c.systemStock, stockAfter: c.counted, createdAt: Date.now()
+          type: 'adjust', qty: c.counted, loc: stLoc, date: todayStr(), memo: c.memo || '棚卸による調整',
+          stockBefore: before, stockAfter: st.stock, createdAt: Date.now()
         })})
       ]);
     }));
@@ -10021,13 +10622,18 @@ function printOutOnlyReport() {
 
 function doExportInventory() {
   if (!products.length) { showToast('商品データがありません'); return; }
-  const headers = ['商品名','メーカー','型番','JANコード','在庫数','仕入値（円）','在庫金額（円）','カテゴリー','サブカテゴリー','保管場所','備考'];
-  const rows = products.map(p => [
-    p.name, p.maker||'', p.model||'', p.jan||'',
-    p.stock, p.cost||0, (p.cost||0)*p.stock,
-    p.category||'家電', p.subcategory||'',
-    p.location||'', p.memo||''
-  ]);
+  // 保管場所ごとの在庫：既存の列（一括登録で読み込む列）はそのままにして、右側に定位置と事務所ごとの在庫数を足す
+  const headers = ['商品名','メーカー','型番','JANコード','在庫数','仕入値（円）','在庫金額（円）','カテゴリー','サブカテゴリー','保管場所','備考','定位置', ...stockLocations.map(l => `在庫（${l.name}）`)];
+  const rows = products.map(p => {
+    const bd = computeLocBreakdown(p);
+    return [
+      p.name, p.maker||'', p.model||'', p.jan||'',
+      p.stock, p.cost||0, (p.cost||0)*p.stock,
+      p.category||'家電', p.subcategory||'',
+      p.location||'', p.memo||'',
+      locName(bd.home), ...stockLocations.map(l => bd.byLoc[l.id] || 0)
+    ];
+  });
   const totalVal = products.reduce((s,p) => s + (p.cost||0)*p.stock, 0);
   const aoa = [
     ['在庫一覧'], [`出力日: ${new Date().toLocaleDateString('ja-JP')}`], [],
@@ -12737,6 +13343,7 @@ async function renderHomeScreen() {
   updateConsignNotifyPromptVisibility();
   updateBuybackCsvStatus();
   try { renderHomeSidePanels(); } catch (e) { console.error('home side panels error', e); }
+  try { renderHomeAwayCard(); } catch (e) { console.error('home away card error', e); }
 }
 
 // 要望「買取価格CSVの状態を、HOMEのQuick Menuの上に小さく表示したい」への対応。
@@ -14064,6 +14671,19 @@ window.addEventListener('resize', updateSideNavTop);
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildSideNav);
 else buildSideNav();
 
+// HOMEの運び待ちの欄（スマホ・画面半分の幅向け。広い画面では右列の一覧に同じ内容が出る）
+function renderHomeAwayCard() {
+  const el = document.getElementById('home-away-card');
+  if (!el) return;
+  const away = getItemsAwayFromHome();
+  if (!away.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const byLoc = {};
+  away.forEach(a => { byLoc[a.loc] = byLoc[a.loc] || { n: 0, qty: 0 }; byLoc[a.loc].n++; byLoc[a.loc].qty += a.qty; });
+  const txt = Object.keys(byLoc).map(id => `${locName(id)}に${byLoc[id].n}商品（${byLoc[id].qty}個）`).join('・');
+  el.innerHTML = `<span>🚚 運び待ち：${escapeHtmlMain(txt)}</span><button type="button" onclick="openBulkTransferModal()" style="flex-shrink:0;padding:5px 10px;font-size:11.5px;font-weight:700;border:1.5px solid #c2410c;border-radius:8px;background:var(--white);color:#c2410c;cursor:pointer;white-space:nowrap">移動する</button>`;
+  el.style.display = 'flex';
+}
+
 // ── HOMEの右列（パソコン幅1280px以上のときだけ表示） ──
 // 取引先からの確認待ちの連絡・出荷待ち・在庫アラート（在庫が少ない商品）を一覧で出す。
 // スマホ・画面半分の幅ではCSSで右列ごと非表示になるので、今までの見た目には影響しない。
@@ -14109,8 +14729,15 @@ function renderHomeSidePanels() {
     return `<div class="home-side-row"><span class="home-side-row-main">${esc(p.model || p.name)}${p.model && p.name ? `<span style="color:var(--text-muted)">　${esc(p.name)}</span>` : ''}</span><span class="home-side-row-sub" style="color:${stock <= 0 ? 'var(--danger)' : 'var(--warning, #b45309)'};font-weight:700">残 ${stock}</span></div>`;
   }).join('');
 
+  // 4) 運び待ち（定位置以外の事務所に置いてある商品）
+  const away = getItemsAwayFromHome().sort((a, b) => b.qty - a.qty);
+  const awayRows = away.slice(0, 6).map(a =>
+    `<div class="home-side-row"><span class="home-side-row-main">${esc(a.p.model || a.p.name)}${a.p.model && a.p.name ? `<span style="color:var(--text-muted)">　${esc(a.p.name)}</span>` : ''}</span><span class="home-side-row-sub">${esc(locName(a.loc))}→${esc(locName(a.home))}　${a.qty}個</span></div>`
+  ).join('');
+
   el.innerHTML =
     card('🔔 取引先からの連絡（確認待ち）', pending.length, consignRows, '確認待ちの連絡はありません', '委託リストを開く', "goHomeToInv('inv-wholesale');setTimeout(()=>switchWhTab('consign'),200)") +
+    card('🚚 運び待ち（定位置以外の事務所にある商品）', away.length, awayRows, '運び待ちの商品はありません', 'まとめて移動する', "openBulkTransferModal()") +
     card('🚚 出荷待ち', ship.length, shipRows, '出荷待ちの商品はありません', '出荷管理を開く', "goHomeToInv('inv-packec')") +
     card('⚠️ 在庫アラート（在庫が少ない商品）', low.length, lowRows, '在庫が少ない商品はありません', '在庫一覧を開く', "goHomeToInv('inv-list')");
 }
@@ -14367,6 +14994,12 @@ function initSettingsScreen() {
     const el = document.getElementById('current-email-display');
     if (el) el.textContent = parsed.email || '—';
   }
+  // 保管場所（事務所）の一覧は、保存済みの最新の内容を読み込んでから表示する
+  // （読み込む前の初期値のまま保存して、追加済みの事務所を消してしまわないようにするため）
+  const locWrap = document.getElementById('stock-location-settings');
+  if (locWrap) locWrap.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">読み込み中…</div>';
+  fetch(authedUrl('/stockLocations.json')).then(r => r.json()).then(v => { setStockLocationsFromDb(v); renderStockLocationSettings(); })
+    .catch(() => renderStockLocationSettings());
 }
 
 async function reAuth(email, password) {
