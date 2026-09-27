@@ -6,6 +6,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
+<!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
+<meta name="app-build" content="2026-09-27a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -2324,7 +2326,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 <nav class="side-nav" id="side-nav" aria-label="メニュー"></nav>
 <div id="confirm-modal" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;padding:max(24px,env(safe-area-inset-top)) 24px max(24px,env(safe-area-inset-bottom)) 24px">
   <div style="background:var(--white);border-radius:16px;padding:24px;width:100%;max-width:320px;box-shadow:0 20px 60px rgba(0,0,0,0.2)">
-    <div id="confirm-msg" style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:20px;text-align:center"></div>
+    <div id="confirm-msg" style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:20px;text-align:center;white-space:pre-line"></div>
     <div style="display:flex;gap:10px">
       <button onclick="closeConfirm(false)" style="flex:1;padding:13px;background:var(--surface);color:var(--text);border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:15px;cursor:pointer">キャンセル</button>
       <button onclick="closeConfirm(true)" style="flex:1;padding:13px;background:linear-gradient(135deg,#d8d8d8,#a8a8a8);color:#1a1a1a;border:none;border-radius:var(--radius-sm);font-size:15px;font-weight:700;cursor:pointer">OK</button>
@@ -14168,10 +14170,41 @@ async function doRefresh() {
     }
     showToast('更新しました');
   } catch(e) {}
+  // データだけでなく、アプリ本体（このHTMLファイル）に新しい版が出ていないかも確認する
+  checkForAppUpdate();
   setTimeout(() => {
     if (indicator) { indicator.classList.remove('active'); indicator.style.height = '0'; }
     if (spinner) spinner.classList.remove('spinning');
   }, 300);
+}
+
+// 要望「右上の更新ボタンを押しても（アプリの変更が）反映されない」への対応。
+// 更新ボタン・下に引っ張る更新は、これまでデータ（売上や在庫など）を読み込み直すだけで、
+// アプリ本体（GitHubに置いているこのHTMLファイル）は、アプリを閉じて開き直すまで古いまま
+// だった。ここでは最新のHTMLを（キャッシュを使わずに）取りに行き、<meta name="app-build">の
+// 値が今動いている版と違えば、確認のうえ読み込み直す。URLに「?v=版」を付けて読み込むのは、
+// GitHub側の配信キャッシュ（最大10分ほど古い版を返すことがある）を避けて確実に新しい版を
+// 読ませるため。取引先ポータル用の「?portal=…」など、元々付いているパラメータはそのまま残す。
+let _appUpdatePrompted = false;
+async function checkForAppUpdate() {
+  if (_appUpdatePrompted) return;
+  const meta = document.querySelector('meta[name="app-build"]');
+  const current = meta ? meta.getAttribute('content') : '';
+  if (!current || location.protocol === 'file:') return;
+  try {
+    const res = await fetch(location.pathname + '?appcheck=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return;
+    const html = await res.text();
+    const m = html.match(/<meta name="app-build" content="([^"]*)"/);
+    const latest = m ? m[1] : '';
+    if (!latest || latest === current) return;
+    _appUpdatePrompted = true;
+    const ok = await showConfirm('アプリの新しい版があります。今すぐ読み込み直しますか？\n（入力途中の内容がある場合は、先に保存してから「OK」を押してください）');
+    if (!ok) { _appUpdatePrompted = false; return; }
+    const params = new URLSearchParams(location.search);
+    params.set('v', latest);
+    location.replace(location.pathname + '?' + params.toString() + location.hash);
+  } catch (e) { /* オフライン時などは何もしない */ }
 }
 
 // ヘッダーの更新ボタン（パソコンでの操作用。スマホのプルダウン更新と同じ処理を呼び出す）
