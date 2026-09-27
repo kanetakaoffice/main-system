@@ -158,6 +158,40 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
 .ios-standalone .bottom-nav { padding-bottom: max(env(safe-area-inset-bottom, 0px), 20px); padding-left: 12px; padding-right: 12px; }
 .ios-standalone .main { padding-bottom: calc(max(env(safe-area-inset-bottom, 0px), 20px) + 68px); }
 .ios-standalone .toast { bottom: calc(max(env(safe-area-inset-bottom, 0px), 20px) + 76px); }
+/* 要望「パソコンで画面いっぱいに広げると横に間延びして見にくい。左側にメニューを置く・
+   コンテンツを増やすなどで改善したい」への対応。スマホや画面を半分にした幅（1280px未満）では
+   何も変えず、1280px以上のときだけ、
+   ・画面下のメニュー（業務・在庫）を隠し、左側の縦メニュー（.side-nav）に業務・在庫の両方を並べる
+   ・HOMEを左右2列にし、右列に確認待ちの連絡・出荷待ち・在庫アラートの一覧を出す
+   ようにする。 */
+.side-nav { display: none; }
+.home-col-side { display: none; }
+@media (min-width: 1280px) {
+  .bottom-nav { display: none !important; }
+  .side-nav { display: flex; flex-direction: column; position: fixed; left: 0; bottom: 0; top: var(--side-nav-top, 60px); width: 200px; z-index: 100; padding: 12px 10px 24px; overflow-y: auto; background: linear-gradient(180deg, #b8b8b8, #a4a4a4); border-right: 2px solid #c8c8c8; box-shadow: 2px 0 12px rgba(0,0,0,0.10); }
+  .main { padding-left: 200px; padding-bottom: 32px; }
+  .toast { left: 216px; bottom: 24px; }
+  #screen-home { max-width: 1480px; }
+  .home-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(340px, 1fr); gap: 20px; align-items: start; }
+  .home-col-side { display: block; position: sticky; top: calc(var(--side-nav-top, 60px) + 12px); }
+}
+.side-nav-group { font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em; color: #4a4a4a; padding: 14px 12px 6px; }
+.side-nav-group:first-child { padding-top: 4px; }
+.side-nav-item { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 12px; margin: 1px 0; border: none; border-radius: 8px; background: none; color: #2e2e2e; font-size: 13.5px; font-weight: 600; font-family: inherit; text-align: left; cursor: pointer; }
+.side-nav-item svg { width: 19px; height: 19px; stroke-width: 1.8; flex-shrink: 0; }
+.side-nav-item:hover { background: rgba(255,255,255,0.3); }
+.side-nav-item.active { background: rgba(255,255,255,0.8); color: #111; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.side-nav-badge { margin-left: auto; background: var(--danger); color: #fff; font-size: 10px; font-weight: 700; border-radius: 20px; padding: 1px 7px; line-height: 1.5; }
+.home-side-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; overflow: hidden; }
+.home-side-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 14px 16px 8px; font-size: 12.5px; font-weight: 700; color: var(--text); letter-spacing: 0.04em; }
+.home-side-count { font-size: 11.5px; font-weight: 700; color: var(--text-muted); }
+.home-side-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 16px; font-size: 12.5px; border-top: 1px solid var(--border); }
+.home-side-row-main { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.home-side-row-sub { flex-shrink: 0; font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
+.home-side-empty { padding: 14px 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); text-align: center; }
+.home-side-more { display: block; width: 100%; padding: 10px 16px; border: none; border-top: 1px solid var(--border); background: none; color: var(--gold-dark); font-size: 12px; font-weight: 700; font-family: inherit; text-align: right; cursor: pointer; }
+.home-side-more:hover { background: var(--surface); }
+.home-side-tag { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; font-size: 10.5px; font-weight: 700; border: 1px solid currentColor; }
 .screen { display: none; padding: 16px; }
 .screen.active { display: block; }
 .card { background: var(--white); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
@@ -564,6 +598,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <input type="file" accept=".csv" onchange="handleHomeBuybackCsvSelected(event)" style="display:none">
       </label>
     </div>
+    <!-- 要望「パソコンで画面いっぱいに広げると横に間延びして見にくい」への対応。
+         画面幅1280px以上のときだけ、HOMEを左右2列（左：今までの内容／右：確認待ちの連絡・
+         出荷待ち・在庫アラートの一覧）に並べる。それより狭い幅（スマホ・画面半分）では
+         右列（home-col-side）は表示せず、今まで通り1列のまま。 -->
+    <div class="home-grid">
+    <div class="home-col-main">
     <div class="card">
       <div class="card-title">Quick Menu</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 16px 16px">
@@ -580,6 +620,9 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <button onclick="requestConsignNotifyPermission()" style="flex-shrink:0;padding:6px 10px;font-size:12px;font-weight:700;border:1.5px solid var(--gold-dark);border-radius:8px;background:var(--white);color:var(--gold-dark);cursor:pointer">🔔 通知を有効にする</button>
     </div>
     <div id="home-summary"></div>
+    </div>
+    <aside class="home-col-side" id="home-side-panels"></aside>
+    </div>
   </div>
 
   <!-- 出張申請フォーム -->
@@ -2275,6 +2318,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 <!-- z-indexは他のどのモーダル（プレビュー610・カテゴリ追加650など）よりも高くしてある。
      showConfirm()は納品書プレビューを開いたまま「取り消す」を確認する場合など、他のモーダルが
      すでに表示された状態で呼ばれることがあるため、常に一番手前に表示される必要がある -->
+<!-- パソコンで画面を広げたとき（幅1280px以上）だけ表示する左側の縦メニュー。中身（ボタン）は
+     下の2つのbottom-nav（業務・在庫）からJS（buildSideNav）で組み立てるので、メニュー項目を
+     増減するときは今まで通りbottom-navの方だけ直せばよい。 -->
+<nav class="side-nav" id="side-nav" aria-label="メニュー"></nav>
 <div id="confirm-modal" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;padding:max(24px,env(safe-area-inset-top)) 24px max(24px,env(safe-area-inset-bottom)) 24px">
   <div style="background:var(--white);border-radius:16px;padding:24px;width:100%;max-width:320px;box-shadow:0 20px 60px rgba(0,0,0,0.2)">
     <div id="confirm-msg" style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:20px;text-align:center"></div>
@@ -2910,6 +2957,10 @@ async function pollConsignRequestsForNotify() {
     updateConsignNavBadge(pendingCount);
 
     consignRequests = flat;
+    // パソコン幅のHOME右列（確認待ちの連絡）も最新の内容にしておく
+    if (document.getElementById('screen-home')?.classList.contains('active')) {
+      try { renderHomeSidePanels(); } catch (e) {}
+    }
     const hasPendingCostEdit = Object.keys(_whConsignCostSaveTimers || {}).length > 0;
     const active = document.activeElement;
     const isEditingInList = !!(active && document.getElementById('wh-consign-list')?.contains(active));
@@ -12683,6 +12734,7 @@ async function renderHomeScreen() {
   markBizEntriesSeen();
   updateConsignNotifyPromptVisibility();
   updateBuybackCsvStatus();
+  try { renderHomeSidePanels(); } catch (e) { console.error('home side panels error', e); }
 }
 
 // 要望「買取価格CSVの状態を、HOMEのQuick Menuの上に小さく表示したい」への対応。
@@ -13917,6 +13969,148 @@ function goHomeToInv(screenName, packecTab) {
 // ヘッダーのタップでどこからでもホーム（簡易版）に戻れるようにする
 function goHome() {
   switchMode('biz');
+}
+
+// ── パソコン幅（1280px以上）用の左側メニュー ──
+// 画面下の2つのメニュー（業務：.bottom-nav／在庫：#inv-nav）のボタンをそのまま写し取って、
+// 左側に「HOME」「業務」「在庫」の3グループで縦に並べる。押したときは、必要なら業務／在庫の
+// 切り替え（switchMode）をしてから、元のボタンを押したのと同じ動きをさせるので、画面の
+// 切り替え方そのものは今までと全く同じ。どのボタンが選択中か・件数バッジ・権限による
+// 表示／非表示は、元のメニューの状態を見張って（MutationObserver）自動で揃える。
+const HOME_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/></svg>';
+const SIDE_NAV_BADGE_IDS = { 'nav-list': 'nav-badge', 'nav-inv-wholesale': 'wh-nav-badge' };
+let _sideNavObserver = null;
+
+function buildSideNav() {
+  const side = document.getElementById('side-nav');
+  const bizNav = document.querySelector('.bottom-nav:not(#inv-nav)');
+  const invNav = document.getElementById('inv-nav');
+  if (!side || !bizNav || !invNav) return;
+  const itemHtml = (btn, mode) => {
+    const svg = btn.querySelector('svg');
+    const label = (btn.textContent || '').trim();
+    return `<button type="button" class="side-nav-item" data-mode="${mode}" data-target="${btn.id}" onclick="sideNavGo('${mode}','${btn.id}')">${svg ? svg.outerHTML : ''}<span>${escapeHtmlMain(label)}</span><span class="side-nav-badge" style="display:none"></span></button>`;
+  };
+  side.innerHTML =
+    `<button type="button" class="side-nav-item" data-mode="home" data-target="home" onclick="sideNavGo('home')">${HOME_ICON_SVG}<span>HOME</span></button>` +
+    `<div class="side-nav-group" data-group="biz">業務</div>` +
+    [...bizNav.querySelectorAll('.nav-btn')].map(b => itemHtml(b, 'biz')).join('') +
+    `<div class="side-nav-group" data-group="inv">在庫</div>` +
+    [...invNav.querySelectorAll('.nav-btn')].map(b => itemHtml(b, 'inv')).join('');
+
+  if (!_sideNavObserver && window.MutationObserver) {
+    _sideNavObserver = new MutationObserver(() => syncSideNav());
+    const watch = [bizNav, invNav, document.getElementById('screen-home'), document.getElementById('mode-btn-biz')].filter(Boolean);
+    watch.forEach(el => _sideNavObserver.observe(el, { attributes: true, attributeFilter: ['class', 'style'], subtree: el !== document.getElementById('screen-home'), childList: true, characterData: true }));
+  }
+  syncSideNav();
+  updateSideNavTop();
+}
+
+function syncSideNav() {
+  const side = document.getElementById('side-nav');
+  if (!side) return;
+  const admin = typeof isAdmin === 'function' ? isAdmin() : true;
+  const mode = typeof currentMode !== 'undefined' ? currentMode : 'biz';
+  const home = document.getElementById('screen-home');
+  const onHome = mode === 'biz' && !!home && home.classList.contains('active');
+  // 業務グループは管理者のみ（一般ユーザーは今まで通り業務メニュー自体を出さない）
+  side.querySelectorAll('[data-group="biz"], .side-nav-item[data-mode="biz"]').forEach(el => {
+    if (!admin) { el.style.display = 'none'; return; }
+    el.style.display = '';
+  });
+  side.querySelectorAll('.side-nav-item[data-mode="biz"], .side-nav-item[data-mode="inv"]').forEach(item => {
+    const orig = document.getElementById(item.dataset.target);
+    if (!orig) { item.style.display = 'none'; return; }
+    const hidden = orig.style.display === 'none' || (orig.parentElement && orig.parentElement.style.display === 'none');
+    if (item.dataset.mode === 'inv' || admin) item.style.display = hidden ? 'none' : '';
+    item.classList.toggle('active', !onHome && item.dataset.mode === mode && orig.classList.contains('active'));
+    const badgeId = SIDE_NAV_BADGE_IDS[item.dataset.target];
+    const sideBadge = item.querySelector('.side-nav-badge');
+    if (badgeId && sideBadge) {
+      const b = document.getElementById(badgeId);
+      const show = !!b && b.style.display !== 'none' && !!(b.textContent || '').trim();
+      sideBadge.style.display = show ? '' : 'none';
+      sideBadge.textContent = show ? b.textContent.trim() : '';
+    }
+  });
+  const homeItem = side.querySelector('.side-nav-item[data-mode="home"]');
+  if (homeItem) homeItem.classList.toggle('active', onHome);
+}
+
+function sideNavGo(mode, targetId) {
+  if (mode === 'home') { switchMode('biz'); return; }
+  const btn = document.getElementById(targetId);
+  if (!btn) return;
+  if (currentMode !== mode) {
+    switchMode(mode);
+    // goHomeToInvと同じく、モード切り替え直後の画面表示が落ち着いてから目的の画面を開く
+    setTimeout(() => btn.click(), 60);
+  } else {
+    btn.click();
+  }
+}
+
+// ヘッダーの高さ（端末によって変わる）に合わせて、左メニューの上端をヘッダーのすぐ下に揃える
+function updateSideNavTop() {
+  const header = document.querySelector('.header');
+  if (!header) return;
+  const bottom = Math.round(header.getBoundingClientRect().bottom);
+  if (bottom > 0) document.documentElement.style.setProperty('--side-nav-top', bottom + 'px');
+}
+window.addEventListener('resize', updateSideNavTop);
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildSideNav);
+else buildSideNav();
+
+// ── HOMEの右列（パソコン幅1280px以上のときだけ表示） ──
+// 取引先からの確認待ちの連絡・出荷待ち・在庫アラート（在庫が少ない商品）を一覧で出す。
+// スマホ・画面半分の幅ではCSSで右列ごと非表示になるので、今までの見た目には影響しない。
+function renderHomeSidePanels() {
+  const el = document.getElementById('home-side-panels');
+  if (!el) return;
+  const esc = (v) => escapeHtmlMain(v == null ? '' : String(v));
+  const fmtTime = (ms) => {
+    if (!ms) return '';
+    const d = new Date(ms);
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const card = (title, count, rowsHtml, emptyText, moreLabel, moreOnclick) => `
+    <div class="home-side-card">
+      <div class="home-side-head"><span>${title}</span><span class="home-side-count">${count}件</span></div>
+      ${rowsHtml || `<div class="home-side-empty">${emptyText}</div>`}
+      <button type="button" class="home-side-more" onclick="${moreOnclick}">${moreLabel} →</button>
+    </div>`;
+
+  // 1) 取引先からの確認待ちの連絡（精算・返却）
+  const pending = (typeof consignRequests !== 'undefined' ? consignRequests : [])
+    .filter(r => r && r.status === 'pending')
+    .sort((a, b) => (b.requestedAt || 0) - (a.requestedAt || 0));
+  const consignRows = pending.slice(0, 6).map(r => {
+    const isSettle = r.type === 'settle';
+    const tag = `<span class="home-side-tag" style="color:${isSettle ? 'var(--teal, #0f766e)' : 'var(--warning, #b45309)'}">${isSettle ? '精算' : '返却'}</span>`;
+    return `<div class="home-side-row"><span class="home-side-row-main">${tag}${esc(r.client)}／${esc(r.model)}</span><span class="home-side-row-sub">${esc(r.qty)}個　${fmtTime(r.requestedAt)}</span></div>`;
+  }).join('');
+
+  // 2) 出荷待ち
+  const ship = (typeof _packItems !== 'undefined' ? _packItems : []).filter(i => i && !i.done);
+  const shipRows = ship.slice(0, 5).map(i =>
+    `<div class="home-side-row"><span class="home-side-row-main">${esc(i.product)}${i.customer ? '／' + esc(i.customer) : ''}</span><span class="home-side-row-sub">${esc(i.qty || 1)}個${i.category ? '・' + esc(i.category) : ''}</span></div>`
+  ).join('');
+
+  // 3) 在庫アラート（在庫が少ない順）
+  const products = window._getProducts ? window._getProducts() : [];
+  const low = products
+    .filter(p => p && p.stock <= getLowStockThreshold(p))
+    .sort((a, b) => (a.stock || 0) - (b.stock || 0));
+  const lowRows = low.slice(0, 8).map(p => {
+    const stock = Number(p.stock || 0);
+    return `<div class="home-side-row"><span class="home-side-row-main">${esc(p.model || p.name)}${p.model && p.name ? `<span style="color:var(--text-muted)">　${esc(p.name)}</span>` : ''}</span><span class="home-side-row-sub" style="color:${stock <= 0 ? 'var(--danger)' : 'var(--warning, #b45309)'};font-weight:700">残 ${stock}</span></div>`;
+  }).join('');
+
+  el.innerHTML =
+    card('🔔 取引先からの連絡（確認待ち）', pending.length, consignRows, '確認待ちの連絡はありません', '委託リストを開く', "goHomeToInv('inv-wholesale');setTimeout(()=>switchWhTab('consign'),200)") +
+    card('🚚 出荷待ち', ship.length, shipRows, '出荷待ちの商品はありません', '出荷管理を開く', "goHomeToInv('inv-packec')") +
+    card('⚠️ 在庫アラート（在庫が少ない商品）', low.length, lowRows, '在庫が少ない商品はありません', '在庫一覧を開く', "goHomeToInv('inv-list')");
 }
 
 function showAlert(boxId, msgId, msg, type) {
