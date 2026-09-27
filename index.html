@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-27h">
+<meta name="app-build" content="2026-09-27i">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -104,6 +104,12 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
   .wh-desktop-layout > .wh-desktop-main { flex: 1 1 0; min-width: 0; }
   .wh-desktop-preview-col { display: block; flex: 0 0 380px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
 }
+/* 要望「右側のプレビューが小さくて見にくい。半分ずつの表示にしてほしい」への対応。画面を大きく
+   広げたとき（1280px以上）は、入力欄とプレビューを半分ずつの幅にする。プレビューは上の固定ヘッダーの
+   下で止まるようにし、スクロールしても見える位置に残す。1024〜1279pxでは今まで通り右側380px。 */
+@media (min-width: 1280px) {
+  .wh-desktop-preview-col { flex: 1 1 0; min-width: 0; top: calc(var(--side-nav-top, 60px) + 12px); max-height: calc(100vh - var(--side-nav-top, 60px) - 24px); }
+}
 /* 要望：「パソコンで発行済みの納品書一覧を画面いっぱいに開いた時に右側の余白が広い。
    取引先名／日付の下にある請求書No.・合計数量・合計金額と、その下の請求書作成済みかの
    欄を横に並べて表示してほしい（freeeの一覧のようなイメージ）。携帯は今のままでよい」への
@@ -172,7 +178,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
   .bottom-nav { display: none !important; }
   .side-nav { display: flex; flex-direction: column; position: fixed; left: 0; bottom: 0; top: var(--side-nav-top, 60px); width: 200px; z-index: 100; padding: 12px 10px 24px; overflow-y: auto; background: linear-gradient(180deg, #b8b8b8, #a4a4a4); border-right: 2px solid #c8c8c8; box-shadow: 2px 0 12px rgba(0,0,0,0.10); }
   .main { padding-left: 200px; padding-bottom: 32px; }
-  .toast { left: 216px; bottom: 24px; }
+  body .toast { left: 216px; bottom: 24px; }
   #screen-home { max-width: 1480px; }
   .home-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(340px, 1fr); gap: 20px; align-items: start; }
   .home-col-side { display: block; position: sticky; top: calc(var(--side-nav-top, 60px) + 12px); }
