@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28j">
+<meta name="app-build" content="2026-09-28k">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -18073,6 +18073,9 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
 .tk-today-foot { display:flex; gap:8px; padding:4px 16px 14px; flex-wrap:wrap; }
 .tk-today-foot button { flex:1; padding:9px 6px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:10px; background:var(--white); color:var(--text); cursor:pointer; font-family:inherit; white-space:nowrap; }
 .tk-today-team { margin:0 16px 10px; padding:8px 10px; border-radius:10px; background:#fffbeb; border:1px solid #fcd34d; font-size:12px; color:#92400e; cursor:pointer; }
+.tk-notify { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 12px; padding:9px 12px; border-radius:10px; background:#e6f5f3; border:1px solid #8fcfc9; color:#1f5f5a; font-size:12px; line-height:1.5; }
+.card .tk-notify { margin:0 16px 12px; }
+.tk-notify button { flex-shrink:0; padding:7px 10px; font-size:12px; font-weight:700; border:1.5px solid #0f766e; border-radius:8px; background:#fff; color:#0f766e; cursor:pointer; font-family:inherit; }
 .tk-tile-badge { position:absolute; top:6px; right:8px; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:#dc2626; color:#fff; font-size:11px; font-weight:700; display:none; align-items:center; justify-content:center; box-sizing:border-box; }
 </style>
 
@@ -18191,6 +18194,8 @@ async function tkInit() {
     tkSave('members/' + tkKey(me), 'PUT', rec);
   }
   tkUpdateBadges();
+  // 通知を許可済みの端末（倉庫スタッフの端末を含む）は、通知の宛先を静かに登録しておく
+  try { if (typeof updateConsignNotifyPromptVisibility === 'function') updateConsignNotifyPromptVisibility(); } catch (e) {}
   if (!window._tkTimer) {
     window._tkTimer = setInterval(async () => {
       if (document.hidden) return;
@@ -18233,7 +18238,7 @@ async function renderTasksScreen(noFetch) {
       <button class="tab-switch-btn ${TK.tab==='tasks'?'active':''}" onclick="tkSetTab('tasks')">✅ タスク</button>
       <button class="tab-switch-btn ${TK.tab==='cal'?'active':''}" onclick="tkSetTab('cal')">📅 予定（カレンダー）</button>
     </div>`;
-  el.innerHTML = head + (TK.tab === 'cal' ? tkCalHtml() : tkTasksHtml());
+  el.innerHTML = head + tkNotifyBannerHtml() + (TK.tab === 'cal' ? tkCalHtml() : tkTasksHtml());
   tkUpdateBadges();
   if (typeof syncSideNav === 'function') syncSideNav();
 }
@@ -18391,7 +18396,8 @@ async function tkToggleDone(id) {
     nextRec = {
       title: t.title, detail: t.detail || '', assignee: t.assignee || '', priority: t.priority || 'normal',
       due: tkNextDue(t.due || tkToday(), t.repeat), dueTime: t.dueTime || '', repeat: t.repeat,
-      status: 'todo', createdBy: t.createdBy || me, createdAt: Date.now(), updatedAt: Date.now(), updatedBy: me
+      status: 'todo', createdBy: t.createdBy || me, createdAt: Date.now(), updatedAt: Date.now(), updatedBy: me,
+      autoRepeat: true // 自動で作った次回分（「新しいタスク」の通知は送らない）
     };
     patch.nextId = nextId; t.nextId = nextId;
     TK.tasks[nextId] = nextRec;
@@ -18763,6 +18769,29 @@ async function tkSaveMembers() {
   showToast('表示名を保存しました');
 }
 
+// ── 通知の案内（タスク・予定の通知を受け取るには、端末ごとに一度「許可」が必要） ──
+function tkNotifyBannerHtml() {
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/.test(ua);
+  const standalone = window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  if (!('Notification' in window)) {
+    if (isIOS && !standalone) return `<div class="tk-notify">📱 iPhoneで通知を受け取るには、Safariの共有ボタン →「ホーム画面に追加」で追加したアイコンからアプリを開いてください</div>`;
+    return '';
+  }
+  if (Notification.permission === 'default') {
+    return `<div class="tk-notify"><span>🔔 タスクを頼まれた・予定が入ったときに、アプリを閉じていても通知でお知らせします</span><button onclick="tkEnableNotify()">通知を受け取る</button></div>`;
+  }
+  if (Notification.permission === 'denied') {
+    return `<div class="tk-notify" style="background:#f5f5f5;border-color:var(--border);color:var(--text-sub)">🔕 この端末では通知がオフになっています（ブラウザや端末の設定からオンにできます）</div>`;
+  }
+  return '';
+}
+async function tkEnableNotify() {
+  if (typeof requestConsignNotifyPermission === 'function') await requestConsignNotifyPermission();
+  else if ('Notification' in window) await Notification.requestPermission();
+  tkRefreshAll();
+}
+
 // ── HOMEの「今日やること」 ──
 async function renderHomeTodayCard(noFetch) {
   const box = document.getElementById('home-today-card');
@@ -18791,7 +18820,9 @@ async function renderHomeTodayCard(noFetch) {
       <span class="t" onclick="tkOpenTaskModal('${t.id}')">${t.status === 'doing' ? '▶ ' : ''}${tkEsc(t.title)}</span>
       <span style="font-size:11px;color:${tkIsOverdue(t) ? 'var(--danger)' : 'var(--text-muted)'};flex-shrink:0">${t.dueTime || (t.due && t.due !== today ? tkShortDate(t.due) : '')}</span>
     </div>`;
-  let html = '<div class="card"><div class="card-title">今日やること</div>';
+  // 管理者のHOMEには既存の「🔔 通知を有効にする」案内があるので、二重に出さない
+  const banner = document.getElementById('home-notify-prompt') ? '' : tkNotifyBannerHtml();
+  let html = '<div class="card"><div class="card-title">今日やること</div>' + banner;
   html += `<div class="tk-today-sec"><div class="h">📅 今日の予定</div>${evs.length ? evs.map(e => `<div class="tk-today-row"><span class="tm">${tkEsc(e.start || '終日')}</span><span class="t" onclick="tkOpenEventModal('${e.id}')">${tkEsc(e.title)}${e.place ? ' <span style="color:var(--text-muted);font-size:11px">📍' + tkEsc(e.place) + '</span>' : ''}</span></div>`).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">予定はありません</div>'}</div>`;
   if (myOverdue.length) html += `<div class="tk-today-sec"><div class="h danger">⚠️ 期限切れ（${myOverdue.length}件）</div>${myOverdue.map(row).join('')}</div>`;
   html += `<div class="tk-today-sec"><div class="h">✅ 今日のタスク</div>${myToday.length ? myToday.map(row).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">今日が期限のタスクはありません</div>'}</div>`;
