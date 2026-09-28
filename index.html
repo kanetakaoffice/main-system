@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28d">
+<meta name="app-build" content="2026-09-28e">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -204,6 +204,71 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
 .home-side-tag { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; font-size: 10.5px; font-weight: 700; border: 1px solid currentColor; }
 .screen { display: none; padding: 16px; }
 .screen.active { display: block; }
+/* 要望「パソコンで画面いっぱいにすると、出張・経費・仕入・売上・売掛金・一覧・月次出力が横に伸びて
+   見にくい。グラフも横に伸びて見にくい」への対応。スマホや画面を半分にした幅（1280px未満）では
+   何も変えず、1280px以上のときだけ、
+   ・入力欄は左側に程よい幅で表示し、右側に「今月の記録」（合計・前月比・内訳・明細）を表示
+   ・売掛金は右側に取引先別の未回収残高と入金期日が近い順の一覧を表示
+   ・一覧は右側に選んだ月の内訳と前月比を表示、グラフはグラフ（左・縦長）と月別表（右）を横並び
+   ・月次出力は右側に選んだ月の概要を表示
+   するようにする。右側の内容はJS（bz〜の関数）で作る。 */
+.biz-side { display: none; }
+.chart-layout-main, .chart-layout-side { min-width: 0; }
+@media (min-width: 1280px) {
+  .biz-grid { display: grid; grid-template-columns: minmax(0, 600px) minmax(380px, 1fr); gap: 24px; align-items: start; max-width: 1380px; }
+  .biz-grid > .biz-main { min-width: 0; }
+  .biz-side { display: block; position: sticky; top: calc(var(--side-nav-top, 60px) + 12px); max-height: calc(100vh - var(--side-nav-top, 60px) - 24px); overflow-y: auto; padding-bottom: 8px; }
+  #screen-list .biz-grid { grid-template-columns: minmax(0, 680px) minmax(380px, 1fr); }
+  #screen-export .biz-grid { grid-template-columns: minmax(0, 520px) minmax(420px, 1fr); }
+  #screen-list > .tab-switch, #screen-list > .list-toolbar { max-width: 1380px; }
+  #screen-list.list-chart-mode .biz-grid { display: block; max-width: 1480px; }
+  #screen-list.list-chart-mode .biz-side { display: none; }
+  .chart-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(360px, 1fr); gap: 20px; align-items: start; }
+  .chart-layout-side { position: sticky; top: calc(var(--side-nav-top, 60px) + 12px); max-height: calc(100vh - var(--side-nav-top, 60px) - 24px); overflow-y: auto; }
+}
+.bz-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
+.bz-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px 8px; font-size: 13px; font-weight: 700; color: var(--text); }
+.bz-sub { font-size: 11.5px; font-weight: 600; color: var(--text-muted); }
+.bz-month-nav { display: flex; align-items: center; gap: 6px; }
+.bz-month-nav button { width: 26px; height: 26px; border: 1px solid var(--border); border-radius: 6px; background: var(--white); color: var(--text-sub); font-size: 11px; cursor: pointer; font-family: inherit; }
+.bz-month-nav button:hover { background: var(--surface); }
+.bz-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; padding: 4px 16px 14px; }
+.bz-kpi { background: var(--surface); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.bz-kpi-label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.bz-kpi-value { font-size: 19px; font-weight: 800; color: var(--text); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bz-kpi-note { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.bz-up { color: #16a34a; font-weight: 700; }
+.bz-down { color: #dc2626; font-weight: 700; }
+.bz-bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 7px 16px; border-top: 1px solid var(--border); font-size: 12.5px; align-items: center; }
+.bz-bar-label { min-width: 0; overflow-wrap: anywhere; color: var(--text); font-weight: 600; line-height: 1.45; }
+.bz-bar-amt { text-align: right; font-weight: 700; color: var(--text); white-space: nowrap; }
+.bz-bar-track { grid-column: 1 / -1; height: 6px; background: #eef0f2; border-radius: 3px; overflow: hidden; }
+.bz-bar-fill { height: 100%; border-radius: 3px; background: #8f8f8f; }
+.bz-bar-meta { font-size: 11px; color: var(--text-muted); font-weight: 500; margin-left: 6px; }
+.bz-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 12.5px; }
+.bz-row.bz-new { background: #fffbe6; }
+.bz-row-main { min-width: 0; flex: 1; }
+.bz-row-title { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bz-row-sub { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+.bz-row-amt { font-weight: 700; color: var(--text); white-space: nowrap; }
+.bz-row-btns { display: flex; gap: 4px; flex-shrink: 0; }
+.bz-row-btns button { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; border: 1px solid var(--border); background: var(--white); color: var(--text-sub); }
+.bz-row-btns button.bz-del { color: var(--danger); border-color: #fecaca; }
+.bz-row-btns button.bz-ok { color: #fff; background: var(--success); border-color: var(--success); }
+.bz-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 0 6px; border-radius: 10px; margin-right: 4px; vertical-align: 1px; }
+.bz-badge-new { background: #f59e0b; color: #fff; }
+.bz-badge-over { background: #fee2e2; color: #b91c1c; }
+.bz-badge-soon { background: #ffedd5; color: #c2410c; }
+.bz-badge-plain { background: var(--surface); color: var(--text-sub); }
+.bz-empty { padding: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); text-align: center; }
+.bz-more { display: block; width: 100%; padding: 9px 16px; border: none; border-top: 1px solid var(--border); background: none; color: var(--gold-dark); font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.bz-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+.bz-seg button { border: none; background: none; padding: 3px 9px; font-size: 11px; font-weight: 600; color: var(--text-muted); cursor: pointer; font-family: inherit; }
+.bz-seg button.on { background: #3a3a3a; color: #fff; }
+.bz-days { display: flex; align-items: flex-end; gap: 2px; height: 70px; padding: 6px 16px 0; }
+.bz-day { flex: 1; min-width: 0; background: #b8bec6; border-radius: 2px 2px 0 0; }
+.bz-day.zero { background: transparent; }
+.bz-days-axis { display: flex; justify-content: space-between; padding: 3px 16px 12px; font-size: 10px; color: var(--text-muted); }
 .card { background: var(--white); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 .card-title { font-size: 11px; font-weight: 700; color: var(--gold-dark); letter-spacing: 0.1em; text-transform: uppercase; padding: 14px 16px 0; margin-bottom: 12px; }
 .home-action-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 14px 4px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); color: var(--text); cursor: pointer; -webkit-tap-highlight-color: transparent; }
@@ -642,6 +707,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 
   <!-- 出張申請フォーム -->
   <div id="screen-form" class="screen">
+  <div class="biz-grid"><div class="biz-main">
     <div id="alert-box" class="alert">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <span id="alert-msg"></span>
@@ -712,10 +778,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div class="btn-row">
       <button class="btn btn-primary" onclick="submitForm()">登録する</button>
     </div>
+  </div><aside class="biz-side" id="bz-side-form"></aside></div>
   </div>
 
   <!-- 経費入力フォーム -->
   <div id="screen-expense" class="screen">
+  <div class="biz-grid"><div class="biz-main">
     <div id="exp-alert-box" class="alert">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <span id="exp-alert-msg"></span>
@@ -768,10 +836,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <button class="btn btn-secondary" onclick="resetExpDay()">日付リセット</button>
       <button class="btn btn-purple" onclick="submitExpense()">追加登録する</button>
     </div>
+  </div><aside class="biz-side" id="bz-side-expense"></aside></div>
   </div>
 
   <!-- 仕入入力フォーム -->
   <div id="screen-purchase" class="screen">
+  <div class="biz-grid"><div class="biz-main">
     <div id="pur-alert-box" class="alert">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <span id="pur-alert-msg"></span>
@@ -840,10 +910,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <button class="btn btn-secondary" onclick="resetPurDay()">日付リセット</button>
       <button class="btn btn-orange" onclick="submitPurchase()">追加登録する</button>
     </div>
+  </div><aside class="biz-side" id="bz-side-purchase"></aside></div>
   </div>
 
   <!-- 売上入力フォーム -->
   <div id="screen-sales" class="screen">
+  <div class="biz-grid"><div class="biz-main">
     <div id="sal-alert-box" class="alert">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <span id="sal-alert-msg"></span>
@@ -900,10 +972,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <button class="btn btn-secondary" onclick="resetSalDay()">日付リセット</button>
       <button class="btn btn-teal" onclick="submitSales()">追加登録する</button>
     </div>
+  </div><aside class="biz-side" id="bz-side-sales"></aside></div>
   </div>
 
   <!-- 売掛金管理 -->
   <div id="screen-receivable" class="screen">
+  <div class="biz-grid"><div class="biz-main">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div style="font-size:14px;color:var(--text-sub);font-weight:500" id="recv-summary">読み込み中...</div>
       <button class="btn btn-pink" style="flex:none;padding:8px 14px;font-size:13px" onclick="doExportReceivable()">未回収Excel</button>
@@ -913,6 +987,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
       <p>売掛金データがありません</p>
     </div>
+  </div><aside class="biz-side" id="bz-side-receivable"></aside></div>
   </div>
 
   <!-- 一覧 -->
@@ -927,16 +1002,19 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div class="list-toolbar">
       <div class="list-count" id="list-count">0件</div>
     </div>
+    <div class="biz-grid"><div class="biz-main">
     <div id="list-loading" class="loading"><div class="spinner"></div>読み込み中...</div>
     <div id="list-container"></div>
     <div id="empty-state" class="empty-state" style="display:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
       <p>データがありません</p>
     </div>
+  </div><aside class="biz-side" id="bz-side-list"></aside></div>
   </div>
 
   <!-- 月次出力 -->
   <div id="screen-export" class="screen">
+  <div class="biz-grid"><div class="biz-main">
     <div class="export-section">
       <h3>📅 出力する年月を選択</h3>
       <div class="year-select-row">
@@ -961,6 +1039,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       </div>
       <div id="no-data-msg" style="display:none; text-align:center; padding:20px; color:var(--text-muted); font-size:14px;">この月のデータがありません</div>
     </div>
+  </div><aside class="biz-side" id="bz-side-export"></aside></div>
   </div>
 
 <!-- PC用2カラム画面（一般ユーザー） -->
@@ -2695,6 +2774,7 @@ async function loadAll() {
       const pcHasOpenEdit = Array.from(document.querySelectorAll('#pc-history-area [id^="pce_"]')).some(el => el.style.display === 'block');
       if (!pcHasOpenEdit) renderPCHistory();
     }
+    if (window.bzRefreshSidePanels) window.bzRefreshSidePanels();
     document.getElementById('sync-dot').className = 'sync-dot';
     document.getElementById('sync-status').textContent = '同期済み';
   } catch(e) {
@@ -12055,6 +12135,7 @@ function switchListTab(tab) {
     if (el) el.classList.toggle('active', t === tab);
   });
   renderList();
+  if (window.bzRefreshSidePanels) window.bzRefreshSidePanels();
 }
 
 // グラフタブの月別詳細（chart-m-アコーディオン）は、30秒おきの自動更新（loadAll）で
@@ -14165,6 +14246,7 @@ function toggleDayGroup(uid) {
   el.style.display = open ? 'none' : 'block';
   if (arr) arr.style.transform = open ? '' : 'rotate(180deg)';
   if (open) { _openGroups.delete(uid); } else { _openGroups.add(uid); }
+  if (!open && window.bzOnListMonthOpened) window.bzOnListMonthOpened(uid);
 }
 
 // ── グラフ描画 ──
@@ -14234,7 +14316,8 @@ function renderChart(container) {
   const allSalesData = window._getSales ? window._getSales() : [];
   const recv = months.map(m=>allSalesData.filter(s=>s.date && s.date>=months[0] && s.date<=m+'-31' && s.payStatus!=='入金済み').reduce((s,a)=>s+a.amount,0));
 
-  const barH = 160;
+  // PC幅（1280px以上）ではグラフを縦長にして見やすくする（スマホ・画面半分では今まで通り）
+  const barH = window.matchMedia('(min-width: 1280px)').matches ? 300 : 160;
   const maxBar = Math.max(...purCurr,...purPrev,...salCurr,...salPrev,1);
   const displayMax = (() => { const ceilV=Math.ceil(maxBar*1.3/10000)*10000||10000; const step=Math.ceil(ceilV/4/10000)*10000||10000; return Math.ceil(ceilV/step)*step; })();
 
@@ -14390,7 +14473,7 @@ function renderChart(container) {
   const yearTotalRow = summaryRows ? `<div style="border-top:2px solid var(--border);padding:8px 12px;background:var(--gold-bg)"><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px"><span style="font-weight:700;color:var(--text)">年間合計</span><span style="font-weight:700;color:#4a4a4a">${yen(yearPurTotal)}</span><span style="font-weight:700;color:var(--teal)">${yen(yearSalTotal)}</span><span style="font-weight:700;color:${yearProfitTotal>=0?'var(--success)':'var(--danger)'}">${yen(yearProfitTotal)}</span></div></div>` : '';
   const summaryTable=`<div style="background:var(--white);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;margin-bottom:16px"><div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--surface);font-size:11px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)"><span>月</span><span>仕入合計</span><span style="color:var(--teal)">売上合計</span><span>粗利益</span></div>${summaryRows||'<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">データがありません</div>'}${yearTotalRow}</div>`;
 
-  container.innerHTML=`
+  container.innerHTML=`<div class="chart-layout"><div class="chart-layout-main">
   <div style="background:var(--white);border-radius:var(--radius);border:1px solid var(--border);padding:14px;margin-bottom:16px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">
       <div style="font-size:12px;font-weight:700;color:#909090" id="chart-title">仕入（仕入先別） vs 売上（国内・国外）＋ 粗利益ライン</div>
@@ -14417,8 +14500,8 @@ function renderChart(container) {
       </div>
       <div id="chart-legend" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">${legends.g1}</div>
     </div>
-  </div>
-  ${summaryTable}`;
+  </div></div>
+  <div class="chart-layout-side">${summaryTable}</div></div>`;
 
   window._chartSvgPatterns=svgPatterns;
   window._chartLegends=legends;
@@ -14521,6 +14604,7 @@ function renderMonthGrid(restoreState) {
     if (window._setSelectedMonth) window._setSelectedMonth(null);
     document.getElementById('preview-area').style.display = 'none';
     document.getElementById('no-data-msg').style.display = 'none';
+    if (window.bzRefreshSidePanels) setTimeout(window.bzRefreshSidePanels, 0);
   }
   grid.innerHTML = '';
   for (let m = 1; m <= 12; m++) {
@@ -14560,6 +14644,7 @@ function selectMonth(year, month, btnEl) {
   document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('selected'));
   btnEl.classList.add('selected');
   if (window._setSelectedMonth) window._setSelectedMonth({ year, month });
+  if (window.bzRefreshSidePanels) window.bzRefreshSidePanels();
   const preview = document.getElementById('preview-area');
   const noData  = document.getElementById('no-data-msg');
   const preBox  = document.getElementById('preview-box');
@@ -15057,6 +15142,7 @@ function showScreen(name) {
   if (name === 'receivable')  renderReceivable();
   if (name === 'settings')    initSettingsScreen();
   if (name === 'myhistory')   renderMyHistory();
+  if (window.bzRefreshSidePanels) window.bzRefreshSidePanels();
 }
 
 // ホーム画面から在庫モードの各画面へワンタップで移動するためのヘルパー
@@ -17430,5 +17516,414 @@ async function submitBatchSettle() {
   if (!isPortal) checkAuth();
 })();
 </script>
+<script>
+// ══════════════════════════════════════════════════════════════
+// 業務画面のパソコン幅（1280px以上）用・右側パネル
+// 要望「パソコンで画面いっぱいにすると横に伸びて見にくい。入力したら右半分に内容が表示される、
+// その月の合計が表示されるなど、あると便利な機能を入れて見やすくしたい」への対応。
+// ・出張／経費／仕入／売上の入力画面：右側に「今月の記録」（合計・先月同時点との比較・内訳・明細）
+// ・売掛金：右側に取引先別の未回収残高と、入金期日が近い順の一覧
+// ・一覧（出張／経費／仕入／売上）：右側に選んだ月の内訳と前月比、日ごとの推移
+// ・月次出力：右側に選んだ月の概要（売上・仕入・粗利益・経費・前月比・内訳）
+// スマホ・画面半分の幅ではパネル自体をCSSで隠し、描画処理も行わない（今までと全く同じ見た目）。
+// データは既存の読み込み（loadAll）で取得済みのものをそのまま使うだけで、保存する内容は増やしていない。
+// ══════════════════════════════════════════════════════════════
+const BZ_WIDE_MQ = window.matchMedia('(min-width: 1280px)');
+function bzIsWide() { return BZ_WIDE_MQ.matches; }
+const BZ_KIND_LABEL = { trip: '出張', expense: '経費', purchase: '仕入', sales: '売上' };
+const BZ_SCREEN_KIND = { form: 'trip', expense: 'expense', purchase: 'purchase', sales: 'sales' };
+const BZ_DATE_FIELD = { trip: 'trip-date', expense: 'exp-date', purchase: 'pur-date', sales: 'sal-date' };
+const BZ_COLOR = { trip: '#6b7280', expense: '#8b5cf6', purchase: '#f59e0b', sales: '#14b8a6' };
+let _bzFormMonth = {};      // 入力画面で◀▶で選んだ月（未指定なら日付欄の月→今月）
+let _bzFormShowAll = {};
+let _bzFormSort = {};       // 'input'（入力した順）／'date'（日付順）
+let _bzListMonth = {};      // 一覧の右側で表示中の月（タブごと）
+
+function bzEsc(s) { return escapeHtmlMain(s == null ? '' : String(s)); }
+function bzItems(kind) {
+  if (kind === 'trip') return window._getTrips?.() || [];
+  if (kind === 'expense') return window._getExpenses?.() || [];
+  if (kind === 'purchase') return window._getPurchases?.() || [];
+  return window._getSales?.() || [];
+}
+function bzShiftYM(ym, delta) {
+  const y = parseInt(ym.slice(0, 4), 10), m = parseInt(ym.slice(5, 7), 10);
+  return ymKey(new Date(y, m - 1 + delta, 1));
+}
+function bzYMLabel(ym) { return ym.slice(0, 4) + '年' + parseInt(ym.slice(5, 7), 10) + '月'; }
+function bzSum(arr) { return arr.reduce((s, a) => s + (Number(a.amount) || 0), 0); }
+function bzInMonth(items, ym) { return items.filter(a => (a.date || '').startsWith(ym)); }
+function bzMD(d) { return d ? parseInt(d.slice(5, 7), 10) + '/' + parseInt(d.slice(8, 10), 10) : ''; }
+// 前の値と比べた増減の表示（例：+¥12,000（+15%））
+function bzDeltaHtml(cur, prev, opts) {
+  opts = opts || {};
+  if (!prev && !cur) return '<span>—</span>';
+  const diff = cur - prev;
+  const good = opts.lowerIsBetter ? diff <= 0 : diff >= 0;
+  const cls = diff === 0 ? '' : (good ? 'bz-up' : 'bz-down');
+  const sign = diff > 0 ? '+' : diff < 0 ? '−' : '±';
+  const pct = prev ? Math.round(Math.abs(diff) / prev * 100) : null;
+  return `<span class="${cls}">${sign}${yen(Math.abs(diff))}${pct !== null ? `（${sign}${pct}%）` : ''}</span>`;
+}
+function bzGroup(items, keyFn) {
+  const map = {};
+  items.forEach(a => { const k = keyFn(a) || '不明'; if (!map[k]) map[k] = { key: k, total: 0, count: 0 }; map[k].total += Number(a.amount) || 0; map[k].count++; });
+  return Object.values(map).sort((a, b) => b.total - a.total);
+}
+function bzBarsHtml(groups, color, prevMap) {
+  if (!groups.length) return '<div class="bz-empty">データがありません</div>';
+  const max = Math.max(...groups.map(g => g.total), 1);
+  const all = groups.reduce((s, g) => s + g.total, 0) || 1;
+  return groups.map(g => {
+    const prev = prevMap ? (prevMap[g.key] || 0) : null;
+    return `<div class="bz-bar-row">
+      <div class="bz-bar-label">${bzEsc(g.key)}<span class="bz-bar-meta">${g.count}件・${Math.round(g.total / all * 100)}%${prev !== null ? '・前月比 ' + bzDeltaHtml(g.total, prev) : ''}</span></div>
+      <div class="bz-bar-amt">${yen(g.total)}</div>
+      <div class="bz-bar-track"><div class="bz-bar-fill" style="width:${Math.max(2, Math.round(g.total / max * 100))}%;background:${color}"></div></div>
+    </div>`;
+  }).join('');
+}
+function bzGroupKeyFn(kind) {
+  if (kind === 'trip') return a => a.name;
+  if (kind === 'expense') return a => a.category;
+  if (kind === 'purchase') return a => a.supplier;
+  return a => a.client;
+}
+function bzGroupTitle(kind) {
+  return { trip: '申請者別', expense: '用途別', purchase: '仕入先別', sales: '卸先別' }[kind];
+}
+function bzRowText(kind, a) {
+  if (kind === 'trip') return { title: `${a.name || ''} → ${a.dest || ''}`, sub: a.purpose || '' };
+  if (kind === 'expense') return { title: a.payee || '', sub: [a.category, a.note].filter(Boolean).join('・') };
+  if (kind === 'purchase') return { title: a.supplier || '', sub: a.note || '' };
+  const short = a.salesType === '国外（インボイス）' ? '国外' : '国内';
+  const pay = a.payStatus === '入金済み' ? '入金済み' : '未入金';
+  return { title: a.client || '', sub: [short, pay, a.due ? '期日 ' + bzMD(a.due) : '', a.note].filter(Boolean).join('・') };
+}
+function bzDeleteCall(kind, key) {
+  return { trip: 'deleteTrip', expense: 'deleteExpense', purchase: 'deletePurchase', sales: 'deleteSales' }[kind] + `('${key}')`;
+}
+function bzIsNew(a) { return a.createdAt && (Date.now() - Number(a.createdAt)) < 5 * 60 * 1000; }
+function bzEntryRowHtml(kind, a) {
+  const t = bzRowText(kind, a);
+  const canEdit = isAdmin() || a.date === todayStr();
+  const isNew = bzIsNew(a);
+  return `<div class="bz-row${isNew ? ' bz-new' : ''}">
+    <div class="bz-row-main">
+      <div class="bz-row-title">${isNew ? '<span class="bz-badge bz-badge-new">NEW</span>' : ''}${bzEsc(t.title)}</div>
+      <div class="bz-row-sub">${bzMD(a.date)}${t.sub ? '　' + bzEsc(t.sub) : ''}</div>
+    </div>
+    <div class="bz-row-amt">${yen(a.amount)}</div>
+    ${canEdit ? `<div class="bz-row-btns">${isAdmin() ? `<button onclick="jumpToEdit('${kind}','${a._key}')" title="一覧画面でこの行の編集欄を開きます">編集</button>` : ''}<button class="bz-del" onclick="${bzDeleteCall(kind, a._key)}">削除</button></div>` : ''}
+  </div>`;
+}
+
+// ── 入力画面（出張／経費／仕入／売上）の右側「今月の記録」 ──
+function bzFormMonth(kind) {
+  if (_bzFormMonth[kind]) return _bzFormMonth[kind];
+  const v = document.getElementById(BZ_DATE_FIELD[kind])?.value;
+  return v ? v.slice(0, 7) : ymKey(new Date());
+}
+function bzFormMonthShift(kind, delta) {
+  _bzFormMonth[kind] = bzShiftYM(bzFormMonth(kind), delta);
+  _bzFormShowAll[kind] = false;
+  renderBzFormSide(kind);
+}
+function bzFormSetSort(kind, v) { _bzFormSort[kind] = v; renderBzFormSide(kind); }
+function bzFormShowAll(kind) { _bzFormShowAll[kind] = true; renderBzFormSide(kind); }
+
+function renderBzFormSide(kind) {
+  const screen = Object.keys(BZ_SCREEN_KIND).find(k => BZ_SCREEN_KIND[k] === kind);
+  const box = document.getElementById('bz-side-' + screen);
+  if (!box || !bzIsWide()) return;
+  const keepScroll = box.scrollTop;
+  const color = BZ_COLOR[kind];
+  const all = bzItems(kind);
+  const sortMode = _bzFormSort[kind] || 'input';
+  const sorter = sortMode === 'input'
+    ? (a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0) || (b.date || '').localeCompare(a.date || '')
+    : (a, b) => (b.date || '').localeCompare(a.date || '') || (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0);
+  const sortSeg = `<span class="bz-seg"><button class="${sortMode === 'input' ? 'on' : ''}" onclick="bzFormSetSort('${kind}','input')">入力した順</button><button class="${sortMode === 'date' ? 'on' : ''}" onclick="bzFormSetSort('${kind}','date')">日付順</button></span>`;
+
+  // 管理者以外（倉庫作業員など）は、今まで通り「今日の入力」だけを表示し、月の合計などは出さない
+  if (!isAdmin()) {
+    const today = todayStr();
+    const rows = all.filter(a => a.date === today).sort(sorter);
+    box.innerHTML = `<div class="bz-card">
+      <div class="bz-head"><span>今日の${BZ_KIND_LABEL[kind]}の入力 <span class="bz-sub">${rows.length}件・${yen(bzSum(rows))}</span></span>${sortSeg}</div>
+      ${rows.length ? rows.map(a => bzEntryRowHtml(kind, a)).join('') : '<div class="bz-empty">今日の入力はまだありません</div>'}
+    </div>`;
+    box.scrollTop = keepScroll;
+    return;
+  }
+
+  const ym = bzFormMonth(kind);
+  const prevYm = bzShiftYM(ym, -1);
+  const cur = bzInMonth(all, ym);
+  const prevAll = bzInMonth(all, prevYm);
+  const isThisMonth = ym === ymKey(new Date());
+  // 今月表示中は「先月の同じ日まで」と比べる（月の途中で先月の月末までの合計と比べても意味がないため）
+  const dayLimit = new Date().getDate();
+  const prevCmp = isThisMonth ? prevAll.filter(a => parseInt((a.date || '').slice(8, 10), 10) <= dayLimit) : prevAll;
+  const curTotal = bzSum(cur), prevTotal = bzSum(prevCmp);
+  const cmpLabel = isThisMonth ? `先月${dayLimit}日時点` : '前月';
+
+  let extraKpi = '';
+  if (kind === 'sales') {
+    const unpaid = cur.filter(a => a.payStatus !== '入金済み');
+    extraKpi = `<div class="bz-kpi"><div class="bz-kpi-label">うち未入金</div><div class="bz-kpi-value" style="color:${unpaid.length ? 'var(--danger)' : 'var(--success)'}">${yen(bzSum(unpaid))}</div><div class="bz-kpi-note">${unpaid.length}件</div></div>`;
+  } else if (kind === 'trip') {
+    extraKpi = `<div class="bz-kpi"><div class="bz-kpi-label">出張日数</div><div class="bz-kpi-value">${new Set(cur.map(a => a.date)).size}日</div><div class="bz-kpi-note">申請者 ${new Set(cur.map(a => a.name)).size}名</div></div>`;
+  }
+
+  const sorted = [...cur].sort(sorter);
+  const LIMIT = 30;
+  const shown = _bzFormShowAll[kind] ? sorted : sorted.slice(0, LIMIT);
+  const groups = bzGroup(cur, bzGroupKeyFn(kind));
+
+  box.innerHTML = `
+  <div class="bz-card">
+    <div class="bz-head">
+      <span>${bzYMLabel(ym)}の${BZ_KIND_LABEL[kind]}</span>
+      <span class="bz-month-nav"><button onclick="bzFormMonthShift('${kind}',-1)" title="前の月">◀</button><button onclick="bzFormMonthShift('${kind}',1)" title="次の月">▶</button></span>
+    </div>
+    <div class="bz-kpis">
+      <div class="bz-kpi"><div class="bz-kpi-label">合計（${cur.length}件）</div><div class="bz-kpi-value" style="color:${color}">${yen(curTotal)}</div><div class="bz-kpi-note">${cmpLabel}比 ${bzDeltaHtml(curTotal, prevTotal, { lowerIsBetter: kind === 'expense' })}</div></div>
+      ${extraKpi}
+    </div>
+  </div>
+  <div class="bz-card">
+    <div class="bz-head"><span>${bzGroupTitle(kind)}</span><span class="bz-sub">${groups.length}件</span></div>
+    ${bzBarsHtml(groups, color)}
+  </div>
+  <div class="bz-card">
+    <div class="bz-head"><span>明細 <span class="bz-sub">${cur.length}件</span></span>${sortSeg}</div>
+    ${shown.length ? shown.map(a => bzEntryRowHtml(kind, a)).join('') : '<div class="bz-empty">この月の記録はまだありません</div>'}
+    ${sorted.length > shown.length ? `<button class="bz-more" onclick="bzFormShowAll('${kind}')">すべて表示（残り${sorted.length - shown.length}件）</button>` : ''}
+  </div>`;
+  box.scrollTop = keepScroll;
+}
+
+// ── 売掛金の右側：取引先別の未回収残高・入金期日が近い順 ──
+function bzDaysUntil(dateStr) {
+  const a = new Date(todayStr() + 'T00:00:00'), b = new Date(dateStr + 'T00:00:00');
+  return Math.round((b - a) / 86400000);
+}
+function renderBzReceivableSide() {
+  const box = document.getElementById('bz-side-receivable');
+  if (!box || !bzIsWide()) return;
+  const unpaid = (window._getSales?.() || []).filter(s => s.payStatus !== '入金済み');
+  const today = todayStr();
+  const overdue = unpaid.filter(s => s.due && s.due < today);
+  const soon = unpaid.filter(s => s.due && s.due >= today && bzDaysUntil(s.due) <= 7);
+  const byClient = {};
+  unpaid.forEach(s => {
+    const k = s.client || '不明';
+    if (!byClient[k]) byClient[k] = { key: k, total: 0, count: 0, over: 0 };
+    byClient[k].total += Number(s.amount) || 0; byClient[k].count++;
+    if (s.due && s.due < today) byClient[k].over += Number(s.amount) || 0;
+  });
+  const clients = Object.values(byClient).sort((a, b) => b.total - a.total);
+  const max = Math.max(...clients.map(c => c.total), 1);
+  const clientHtml = clients.length ? clients.map(c => `<div class="bz-bar-row">
+      <div class="bz-bar-label">${bzEsc(c.key)}<span class="bz-bar-meta">${c.count}件${c.over ? `・<span class="bz-down">期限超過 ${yen(c.over)}</span>` : ''}</span></div>
+      <div class="bz-bar-amt">${yen(c.total)}</div>
+      <div class="bz-bar-track"><div class="bz-bar-fill" style="width:${Math.max(2, Math.round(c.total / max * 100))}%;background:${c.over ? '#ef4444' : '#ec4899'}"></div></div>
+    </div>`).join('') : '<div class="bz-empty">未回収の売掛金はありません</div>';
+
+  const withDue = unpaid.filter(s => s.due).sort((a, b) => a.due.localeCompare(b.due));
+  const noDue = unpaid.filter(s => !s.due).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const dueRow = s => {
+    let badge = '<span class="bz-badge bz-badge-plain">期日未設定</span>';
+    if (s.due) {
+      const d = bzDaysUntil(s.due);
+      badge = d < 0 ? `<span class="bz-badge bz-badge-over">${-d}日超過</span>`
+        : d === 0 ? '<span class="bz-badge bz-badge-over">今日</span>'
+        : d <= 7 ? `<span class="bz-badge bz-badge-soon">あと${d}日</span>`
+        : `<span class="bz-badge bz-badge-plain">あと${d}日</span>`;
+    }
+    return `<div class="bz-row">
+      <div class="bz-row-main">
+        <div class="bz-row-title">${badge}${bzEsc(s.client)}</div>
+        <div class="bz-row-sub">${s.due ? '期日 ' + s.due : '売上日 ' + (s.date || '')}${s.note ? '　' + bzEsc(s.note) : ''}</div>
+      </div>
+      <div class="bz-row-amt" style="color:var(--danger)">${yen(s.amount)}</div>
+      <div class="bz-row-btns"><button class="bz-ok" onclick="markPaid('${s._key}')">入金確認</button></div>
+    </div>`;
+  };
+  box.innerHTML = `
+  <div class="bz-card">
+    <div class="bz-kpis" style="padding-top:14px">
+      <div class="bz-kpi"><div class="bz-kpi-label">未回収合計</div><div class="bz-kpi-value" style="color:var(--danger)">${yen(bzSum(unpaid))}</div><div class="bz-kpi-note">${unpaid.length}件</div></div>
+      <div class="bz-kpi"><div class="bz-kpi-label">期限超過</div><div class="bz-kpi-value" style="color:${overdue.length ? '#b91c1c' : 'var(--text)'}">${yen(bzSum(overdue))}</div><div class="bz-kpi-note">${overdue.length}件</div></div>
+      <div class="bz-kpi"><div class="bz-kpi-label">7日以内に期日</div><div class="bz-kpi-value" style="color:${soon.length ? '#c2410c' : 'var(--text)'}">${yen(bzSum(soon))}</div><div class="bz-kpi-note">${soon.length}件</div></div>
+    </div>
+  </div>
+  <div class="bz-card">
+    <div class="bz-head"><span>取引先別の未回収残高</span><span class="bz-sub">多い順</span></div>
+    ${clientHtml}
+  </div>
+  <div class="bz-card">
+    <div class="bz-head"><span>入金期日が近い順</span><span class="bz-sub">${withDue.length}件</span></div>
+    ${withDue.length ? withDue.map(dueRow).join('') : '<div class="bz-empty">入金期日が設定された未回収はありません</div>'}
+    ${noDue.length ? `<div class="bz-head" style="border-top:1px solid var(--border);padding-top:10px"><span class="bz-sub">期日未設定（${noDue.length}件・${yen(bzSum(noDue))}）</span></div>${noDue.map(dueRow).join('')}` : ''}
+  </div>`;
+}
+
+// ── 一覧（出張／経費／仕入／売上タブ）の右側：選んだ月の内訳 ──
+function bzListMonth(tab) {
+  if (_bzListMonth[tab]) return _bzListMonth[tab];
+  const items = bzItems(tab);
+  const latest = items.map(a => (a.date || '').slice(0, 7)).filter(Boolean).sort().pop();
+  return latest || ymKey(new Date());
+}
+function bzListMonthShift(tab, delta) { _bzListMonth[tab] = bzShiftYM(bzListMonth(tab), delta); renderBzListSide(); }
+// 左側の月の見出しを開いたとき、右側もその月に合わせる
+function bzOnListMonthOpened(uid) {
+  if (typeof currentListTab === 'undefined' || currentListTab === 'chart') return;
+  const m = /^(?:month_(?:trip|exp|pur)_|sal_)(\d{4})(\d{2})(?:_|$)/.exec(uid);
+  if (!m) return;
+  _bzListMonth[currentListTab] = m[1] + '-' + m[2];
+  renderBzListSide();
+}
+function renderBzListSide() {
+  const screenEl = document.getElementById('screen-list');
+  if (screenEl) screenEl.classList.toggle('list-chart-mode', typeof currentListTab !== 'undefined' && currentListTab === 'chart');
+  const box = document.getElementById('bz-side-list');
+  if (!box || !bzIsWide()) return;
+  const tab = typeof currentListTab !== 'undefined' ? currentListTab : 'trip';
+  if (tab === 'chart') { box.innerHTML = ''; return; }
+  const color = BZ_COLOR[tab];
+  const all = bzItems(tab);
+  const ym = bzListMonth(tab);
+  const prevYm = bzShiftYM(ym, -1);
+  const cur = bzInMonth(all, ym), prev = bzInMonth(all, prevYm);
+  const curTotal = bzSum(cur), prevTotal = bzSum(prev);
+  const keyFn = bzGroupKeyFn(tab);
+  const groups = bzGroup(cur, keyFn);
+  const prevMap = {}; bzGroup(prev, keyFn).forEach(g => { prevMap[g.key] = g.total; });
+
+  // 日ごとの推移（その月の1日〜月末の棒）
+  const y = parseInt(ym.slice(0, 4), 10), mo = parseInt(ym.slice(5, 7), 10);
+  const days = new Date(y, mo, 0).getDate();
+  const perDay = Array.from({ length: days }, (_, i) => bzSum(cur.filter(a => parseInt((a.date || '').slice(8, 10), 10) === i + 1)));
+  const dayMax = Math.max(...perDay, 1);
+  const dayBars = perDay.map((v, i) => `<div class="bz-day${v ? '' : ' zero'}" title="${mo}/${i + 1}　${yen(v)}" style="height:${v ? Math.max(4, Math.round(v / dayMax * 100)) : 0}%;background:${color}"></div>`).join('');
+
+  let extraKpi = '';
+  if (tab === 'sales') {
+    const unpaid = cur.filter(a => a.payStatus !== '入金済み');
+    const dom = bzSum(cur.filter(a => a.salesType !== '国外（インボイス）')), ovs = bzSum(cur.filter(a => a.salesType === '国外（インボイス）'));
+    extraKpi = `<div class="bz-kpi"><div class="bz-kpi-label">うち未入金</div><div class="bz-kpi-value" style="color:${unpaid.length ? 'var(--danger)' : 'var(--success)'}">${yen(bzSum(unpaid))}</div><div class="bz-kpi-note">国内 ${yen(dom)}／国外 ${yen(ovs)}</div></div>`;
+  }
+  box.innerHTML = `
+  <div class="bz-card">
+    <div class="bz-head">
+      <span>${bzYMLabel(ym)}の${BZ_KIND_LABEL[tab]}</span>
+      <span class="bz-month-nav"><button onclick="bzListMonthShift('${tab}',-1)" title="前の月">◀</button><button onclick="bzListMonthShift('${tab}',1)" title="次の月">▶</button></span>
+    </div>
+    <div class="bz-kpis">
+      <div class="bz-kpi"><div class="bz-kpi-label">合計（${cur.length}件）</div><div class="bz-kpi-value" style="color:${color}">${yen(curTotal)}</div><div class="bz-kpi-note">前月比 ${bzDeltaHtml(curTotal, prevTotal, { lowerIsBetter: tab === 'expense' })}</div></div>
+      <div class="bz-kpi"><div class="bz-kpi-label">前月（${parseInt(prevYm.slice(5, 7), 10)}月）</div><div class="bz-kpi-value">${yen(prevTotal)}</div><div class="bz-kpi-note">${prev.length}件</div></div>
+      ${extraKpi}
+    </div>
+  </div>
+  <div class="bz-card">
+    <div class="bz-head"><span>日ごとの推移</span><span class="bz-sub">1日〜${days}日</span></div>
+    <div class="bz-days">${dayBars}</div>
+    <div class="bz-days-axis"><span>1日</span><span>10日</span><span>20日</span><span>${days}日</span></div>
+  </div>
+  <div class="bz-card">
+    <div class="bz-head"><span>${bzGroupTitle(tab)}</span><span class="bz-sub">金額の多い順</span></div>
+    ${bzBarsHtml(groups, color, prevMap)}
+  </div>
+  <div style="font-size:11px;color:var(--text-muted);padding:0 4px 8px">※ 左の月の見出しをタップすると、右側もその月の内容に切り替わります</div>`;
+}
+
+// ── 月次出力の右側：選んだ月の概要 ──
+function renderBzExportSide() {
+  const box = document.getElementById('bz-side-export');
+  if (!box || !bzIsWide()) return;
+  const sel = window._getSelectedMonth?.();
+  if (!sel) {
+    box.innerHTML = `<div class="bz-card"><div class="bz-empty" style="border-top:none;padding:40px 16px">左で月を選ぶと、その月の概要（売上・仕入・粗利益・前月比・内訳）がここに表示されます</div></div>`;
+    return;
+  }
+  const ym = getMonthKey(sel.year, parseInt(sel.month, 10));
+  const prevYm = bzShiftYM(ym, -1);
+  const calc = (m) => {
+    const y = parseInt(m.slice(0, 4), 10), mo = parseInt(m.slice(5, 7), 10);
+    const t = tripsForMonth(y, mo), e = expensesForMonth(y, mo), p = purchasesForMonth(y, mo), s = salesForMonth(y, mo), ec = ecSalesForMonth(y, mo);
+    const sal = bzSum(s) + bzSum(ec), pur = bzSum(p), exp = bzSum(e), trip = bzSum(t);
+    return { t, e, p, s, ec, sal, pur, exp, trip, gross: sal - pur, net: sal - pur - exp };
+  };
+  const c = calc(ym), pv = calc(prevYm);
+  const kpi = (label, v, pvv, color, lowerIsBetter, note) => `<div class="bz-kpi"><div class="bz-kpi-label">${label}</div><div class="bz-kpi-value" style="color:${color || 'var(--text)'}">${yen(v)}</div><div class="bz-kpi-note">前月比 ${bzDeltaHtml(v, pvv, { lowerIsBetter })}${note ? '<br>' + note : ''}</div></div>`;
+  const salGroups = bzGroup(c.s, a => a.client);
+  if (c.ec.length) salGroups.push({ key: 'EC（Amazon・自社EC）', total: bzSum(c.ec), count: c.ec.length });
+  salGroups.sort((a, b) => b.total - a.total);
+  const dom = bzSum(c.s.filter(a => a.salesType !== '国外（インボイス）')), ovs = bzSum(c.s.filter(a => a.salesType === '国外（インボイス）'));
+  const unpaid = c.s.filter(a => a.payStatus !== '入金済み');
+  const prevSupMap = {}; bzGroup(pv.p, a => a.supplier).forEach(g => { prevSupMap[g.key] = g.total; });
+  box.innerHTML = `
+  <div class="bz-card">
+    <div class="bz-head"><span>${bzYMLabel(ym)}の概要</span><span class="bz-sub">前月＝${parseInt(prevYm.slice(5, 7), 10)}月</span></div>
+    <div class="bz-kpis">
+      ${kpi('売上', c.sal, pv.sal, BZ_COLOR.sales, false, `国内 ${yen(dom)}／国外 ${yen(ovs)}${c.ec.length ? '／EC ' + yen(bzSum(c.ec)) : ''}`)}
+      ${kpi('仕入', c.pur, pv.pur, '#d97706', true)}
+      ${kpi('粗利益（売上−仕入）', c.gross, pv.gross, c.gross >= 0 ? '#16a34a' : '#dc2626')}
+    </div>
+    <div class="bz-kpis" style="padding-top:0">
+      ${kpi('経費', c.exp, pv.exp, BZ_COLOR.expense, true)}
+      ${kpi('経費控除後利益', c.net, pv.net, c.net >= 0 ? '#4f46e5' : '#dc2626')}
+      ${kpi('出張', c.trip, pv.trip, null, true, `${c.t.length}件`)}
+    </div>
+    ${unpaid.length ? `<div style="padding:0 16px 12px;font-size:12px;color:var(--danger);font-weight:600">この月の売上のうち未入金：${yen(bzSum(unpaid))}（${unpaid.length}件）</div>` : ''}
+  </div>
+  <div class="bz-card">
+    <div class="bz-head"><span>売上　卸先別</span><span class="bz-sub">${yen(c.sal)}</span></div>
+    ${bzBarsHtml(salGroups, BZ_COLOR.sales)}
+  </div>
+  <div class="bz-card">
+    <div class="bz-head"><span>仕入　仕入先別</span><span class="bz-sub">${yen(c.pur)}</span></div>
+    ${bzBarsHtml(bzGroup(c.p, a => a.supplier), '#f59e0b', prevSupMap)}
+  </div>
+  <div class="bz-card">
+    <div class="bz-head"><span>経費　用途別</span><span class="bz-sub">${yen(c.exp)}</span></div>
+    ${bzBarsHtml(bzGroup(c.e, a => a.category), BZ_COLOR.expense)}
+  </div>`;
+}
+
+// 表示中の画面に合わせて右側パネルを描き直す（画面切替・データ再読み込み・画面幅の変更時）
+function bzRefreshSidePanels() {
+  if (!bzIsWide()) { renderBzListSide(); return; }
+  const active = document.querySelector('.screen.active');
+  const name = active ? active.id.replace('screen-', '') : '';
+  if (BZ_SCREEN_KIND[name]) renderBzFormSide(BZ_SCREEN_KIND[name]);
+  else if (name === 'receivable') renderBzReceivableSide();
+  else if (name === 'list') renderBzListSide();
+  else if (name === 'export') renderBzExportSide();
+}
+window.bzRefreshSidePanels = bzRefreshSidePanels;
+
+(function initBzSidePanels() {
+  // 日付欄を変えたら、右側もその日付の月の記録に切り替える
+  Object.entries(BZ_DATE_FIELD).forEach(([kind, id]) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => { _bzFormMonth[kind] = null; _bzFormShowAll[kind] = false; renderBzFormSide(kind); });
+  });
+  const onWideChange = () => {
+    bzRefreshSidePanels();
+    // グラフの高さは画面幅で変わるため、グラフ表示中なら描き直す
+    const listEl = document.getElementById('screen-list');
+    if (listEl && listEl.classList.contains('active') && typeof currentListTab !== 'undefined' && currentListTab === 'chart') renderList();
+  };
+  if (BZ_WIDE_MQ.addEventListener) BZ_WIDE_MQ.addEventListener('change', onWideChange);
+  else if (BZ_WIDE_MQ.addListener) BZ_WIDE_MQ.addListener(onWideChange);
+  // 「NEW」の目印は5分で消えるので、表示中なら1分ごとに描き直す
+  setInterval(() => { if (bzIsWide() && document.visibilityState === 'visible') { const a = document.querySelector('.screen.active'); if (a && BZ_SCREEN_KIND[a.id.replace('screen-', '')]) bzRefreshSidePanels(); } }, 60000);
+})();
+</script>
+
 </body>
 </html>
