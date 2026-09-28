@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28i">
+<meta name="app-build" content="2026-09-28j">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -717,12 +717,16 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <button class="home-action-btn" onclick="showScreen('purchase')"><span class="home-icon">🛒</span><span class="home-label">仕入</span></button>
         <button class="home-action-btn" onclick="showScreen('expense')"><span class="home-icon">💴</span><span class="home-label">経費</span></button>
         <button class="home-action-btn" onclick="showScreen('form')"><span class="home-icon">✈️</span><span class="home-label">出張</span></button>
+        <button class="home-action-btn" onclick="TK.filter='mine';openTasksScreen('tasks')" style="position:relative"><span class="home-icon">✅</span><span class="home-label">タスク</span><span class="tk-tile-badge" id="home-tk-badge"></span></button>
+        <button class="home-action-btn" onclick="openTasksScreen('cal')"><span class="home-icon">📅</span><span class="home-label">予定</span></button>
+        <button class="home-action-btn" onclick="TK.filter='people';openTasksScreen('tasks')"><span class="home-icon">👥</span><span class="home-label">みんなの状況</span></button>
       </div>
     </div>
     <div id="home-notify-prompt" style="display:none;align-items:center;justify-content:space-between;gap:8px;background:var(--surface);border:1.2px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:var(--text-muted)">
       <span>取引先からの連絡や、スタッフによる経費・仕入・売上の登録があったとき、アプリを閉じていてもポップアップでお知らせできます</span>
       <button onclick="requestConsignNotifyPermission()" style="flex-shrink:0;padding:6px 10px;font-size:12px;font-weight:700;border:1.5px solid var(--gold-dark);border-radius:8px;background:var(--white);color:var(--gold-dark);cursor:pointer">🔔 通知を有効にする</button>
     </div>
+    <div id="home-today-card"></div>
     <div id="home-summary"></div>
     </div>
     <aside class="home-col-side" id="home-side-panels"></aside>
@@ -1115,6 +1119,9 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       </div>
     </div>
   </div>
+
+<!-- タスク・予定（全員で共有）スクリーン -->
+  <div id="screen-tasks" class="screen"></div>
 
 <!-- 一般ユーザー履歴スクリーン -->
   <div id="screen-myhistory" class="screen">
@@ -11752,6 +11759,8 @@ window._initApp = async function() {
   // ログイン直後、静的に表示されているホーム画面の中身を描画しておく（管理者は経営サマリー、
   // 一般ユーザーは倉庫作業向けの簡易版HOMEをそれぞれ表示）
   if (window.renderHomeScreen) renderHomeScreen();
+  // タスク・予定：自分をメンバー一覧に登録し、30秒ごとに最新の状態を取り込む
+  if (typeof tkInit === 'function') tkInit();
 };
 
 function applyRoleUI() {
@@ -13946,6 +13955,7 @@ async function renderHomeScreen() {
   updateBuybackCsvStatus();
   try { renderHomeSidePanels(); } catch (e) { console.error('home side panels error', e); }
   try { renderHomeAwayCard(); } catch (e) { console.error('home away card error', e); }
+  try { renderHomeTodayCard(); } catch (e) { console.error('home today card error', e); }
 }
 
 // 要望「買取価格CSVの状態を、HOMEのQuick Menuの上に小さく表示したい」への対応。
@@ -14067,8 +14077,11 @@ async function renderGeneralHomeScreen() {
         <button class="home-action-btn" onclick="goHomeToInv('inv-packec')"><span class="home-icon">🚚</span><span class="home-label">出荷管理</span></button>
         <button class="home-action-btn" onclick="goHomeToInv('inv-list')"><span class="home-icon">📋</span><span class="home-label">在庫一覧</span></button>
         <button class="home-action-btn" onclick="showPCLayout()"><span class="home-icon">📝</span><span class="home-label">経費・仕入・売上</span></button>
+        <button class="home-action-btn" onclick="TK.filter='mine';openTasksScreen('tasks')" style="position:relative"><span class="home-icon">✅</span><span class="home-label">タスク</span><span class="tk-tile-badge" id="home-tk-badge"></span></button>
+        <button class="home-action-btn" onclick="openTasksScreen('cal')"><span class="home-icon">📅</span><span class="home-label">予定</span></button>
       </div>
     </div>
+    <div id="home-today-card"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
       <div class="home-stat-card" onclick="goHomeToInv('inv-list')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center">
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">在庫アラート</div>
@@ -14087,6 +14100,7 @@ async function renderGeneralHomeScreen() {
       </div>
     </div>
   `;
+  try { renderHomeTodayCard(); } catch (e) { console.error('home today card error', e); }
 }
 
 // ホーム画面の「仕入・売上の推移（直近6ヶ月）」ミニグラフ
@@ -15170,6 +15184,7 @@ function showScreen(name) {
   if (name === 'receivable')  renderReceivable();
   if (name === 'settings')    initSettingsScreen();
   if (name === 'myhistory')   renderMyHistory();
+  if (name === 'tasks')       renderTasksScreen();
   if (window.bzRefreshSidePanels) window.bzRefreshSidePanels();
 }
 
@@ -17955,6 +17970,884 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
   else if (BZ_WIDE_MQ.addListener) BZ_WIDE_MQ.addListener(onWideChange);
   // 「NEW」の目印は5分で消えるので、表示中なら1分ごとに描き直す
   setInterval(() => { if (bzIsWide() && document.visibilityState === 'visible') { const a = document.querySelector('.screen.active'); if (a && BZ_SCREEN_KIND[a.id.replace('screen-', '')]) bzRefreshSidePanels(); } }, 60000);
+})();
+</script>
+
+<!-- ══ タスク・予定（全員で共有）══ -->
+<style>
+.tk-toolbar { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+.tk-chip { padding:6px 12px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:999px; background:var(--white); color:var(--text-sub); cursor:pointer; font-family:inherit; -webkit-tap-highlight-color:transparent; }
+.tk-chip.active { background:#c5e8e5; border-color:#8fcfc9; color:#1f5f5a; }
+.tk-add-btn { margin-left:auto; padding:8px 14px; font-size:13px; font-weight:700; border:none; border-radius:10px; background:linear-gradient(135deg,#d8d8d8,#a8a8a8); color:#1a1a1a; cursor:pointer; font-family:inherit; }
+.tk-sec { font-size:12px; font-weight:700; color:var(--text-sub); margin:14px 2px 6px; display:flex; align-items:center; gap:6px; }
+.tk-sec .n { font-size:11px; color:var(--text-muted); font-weight:600; }
+.tk-sec.danger { color:var(--danger); }
+.tk-list { background:var(--white); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.tk-item { display:flex; align-items:flex-start; gap:10px; padding:11px 12px; border-bottom:1px solid var(--border); }
+.tk-item:last-child { border-bottom:none; }
+.tk-item.overdue { background:#fff5f5; }
+.tk-item.doing { background:#f0faf9; }
+.tk-item.done .tk-title { color:var(--text-muted); text-decoration:line-through; }
+.tk-check { flex-shrink:0; width:26px; height:26px; margin-top:1px; border-radius:50%; border:2px solid #b8b8b8; background:var(--white); color:transparent; font-size:14px; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
+.tk-check.on { background:#16a34a; border-color:#16a34a; color:#fff; }
+.tk-body { flex:1; min-width:0; cursor:pointer; }
+.tk-title { font-size:14px; font-weight:700; color:var(--text); line-height:1.4; word-break:break-word; }
+.tk-meta { display:flex; flex-wrap:wrap; gap:4px 6px; margin-top:4px; font-size:11px; color:var(--text-sub); align-items:center; }
+.tk-tag { display:inline-block; padding:1px 7px; border-radius:999px; background:var(--surface); border:1px solid var(--border); font-size:11px; font-weight:600; color:var(--text-sub); }
+.tk-tag.me { background:#c5e8e5; border-color:#8fcfc9; color:#1f5f5a; }
+.tk-tag.none { background:#fffbeb; border-color:#fcd34d; color:#92400e; }
+.tk-tag.od { background:#fef2f2; border-color:#fca5a5; color:#b91c1c; }
+.tk-tag.doing { background:#0f766e; border-color:#0f766e; color:#fff; }
+.tk-tag.high { background:#fef2f2; border-color:#fca5a5; color:#b91c1c; }
+.tk-who { margin-top:4px; font-size:11px; color:#0f766e; font-weight:600; }
+.tk-who.done { color:#16a34a; }
+.tk-start { flex-shrink:0; padding:5px 9px; font-size:11px; font-weight:700; border:1.5px solid #8fcfc9; border-radius:8px; background:var(--white); color:#1f5f5a; cursor:pointer; font-family:inherit; }
+.tk-start.stop { border-color:var(--border); color:var(--text-sub); }
+.tk-empty { padding:18px; text-align:center; font-size:12px; color:var(--text-muted); }
+.tk-people { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:10px; }
+.tk-person { background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:12px; }
+.tk-person-h { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.tk-person-name { font-size:14px; font-weight:700; }
+.tk-person-stats { font-size:11px; color:var(--text-sub); display:flex; gap:6px; }
+.tk-person-row { font-size:12px; padding:5px 0; border-top:1px dashed var(--border); cursor:pointer; display:flex; gap:6px; align-items:baseline; }
+.tk-person-row .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* カレンダー */
+.tk-cal-head { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.tk-cal-head .ttl { font-size:16px; font-weight:700; flex:1; text-align:center; }
+.tk-nav-btn { width:34px; height:34px; border-radius:10px; border:1.5px solid var(--border); background:var(--white); font-size:16px; cursor:pointer; font-family:inherit; }
+.tk-grid { display:grid; grid-template-columns:repeat(7,1fr); background:var(--white); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.tk-wd { font-size:11px; font-weight:700; text-align:center; padding:6px 0; background:var(--surface); color:var(--text-sub); border-bottom:1px solid var(--border); }
+.tk-wd.sun, .tk-cell.sun .d { color:#dc2626; }
+.tk-wd.sat, .tk-cell.sat .d { color:#2563eb; }
+.tk-cell { min-height:64px; padding:3px; border-right:1px solid #eee; border-bottom:1px solid #eee; cursor:pointer; overflow:hidden; min-width:0; }
+.tk-cell:nth-child(7n) { border-right:none; }
+.tk-cell.other { background:#fafafa; }
+.tk-cell.other .d { opacity:.4; }
+.tk-cell.today .d { background:#0f766e; color:#fff !important; border-radius:50%; }
+.tk-cell.sel { background:#e6f5f3; }
+.tk-cell .d { display:inline-flex; width:20px; height:20px; align-items:center; justify-content:center; font-size:11px; font-weight:700; }
+.tk-cl { font-size:9.5px; line-height:1.35; padding:0 3px; margin-top:1px; border-radius:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tk-cl.ev { background:#c5e8e5; color:#1f5f5a; }
+.tk-cl.tk { background:#f0f0f0; color:#4a4a4a; }
+.tk-cl.tk.od { background:#fee2e2; color:#b91c1c; }
+.tk-cl.more { color:var(--text-muted); }
+@media (min-width:900px) { .tk-cell { min-height:92px; } .tk-cl { font-size:11px; } }
+.tk-day-h { display:flex; align-items:center; justify-content:space-between; margin:14px 2px 6px; font-size:13px; font-weight:700; }
+.tk-ev { display:flex; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); cursor:pointer; }
+.tk-ev:last-child { border-bottom:none; }
+.tk-ev .tm { flex-shrink:0; width:62px; font-size:12px; font-weight:700; color:#0f766e; }
+.tk-ev .bd { flex:1; min-width:0; }
+.tk-ev .bd .t { font-size:14px; font-weight:700; }
+.tk-ev .bd .m { font-size:11px; color:var(--text-sub); margin-top:2px; }
+.tk-week-day { margin-bottom:10px; }
+.tk-week-day .h { font-size:12px; font-weight:700; margin:0 2px 4px; display:flex; justify-content:space-between; }
+.tk-week-day.today .h { color:#0f766e; }
+/* モーダル */
+#tk-modal { display:none; position:fixed; inset:0; z-index:650; background:rgba(0,0,0,0.4); align-items:flex-end; justify-content:center; }
+#tk-modal .box { background:var(--white); width:100%; max-width:520px; max-height:92vh; overflow-y:auto; border-radius:18px 18px 0 0; padding:18px 18px max(18px,env(safe-area-inset-bottom)); }
+@media (min-width:700px) { #tk-modal { align-items:center; } #tk-modal .box { border-radius:18px; } }
+#tk-modal h3 { font-size:16px; margin:0 0 14px; }
+.tk-f { margin-bottom:12px; }
+.tk-f label { display:block; font-size:12px; font-weight:700; color:var(--text-sub); margin-bottom:5px; }
+.tk-f input[type=text], .tk-f input[type=date], .tk-f input[type=time], .tk-f select, .tk-f textarea { width:100%; box-sizing:border-box; padding:10px 12px; font-size:16px; font-family:inherit; border:1.5px solid var(--border); border-radius:10px; background:var(--white); color:var(--text); }
+.tk-f textarea { min-height:70px; resize:vertical; }
+.tk-row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.tk-mem-list { display:flex; flex-wrap:wrap; gap:6px; }
+.tk-mem-list label { display:inline-flex; align-items:center; gap:4px; padding:6px 10px; border:1.5px solid var(--border); border-radius:999px; font-size:13px; font-weight:600; color:var(--text); margin:0; cursor:pointer; }
+.tk-mem-list input { margin:0; }
+.tk-btns { display:flex; gap:8px; margin-top:16px; }
+.tk-btns button { flex:1; padding:13px; font-size:15px; font-weight:700; border-radius:10px; cursor:pointer; font-family:inherit; }
+.tk-btn-save { border:none; background:linear-gradient(135deg,#d8d8d8,#a8a8a8); color:#1a1a1a; }
+.tk-btn-cancel { border:1.5px solid var(--border); background:var(--white); color:var(--text-sub); }
+.tk-btn-del { flex:0 0 auto !important; border:1.5px solid #fca5a5; background:var(--white); color:#b91c1c; padding:13px 14px !important; }
+.tk-info { font-size:11px; color:var(--text-muted); margin-top:10px; line-height:1.6; }
+/* HOMEの今日やること */
+.tk-today-sec { padding:0 16px 10px; }
+.tk-today-sec .h { font-size:12px; font-weight:700; color:var(--text-sub); margin:4px 0 4px; }
+.tk-today-sec .h.danger { color:var(--danger); }
+.tk-today-row { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px dashed var(--border); font-size:13px; }
+.tk-today-row:last-child { border-bottom:none; }
+.tk-today-row .tm { flex-shrink:0; font-size:12px; font-weight:700; color:#0f766e; min-width:44px; }
+.tk-today-row .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+.tk-today-row .tk-check { width:22px; height:22px; font-size:12px; }
+.tk-today-foot { display:flex; gap:8px; padding:4px 16px 14px; flex-wrap:wrap; }
+.tk-today-foot button { flex:1; padding:9px 6px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:10px; background:var(--white); color:var(--text); cursor:pointer; font-family:inherit; white-space:nowrap; }
+.tk-today-team { margin:0 16px 10px; padding:8px 10px; border-radius:10px; background:#fffbeb; border:1px solid #fcd34d; font-size:12px; color:#92400e; cursor:pointer; }
+.tk-tile-badge { position:absolute; top:6px; right:8px; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:#dc2626; color:#fff; font-size:11px; font-weight:700; display:none; align-items:center; justify-content:center; box-sizing:border-box; }
+</style>
+
+<div id="tk-modal" onclick="if(event.target===this)tkCloseModal()"><div class="box" id="tk-modal-box"></div></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// タスク・予定（全員で共有）
+// 「誰が・何を・いつまでに」「今だれが何をしているか」「もう終わったか」を全員が同じ画面で
+// 見られるようにして、「あの人がやってくれたと思った」「終わってると知らずに二重にやった」を防ぐ。
+// データはRealtime Databaseの /tasks /events /members に保存する（他の機能と同じREST方式）。
+// ══════════════════════════════════════════════════════════════
+const TK = {
+  tasks: {}, events: {}, members: {},
+  loaded: false, loading: null,
+  tab: 'tasks',          // 'tasks' | 'cal'
+  filter: 'mine',        // 'mine' | 'all' | 'people'
+  showDone: false,
+  calView: 'month',      // 'month' | 'week'
+  calCursor: null,       // 表示中の月／週の基準日（Date）
+  selDay: null,          // 選択中の日（'YYYY-MM-DD'）
+};
+const TK_PRIO = { high: '高', normal: '普通', low: '低' };
+const TK_REPEAT = { none: 'なし', daily: '毎日', weekday: '平日（月〜金）', weekly: '毎週', monthly: '毎月' };
+const TK_STATUS = { todo: '未着手', doing: '作業中', done: '完了' };
+const TK_WD = ['日','月','火','水','木','金','土'];
+
+const tkEsc = s => (typeof escapeHtmlMain === 'function') ? escapeHtmlMain(s) : String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const tkYmd = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+const tkToday = () => tkYmd(new Date());
+const tkParse = s => { const [y,m,d] = String(s).split('-').map(Number); return new Date(y, (m||1)-1, d||1); };
+const tkAddDays = (s, n) => { const d = tkParse(s); d.setDate(d.getDate()+n); return tkYmd(d); };
+const tkMe = () => (typeof currentSessionEmail === 'function' ? currentSessionEmail() : '');
+const tkKey = email => String(email || '').toLowerCase().replace(/\./g, ',').replace(/[#$\[\]\/]/g, '_');
+const tkNewId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+function tkName(email) {
+  if (!email) return '未定';
+  const m = TK.members[tkKey(email)];
+  return (m && m.name) || String(email).split('@')[0];
+}
+function tkShortDate(s) {
+  if (!s) return '';
+  const d = tkParse(s);
+  return `${d.getMonth()+1}/${d.getDate()}(${TK_WD[d.getDay()]})`;
+}
+function tkStamp(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function tkDueLabel(t) {
+  if (!t.due) return '期限なし';
+  const today = tkToday();
+  let lbl = t.due === today ? '今日' : t.due === tkAddDays(today, 1) ? '明日' : tkShortDate(t.due);
+  if (t.dueTime) lbl += ' ' + t.dueTime;
+  return lbl + 'まで';
+}
+function tkIsOverdue(t) {
+  if (!t || t.status === 'done' || !t.due) return false;
+  const today = tkToday();
+  if (t.due < today) return true;
+  if (t.due === today && t.dueTime) {
+    const now = new Date();
+    const hm = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+    return t.dueTime < hm;
+  }
+  return false;
+}
+
+// ── 通信 ──
+async function tkReq(path, method, body) {
+  const opt = { method: method || 'GET' };
+  if (body !== undefined) { opt.headers = { 'Content-Type': 'application/json' }; opt.body = JSON.stringify(body); }
+  const r = await fetch(authedUrl('/' + path + '.json'), opt);
+  if (!r.ok) throw new Error('通信エラー（' + r.status + '）');
+  return r.json();
+}
+async function tkLoad(force) {
+  if (TK.loading && !force) return TK.loading;
+  TK.loading = (async () => {
+    try {
+      const [tasks, events, members] = await Promise.all([
+        tkReq('tasks'), tkReq('events'), tkReq('members')
+      ]);
+      TK.tasks = tasks || {}; TK.events = events || {}; TK.members = members || {};
+      TK.loaded = true;
+    } catch (e) {
+      console.error('タスク・予定の読み込みエラー', e);
+    } finally {
+      TK.loading = null;
+    }
+  })();
+  return TK.loading;
+}
+async function tkSave(path, method, body, rollback) {
+  try {
+    await tkReq(path, method, body);
+    return true;
+  } catch (e) {
+    console.error('タスク・予定の保存エラー', e);
+    showToast('保存できませんでした。通信状況をご確認ください');
+    if (rollback) rollback();
+    await tkLoad(true);
+    tkRefreshAll();
+    return false;
+  }
+}
+
+// ログイン後に一度呼ぶ：自分をメンバー一覧に登録し、定期的に最新状態を取り込む
+async function tkInit() {
+  await tkLoad(true);
+  const me = tkMe();
+  if (me && TK.loaded && !TK.members[tkKey(me)]) {
+    const rec = { email: me, name: me.split('@')[0], createdAt: Date.now() };
+    TK.members[tkKey(me)] = rec;
+    tkSave('members/' + tkKey(me), 'PUT', rec);
+  }
+  tkUpdateBadges();
+  if (!window._tkTimer) {
+    window._tkTimer = setInterval(async () => {
+      if (document.hidden) return;
+      if (document.getElementById('tk-modal')?.style.display === 'flex') return;
+      await tkLoad(true);
+      tkRefreshAll();
+    }, 30000);
+  }
+}
+function tkRefreshAll() {
+  if (document.getElementById('screen-tasks')?.classList.contains('active')) renderTasksScreen(true);
+  if (document.getElementById('home-today-card')) renderHomeTodayCard(true);
+  tkUpdateBadges();
+}
+
+// ── 画面の切り替え ──
+function openTasksScreen(tab) {
+  if (tab) TK.tab = tab;
+  const go = () => showScreen('tasks');
+  if (typeof currentMode !== 'undefined' && currentMode !== 'biz') { switchMode('biz'); setTimeout(go, 80); }
+  else go();
+}
+function tkSetTab(tab) { TK.tab = tab; renderTasksScreen(true); }
+function tkSetFilter(f) { TK.filter = f; renderTasksScreen(true); }
+function tkToggleShowDone() { TK.showDone = !TK.showDone; renderTasksScreen(true); }
+
+async function renderTasksScreen(noFetch) {
+  const el = document.getElementById('screen-tasks');
+  if (!el) return;
+  if (!TK.loaded || !noFetch) {
+    if (!TK.loaded) el.innerHTML = '<div class="tk-empty">読み込み中…</div>';
+    await tkLoad(!noFetch);
+  }
+  const head = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-size:20px;font-weight:700;letter-spacing:0.03em">タスク・予定</div>
+      <button class="tk-chip" onclick="tkOpenMembersModal()">👤 表示名</button>
+    </div>
+    <div class="tab-switch">
+      <button class="tab-switch-btn ${TK.tab==='tasks'?'active':''}" onclick="tkSetTab('tasks')">✅ タスク</button>
+      <button class="tab-switch-btn ${TK.tab==='cal'?'active':''}" onclick="tkSetTab('cal')">📅 予定（カレンダー）</button>
+    </div>`;
+  el.innerHTML = head + (TK.tab === 'cal' ? tkCalHtml() : tkTasksHtml());
+  tkUpdateBadges();
+  if (typeof syncSideNav === 'function') syncSideNav();
+}
+
+// ── タスク一覧 ──
+function tkTaskList() {
+  return Object.entries(TK.tasks || {}).filter(([, t]) => t && t.title).map(([id, t]) => ({ ...t, id }));
+}
+function tkSortTasks(a, b) {
+  const pr = { high: 0, normal: 1, low: 2 };
+  if ((a.due || '9999') !== (b.due || '9999')) return (a.due || '9999') < (b.due || '9999') ? -1 : 1;
+  if ((a.dueTime || '99') !== (b.dueTime || '99')) return (a.dueTime || '99') < (b.dueTime || '99') ? -1 : 1;
+  if ((pr[a.priority] ?? 1) !== (pr[b.priority] ?? 1)) return (pr[a.priority] ?? 1) - (pr[b.priority] ?? 1);
+  return (a.createdAt || 0) - (b.createdAt || 0);
+}
+function tkItemHtml(t, compact) {
+  const me = tkMe();
+  const done = t.status === 'done';
+  const doing = t.status === 'doing';
+  const od = tkIsOverdue(t);
+  const cls = done ? 'done' : od ? 'overdue' : doing ? 'doing' : '';
+  const assignTag = !t.assignee
+    ? '<span class="tk-tag none">担当未定</span>'
+    : `<span class="tk-tag ${t.assignee === me ? 'me' : ''}">${tkEsc(tkName(t.assignee))}</span>`;
+  const dueTag = `<span class="tk-tag ${od ? 'od' : ''}">${od ? '⚠️ ' : ''}${tkEsc(tkDueLabel(t))}</span>`;
+  const prioTag = t.priority === 'high' ? '<span class="tk-tag high">優先度：高</span>' : '';
+  const statusTag = doing ? '<span class="tk-tag doing">作業中</span>' : '';
+  const rep = t.repeat && t.repeat !== 'none' ? `<span class="tk-tag">🔁 ${tkEsc(TK_REPEAT[t.repeat] || '')}</span>` : '';
+  let who = '';
+  if (done && t.doneBy) who = `<div class="tk-who done">✅ ${tkEsc(tkName(t.doneBy))}さんが ${tkStamp(t.doneAt)} に完了</div>`;
+  else if (doing && t.doingBy) who = `<div class="tk-who">▶ ${tkEsc(tkName(t.doingBy))}さんが作業中（${tkStamp(t.doingAt)}〜）</div>`;
+  const startBtn = done || compact ? '' : doing
+    ? `<button class="tk-start stop" onclick="tkToggleDoing('${t.id}')">中断</button>`
+    : `<button class="tk-start" onclick="tkToggleDoing('${t.id}')">着手</button>`;
+  return `<div class="tk-item ${cls}">
+    <button class="tk-check ${done ? 'on' : ''}" onclick="tkToggleDone('${t.id}')" aria-label="完了">✓</button>
+    <div class="tk-body" onclick="tkOpenTaskModal('${t.id}')">
+      <div class="tk-title">${tkEsc(t.title)}</div>
+      <div class="tk-meta">${statusTag}${assignTag}${dueTag}${prioTag}${rep}</div>
+      ${who}
+    </div>
+    ${startBtn}
+  </div>`;
+}
+function tkSection(title, items, danger, emptyText) {
+  if (!items.length && !emptyText) return '';
+  return `<div class="tk-sec ${danger ? 'danger' : ''}">${title}<span class="n">${items.length}件</span></div>
+    <div class="tk-list">${items.length ? items.map(t => tkItemHtml(t)).join('') : `<div class="tk-empty">${emptyText}</div>`}</div>`;
+}
+function tkTasksHtml() {
+  const me = tkMe();
+  const today = tkToday();
+  const all = tkTaskList().sort(tkSortTasks);
+  const toolbar = `
+    <div class="tk-toolbar">
+      <button class="tk-chip ${TK.filter==='mine'?'active':''}" onclick="tkSetFilter('mine')">自分</button>
+      <button class="tk-chip ${TK.filter==='all'?'active':''}" onclick="tkSetFilter('all')">全員</button>
+      <button class="tk-chip ${TK.filter==='people'?'active':''}" onclick="tkSetFilter('people')">👥 担当者別</button>
+      <button class="tk-add-btn" onclick="tkOpenTaskModal()">＋ タスク</button>
+    </div>`;
+  if (TK.filter === 'people') return toolbar + tkPeopleHtml(all);
+
+  const open = all.filter(t => t.status !== 'done');
+  const scope = TK.filter === 'mine' ? open.filter(t => t.assignee === me) : open;
+  const overdue = scope.filter(tkIsOverdue);
+  const doing = scope.filter(t => !tkIsOverdue(t) && t.status === 'doing');
+  const rest = scope.filter(t => !tkIsOverdue(t) && t.status !== 'doing');
+  const todayList = rest.filter(t => t.due === today);
+  const later = rest.filter(t => t.due && t.due > today);
+  const noDue = rest.filter(t => !t.due);
+  const unassigned = TK.filter === 'mine' ? open.filter(t => !t.assignee) : [];
+  const weekAgo = Date.now() - 7 * 86400000;
+  const doneList = all.filter(t => t.status === 'done' && (t.doneAt || 0) >= weekAgo)
+    .filter(t => TK.filter !== 'mine' || t.assignee === me || t.doneBy === me)
+    .sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+
+  let html = toolbar;
+  if (!scope.length && !unassigned.length) html += `<div class="tk-list"><div class="tk-empty">${TK.filter==='mine' ? 'あなたの担当のタスクはありません 🎉' : '未完了のタスクはありません 🎉'}</div></div>`;
+  html += tkSection('⚠️ 期限切れ', overdue, true);
+  html += tkSection('▶ 作業中', doing);
+  html += tkSection('📌 今日まで', todayList);
+  html += tkSection('🗓 これから', later);
+  html += tkSection('📝 期限なし', noDue);
+  if (unassigned.length) html += tkSection('🙋 担当者未定（誰かお願いします）', unassigned);
+  html += `<div class="tk-sec" style="cursor:pointer" onclick="tkToggleShowDone()">${TK.showDone ? '▼' : '▶'} 完了したタスク（直近7日）<span class="n">${doneList.length}件</span></div>`;
+  if (TK.showDone) html += `<div class="tk-list">${doneList.length ? doneList.map(t => tkItemHtml(t)).join('') : '<div class="tk-empty">まだありません</div>'}</div>`;
+  return html;
+}
+function tkPeopleHtml(all) {
+  const open = all.filter(t => t.status !== 'done');
+  const emails = Object.values(TK.members || {}).map(m => m.email).filter(Boolean);
+  open.forEach(t => { if (t.assignee && !emails.includes(t.assignee)) emails.push(t.assignee); });
+  const me = tkMe();
+  emails.sort((a, b) => (a === me ? -1 : b === me ? 1 : tkName(a).localeCompare(tkName(b), 'ja')));
+  const card = (label, list, isMe) => {
+    const od = list.filter(tkIsOverdue).length;
+    const doing = list.filter(t => t.status === 'doing');
+    const rows = [...doing, ...list.filter(t => t.status !== 'doing')].slice(0, 8).map(t => `
+      <div class="tk-person-row" onclick="tkOpenTaskModal('${t.id}')">
+        <span>${t.status === 'doing' ? '▶' : tkIsOverdue(t) ? '⚠️' : '・'}</span>
+        <span class="t">${tkEsc(t.title)}</span>
+        <span style="font-size:11px;color:${tkIsOverdue(t) ? 'var(--danger)' : 'var(--text-muted)'};flex-shrink:0">${t.due ? tkShortDate(t.due) : ''}</span>
+      </div>`).join('');
+    return `<div class="tk-person">
+      <div class="tk-person-h">
+        <div class="tk-person-name">${tkEsc(label)}${isMe ? '（自分）' : ''}</div>
+        <div class="tk-person-stats"><span>残り${list.length}件</span>${od ? `<span style="color:var(--danger);font-weight:700">期限切れ${od}</span>` : ''}</div>
+      </div>
+      <div style="font-size:12px;color:${doing.length ? '#0f766e' : 'var(--text-muted)'};font-weight:600;margin-bottom:4px">${doing.length ? '▶ 今：' + tkEsc(doing.map(t => t.title).join('、')) : '今は作業中のタスクなし'}</div>
+      ${rows || '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">担当のタスクはありません</div>'}
+      ${list.length > 8 ? `<div style="font-size:11px;color:var(--text-muted);padding-top:4px">ほか${list.length - 8}件</div>` : ''}
+    </div>`;
+  };
+  let html = '<div class="tk-people">';
+  emails.forEach(e => { html += card(tkName(e), open.filter(t => t.assignee === e).sort(tkSortTasks), e === me); });
+  const un = open.filter(t => !t.assignee).sort(tkSortTasks);
+  if (un.length) html += card('🙋 担当者未定', un, false);
+  html += '</div>';
+  return html;
+}
+
+// ── タスクの操作 ──
+async function tkToggleDone(id) {
+  const t = TK.tasks[id];
+  if (!t) return;
+  const me = tkMe();
+  const prev = { ...t };
+  if (t.status === 'done') {
+    const patch = { status: 'todo', doneBy: null, doneAt: null, updatedAt: Date.now(), updatedBy: me };
+    Object.assign(t, patch); delete t.doneBy; delete t.doneAt;
+    tkRefreshAll();
+    await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; });
+    return;
+  }
+  if (t.status === 'doing' && t.doingBy && t.doingBy !== me) {
+    const ok = await showConfirm(`${tkName(t.doingBy)}さんが作業中のタスクです。完了にしてよろしいですか？`);
+    if (!ok) return;
+  }
+  // 最新の状態を確認して、すでに誰かが完了にしていたら二重に処理しない
+  try {
+    const latest = await tkReq('tasks/' + id);
+    if (latest && latest.status === 'done') {
+      TK.tasks[id] = latest;
+      showToast(`${tkName(latest.doneBy)}さんがすでに完了しています`);
+      tkRefreshAll();
+      return;
+    }
+  } catch (e) {}
+  const patch = { status: 'done', doneBy: me, doneAt: Date.now(), updatedAt: Date.now(), updatedBy: me };
+  Object.assign(t, patch);
+  // 繰り返しタスクは、完了したら次回分を自動で作る
+  let nextRec = null, nextId = null;
+  if (t.repeat && t.repeat !== 'none' && !t.nextId) {
+    nextId = tkNewId();
+    nextRec = {
+      title: t.title, detail: t.detail || '', assignee: t.assignee || '', priority: t.priority || 'normal',
+      due: tkNextDue(t.due || tkToday(), t.repeat), dueTime: t.dueTime || '', repeat: t.repeat,
+      status: 'todo', createdBy: t.createdBy || me, createdAt: Date.now(), updatedAt: Date.now(), updatedBy: me
+    };
+    patch.nextId = nextId; t.nextId = nextId;
+    TK.tasks[nextId] = nextRec;
+  }
+  tkRefreshAll();
+  showToast(nextRec ? `完了しました。次回（${tkShortDate(nextRec.due)}）の分を作成しました` : '完了しました');
+  const ok = await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; if (nextId) delete TK.tasks[nextId]; });
+  if (ok && nextRec) await tkSave('tasks/' + nextId, 'PUT', nextRec, () => { delete TK.tasks[nextId]; });
+}
+function tkNextDue(due, repeat) {
+  const d = tkParse(due);
+  const today = tkParse(tkToday());
+  const step = () => {
+    if (repeat === 'daily') d.setDate(d.getDate() + 1);
+    else if (repeat === 'weekday') { do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6); }
+    else if (repeat === 'weekly') d.setDate(d.getDate() + 7);
+    else if (repeat === 'monthly') {
+      const day = tkParse(due).getDate();
+      d.setDate(1); d.setMonth(d.getMonth() + 1);
+      const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      d.setDate(Math.min(day, last));
+    } else d.setDate(d.getDate() + 1);
+  };
+  step();
+  // 期限を過ぎてから完了した場合は、今日より後の直近の回にする
+  let guard = 0;
+  while (d <= today && guard++ < 400) step();
+  return tkYmd(d);
+}
+async function tkToggleDoing(id) {
+  const t = TK.tasks[id];
+  if (!t || t.status === 'done') return;
+  const me = tkMe();
+  const prev = { ...t };
+  let patch;
+  if (t.status === 'doing') {
+    if (t.doingBy && t.doingBy !== me) {
+      const ok = await showConfirm(`${tkName(t.doingBy)}さんが作業中です。作業中を解除しますか？`);
+      if (!ok) return;
+    }
+    patch = { status: 'todo', doingBy: null, doingAt: null, updatedAt: Date.now(), updatedBy: me };
+  } else {
+    patch = { status: 'doing', doingBy: me, doingAt: Date.now(), updatedAt: Date.now(), updatedBy: me };
+    if (!t.assignee) patch.assignee = me; // 担当未定のタスクに着手したら自分の担当にする
+  }
+  Object.assign(t, patch);
+  if (patch.doingBy === null) { delete t.doingBy; delete t.doingAt; }
+  tkRefreshAll();
+  await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; });
+}
+
+// ── メンバー選択肢 ──
+function tkMemberEmails() {
+  const me = tkMe();
+  const list = Object.values(TK.members || {}).map(m => m.email).filter(Boolean);
+  if (me && !list.includes(me)) list.push(me);
+  return list.sort((a, b) => (a === me ? -1 : b === me ? 1 : tkName(a).localeCompare(tkName(b), 'ja')));
+}
+function tkMemberOptions(selected) {
+  const me = tkMe();
+  return `<option value="">未定（誰かお願い）</option>` + tkMemberEmails().map(e =>
+    `<option value="${tkEsc(e)}" ${e === selected ? 'selected' : ''}>${tkEsc(tkName(e))}${e === me ? '（自分）' : ''}</option>`).join('');
+}
+
+// ── モーダル ──
+function tkShowModal(html) {
+  document.getElementById('tk-modal-box').innerHTML = html;
+  document.getElementById('tk-modal').style.display = 'flex';
+}
+function tkCloseModal() { document.getElementById('tk-modal').style.display = 'none'; }
+
+function tkOpenTaskModal(id, presetDue) {
+  const t = id ? TK.tasks[id] : null;
+  if (id && !t) return;
+  const me = tkMe();
+  const v = t || { title: '', detail: '', assignee: me, due: presetDue || tkToday(), dueTime: '', priority: 'normal', repeat: 'none', status: 'todo' };
+  const opt = (obj, sel) => Object.entries(obj).map(([k, l]) => `<option value="${k}" ${k === (sel || '') ? 'selected' : ''}>${l}</option>`).join('');
+  let info = '';
+  if (t) {
+    info = `<div class="tk-info">作成：${tkEsc(tkName(t.createdBy))}（${tkStamp(t.createdAt)}）` +
+      (t.updatedAt && t.updatedAt !== t.createdAt ? `<br>最終更新：${tkEsc(tkName(t.updatedBy))}（${tkStamp(t.updatedAt)}）` : '') +
+      (t.status === 'done' && t.doneBy ? `<br>完了：${tkEsc(tkName(t.doneBy))}（${tkStamp(t.doneAt)}）` : '') + '</div>';
+  }
+  tkShowModal(`
+    <h3>${t ? 'タスクの編集' : 'タスクを追加'}</h3>
+    <div class="tk-f"><label>やること</label><input type="text" id="tkf-title" value="${tkEsc(v.title)}" placeholder="例：〇〇社へ見積書を送る"></div>
+    <div class="tk-f"><label>メモ（詳しい内容・注意点）</label><textarea id="tkf-detail" placeholder="任意">${tkEsc(v.detail || '')}</textarea></div>
+    <div class="tk-f"><label>担当者</label><select id="tkf-assignee">${tkMemberOptions(v.assignee || '')}</select></div>
+    <div class="tk-row2">
+      <div class="tk-f"><label>期限日</label><input type="date" id="tkf-due" value="${tkEsc(v.due || '')}"></div>
+      <div class="tk-f"><label>時刻（任意）</label><input type="time" id="tkf-time" value="${tkEsc(v.dueTime || '')}"></div>
+    </div>
+    <div class="tk-row2">
+      <div class="tk-f"><label>優先度</label><select id="tkf-prio">${opt(TK_PRIO, v.priority || 'normal')}</select></div>
+      <div class="tk-f"><label>繰り返し</label><select id="tkf-repeat">${opt(TK_REPEAT, v.repeat || 'none')}</select></div>
+    </div>
+    ${t ? `<div class="tk-f"><label>状態</label><select id="tkf-status">${opt(TK_STATUS, v.status || 'todo')}</select></div>` : ''}
+    <div class="tk-btns">
+      ${t ? `<button class="tk-btn-del" onclick="tkDeleteTask('${id}')">削除</button>` : ''}
+      <button class="tk-btn-cancel" onclick="tkCloseModal()">キャンセル</button>
+      <button class="tk-btn-save" onclick="tkSaveTask(${t ? `'${id}'` : 'null'})">保存</button>
+    </div>
+    ${info}
+  `);
+  if (!t) setTimeout(() => document.getElementById('tkf-title')?.focus(), 50);
+}
+async function tkSaveTask(id) {
+  const title = document.getElementById('tkf-title').value.trim();
+  if (!title) { showToast('やることを入力してください'); return; }
+  const me = tkMe();
+  const now = Date.now();
+  const rec = {
+    title,
+    detail: document.getElementById('tkf-detail').value.trim(),
+    assignee: document.getElementById('tkf-assignee').value,
+    due: document.getElementById('tkf-due').value,
+    dueTime: document.getElementById('tkf-time').value,
+    priority: document.getElementById('tkf-prio').value,
+    repeat: document.getElementById('tkf-repeat').value,
+    updatedAt: now, updatedBy: me,
+  };
+  const newStatus = document.getElementById('tkf-status')?.value || null;
+  tkCloseModal();
+  if (id) {
+    const t = TK.tasks[id];
+    if (!t) return;
+    const prev = { ...t };
+    // 「完了」への変更はチェックボタンと同じ処理（二重完了の確認・繰り返しの次回作成）に任せる
+    const toDone = newStatus === 'done' && t.status !== 'done';
+    if (!toDone) tkApplyStatusChange(id, newStatus, rec);
+    Object.assign(t, rec);
+    Object.keys(t).forEach(k => { if (t[k] === null) delete t[k]; });
+    tkRefreshAll();
+    const ok = await tkSave('tasks/' + id, 'PATCH', rec, () => { TK.tasks[id] = prev; });
+    if (ok && toDone) await tkToggleDone(id);
+  } else {
+    const nid = tkNewId();
+    Object.assign(rec, { status: 'todo', createdBy: me, createdAt: now });
+    TK.tasks[nid] = rec;
+    tkRefreshAll();
+    showToast(rec.assignee && rec.assignee !== me ? `${tkName(rec.assignee)}さんにタスクを追加しました` : 'タスクを追加しました');
+    await tkSave('tasks/' + nid, 'PUT', rec, () => { delete TK.tasks[nid]; });
+  }
+}
+function tkApplyStatusChange(id, newStatus, rec) {
+  const t = TK.tasks[id];
+  if (!t || !newStatus || newStatus === t.status) return;
+  const me = tkMe();
+  rec.status = newStatus;
+  if (newStatus === 'done') { rec.doneBy = me; rec.doneAt = Date.now(); rec.doingBy = null; rec.doingAt = null; }
+  else if (newStatus === 'doing') { rec.doingBy = me; rec.doingAt = Date.now(); rec.doneBy = null; rec.doneAt = null; }
+  else { rec.doingBy = null; rec.doingAt = null; rec.doneBy = null; rec.doneAt = null; }
+}
+async function tkDeleteTask(id) {
+  const t = TK.tasks[id];
+  if (!t) return;
+  const ok = await showConfirm(`「${t.title}」を削除しますか？（全員の画面から消えます）`);
+  if (!ok) return;
+  tkCloseModal();
+  const prev = t;
+  delete TK.tasks[id];
+  tkRefreshAll();
+  showToast('削除しました');
+  await tkSave('tasks/' + id, 'DELETE', undefined, () => { TK.tasks[id] = prev; });
+}
+// ── 予定（カレンダー） ──
+function tkEventList() {
+  return Object.entries(TK.events || {}).filter(([, e]) => e && e.title && e.date).map(([id, e]) => ({ ...e, id }));
+}
+function tkEventsOn(day) {
+  return tkEventList().filter(e => e.date === day || (e.endDate && e.date <= day && e.endDate >= day))
+    .sort((a, b) => (a.start || '') < (b.start || '') ? -1 : (a.start || '') > (b.start || '') ? 1 : 0);
+}
+function tkTasksOn(day) {
+  return tkTaskList().filter(t => t.due === day).sort(tkSortTasks);
+}
+function tkEvTime(e) {
+  if (!e.start) return '終日';
+  return e.start + (e.end ? '〜' + e.end : '');
+}
+function tkEvMembers(e) {
+  if (!e.members || e.members === 'all' || (Array.isArray(e.members) && !e.members.length)) return '全員';
+  return (Array.isArray(e.members) ? e.members : Object.values(e.members)).map(tkName).join('・');
+}
+function tkEvRowHtml(e) {
+  const meta = [tkEvMembers(e), e.place ? '📍' + e.place : ''].filter(Boolean).join('　');
+  return `<div class="tk-ev" onclick="tkOpenEventModal('${e.id}')">
+    <div class="tm">${tkEsc(tkEvTime(e))}</div>
+    <div class="bd"><div class="t">${tkEsc(e.title)}</div><div class="m">${tkEsc(meta)}</div></div>
+  </div>`;
+}
+function tkCalMove(n) {
+  const d = new Date(TK.calCursor || new Date());
+  if (TK.calView === 'month') { d.setDate(1); d.setMonth(d.getMonth() + n); }
+  else d.setDate(d.getDate() + 7 * n);
+  TK.calCursor = d;
+  renderTasksScreen(true);
+}
+function tkCalToday() { TK.calCursor = new Date(); TK.selDay = tkToday(); renderTasksScreen(true); }
+function tkCalSetView(v) { TK.calView = v; renderTasksScreen(true); }
+function tkSelectDay(day) { TK.selDay = day; renderTasksScreen(true); }
+function tkDayDetailHtml(day) {
+  const evs = tkEventsOn(day);
+  const tks = tkTasksOn(day);
+  return `<div class="tk-day-h"><span>${tkShortDate(day)} の予定・タスク</span>
+      <span style="display:flex;gap:6px"><button class="tk-chip" onclick="tkOpenEventModal(null,'${day}')">＋ 予定</button><button class="tk-chip" onclick="tkOpenTaskModal(null,'${day}')">＋ タスク</button></span></div>
+    <div class="tk-list">${evs.map(tkEvRowHtml).join('')}${tks.map(t => tkItemHtml(t)).join('')}${!evs.length && !tks.length ? '<div class="tk-empty">この日の予定・タスクはありません</div>' : ''}</div>`;
+}
+function tkCalHtml() {
+  const today = tkToday();
+  if (!TK.calCursor) TK.calCursor = new Date();
+  if (!TK.selDay) TK.selDay = today;
+  const cur = new Date(TK.calCursor);
+  const top = `
+    <div class="tk-toolbar">
+      <button class="tk-chip ${TK.calView==='month'?'active':''}" onclick="tkCalSetView('month')">月</button>
+      <button class="tk-chip ${TK.calView==='week'?'active':''}" onclick="tkCalSetView('week')">週</button>
+      <button class="tk-chip" onclick="tkCalToday()">今日</button>
+      <button class="tk-add-btn" onclick="tkOpenEventModal(null, '${TK.selDay}')">＋ 予定</button>
+    </div>`;
+  if (TK.calView === 'week') {
+    const start = new Date(cur); start.setDate(start.getDate() - start.getDay());
+    const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(d.getDate() + i); return tkYmd(d); });
+    const ttl = `${tkShortDate(days[0])} 〜 ${tkShortDate(days[6])}`;
+    let html = top + `<div class="tk-cal-head"><button class="tk-nav-btn" onclick="tkCalMove(-1)">‹</button><div class="ttl">${ttl}</div><button class="tk-nav-btn" onclick="tkCalMove(1)">›</button></div>`;
+    days.forEach(day => {
+      const evs = tkEventsOn(day), tks = tkTasksOn(day);
+      html += `<div class="tk-week-day ${day === today ? 'today' : ''}">
+        <div class="h"><span>${tkShortDate(day)}${day === today ? '（今日）' : ''}</span>
+          <span style="display:flex;gap:4px"><button class="tk-chip" style="padding:3px 9px" onclick="tkOpenEventModal(null,'${day}')">＋予定</button><button class="tk-chip" style="padding:3px 9px" onclick="tkOpenTaskModal(null,'${day}')">＋タスク</button></span></div>
+        <div class="tk-list">${evs.map(tkEvRowHtml).join('')}${tks.map(t => tkItemHtml(t, true)).join('')}${!evs.length && !tks.length ? '<div class="tk-empty" style="padding:10px">予定なし</div>' : ''}</div>
+      </div>`;
+    });
+    return html;
+  }
+  // 月表示
+  const y = cur.getFullYear(), m = cur.getMonth();
+  const first = new Date(y, m, 1);
+  const start = new Date(first); start.setDate(1 - first.getDay());
+  const weeks = Math.ceil((first.getDay() + new Date(y, m + 1, 0).getDate()) / 7);
+  let cells = TK_WD.map((w, i) => `<div class="tk-wd ${i===0?'sun':i===6?'sat':''}">${w}</div>`).join('');
+  for (let i = 0; i < weeks * 7; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const day = tkYmd(d);
+    const evs = tkEventsOn(day);
+    const tks = tkTasksOn(day).filter(t => t.status !== 'done');
+    const labels = [
+      ...evs.map(e => `<div class="tk-cl ev">${e.start ? tkEsc(e.start) + ' ' : ''}${tkEsc(e.title)}</div>`),
+      ...tks.map(t => `<div class="tk-cl tk ${tkIsOverdue(t) ? 'od' : ''}">□${tkEsc(t.title)}</div>`)
+    ];
+    const shown = labels.slice(0, 3).join('') + (labels.length > 3 ? `<div class="tk-cl more">+${labels.length - 3}</div>` : '');
+    const cls = [d.getMonth() !== m ? 'other' : '', day === today ? 'today' : '', day === TK.selDay ? 'sel' : '', d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : ''].join(' ');
+    cells += `<div class="tk-cell ${cls}" onclick="tkSelectDay('${day}')"><span class="d">${d.getDate()}</span>${shown}</div>`;
+  }
+  return top + `<div class="tk-cal-head"><button class="tk-nav-btn" onclick="tkCalMove(-1)">‹</button><div class="ttl">${y}年${m + 1}月</div><button class="tk-nav-btn" onclick="tkCalMove(1)">›</button></div>
+    <div class="tk-grid">${cells}</div>` + tkDayDetailHtml(TK.selDay);
+}
+
+function tkOpenEventModal(id, presetDate) {
+  const e = id ? TK.events[id] : null;
+  if (id && !e) return;
+  const v = e || { title: '', date: presetDate || tkToday(), start: '', end: '', place: '', memo: '', members: 'all' };
+  const sel = v.members === 'all' || !v.members ? [] : (Array.isArray(v.members) ? v.members : Object.values(v.members));
+  const isAll = !sel.length;
+  const mems = tkMemberEmails().map(em => `<label><input type="checkbox" class="tkf-mem" value="${tkEsc(em)}" ${sel.includes(em) ? 'checked' : ''} onchange="document.getElementById('tkf-allmem').checked=!document.querySelector('.tkf-mem:checked')">${tkEsc(tkName(em))}</label>`).join('');
+  const info = e ? `<div class="tk-info">登録：${tkEsc(tkName(e.createdBy))}（${tkStamp(e.createdAt)}）${e.updatedAt && e.updatedAt !== e.createdAt ? `<br>最終更新：${tkEsc(tkName(e.updatedBy))}（${tkStamp(e.updatedAt)}）` : ''}</div>` : '';
+  tkShowModal(`
+    <h3>${e ? '予定の編集' : '予定を追加'}</h3>
+    <div class="tk-f"><label>予定</label><input type="text" id="tkf-title" value="${tkEsc(v.title)}" placeholder="例：〇〇社 来社・打ち合わせ"></div>
+    <div class="tk-row2">
+      <div class="tk-f"><label>日付</label><input type="date" id="tkf-date" value="${tkEsc(v.date)}"></div>
+      <div class="tk-f"><label>終了日（複数日の場合）</label><input type="date" id="tkf-enddate" value="${tkEsc(v.endDate || '')}"></div>
+    </div>
+    <div class="tk-row2">
+      <div class="tk-f"><label>開始（空欄＝終日）</label><input type="time" id="tkf-start" value="${tkEsc(v.start || '')}"></div>
+      <div class="tk-f"><label>終了</label><input type="time" id="tkf-end" value="${tkEsc(v.end || '')}"></div>
+    </div>
+    <div class="tk-f"><label>場所</label><input type="text" id="tkf-place" value="${tkEsc(v.place || '')}" placeholder="任意"></div>
+    <div class="tk-f"><label>参加者</label><div class="tk-mem-list">
+      <label><input type="checkbox" id="tkf-allmem" ${isAll ? 'checked' : ''} onchange="if(this.checked)document.querySelectorAll('.tkf-mem').forEach(c=>c.checked=false)">全員</label>${mems}
+    </div></div>
+    <div class="tk-f"><label>メモ</label><textarea id="tkf-memo" placeholder="持ち物・準備など（任意）">${tkEsc(v.memo || '')}</textarea></div>
+    <div class="tk-btns">
+      ${e ? `<button class="tk-btn-del" onclick="tkDeleteEvent('${id}')">削除</button>` : ''}
+      <button class="tk-btn-cancel" onclick="tkCloseModal()">キャンセル</button>
+      <button class="tk-btn-save" onclick="tkSaveEvent(${e ? `'${id}'` : 'null'})">保存</button>
+    </div>
+    ${info}
+  `);
+  if (!e) setTimeout(() => document.getElementById('tkf-title')?.focus(), 50);
+}
+async function tkSaveEvent(id) {
+  const title = document.getElementById('tkf-title').value.trim();
+  const date = document.getElementById('tkf-date').value;
+  if (!title) { showToast('予定の内容を入力してください'); return; }
+  if (!date) { showToast('日付を選んでください'); return; }
+  let endDate = document.getElementById('tkf-enddate').value;
+  if (endDate && endDate <= date) endDate = '';
+  const members = [...document.querySelectorAll('.tkf-mem:checked')].map(c => c.value);
+  const me = tkMe();
+  const now = Date.now();
+  const rec = {
+    title, date, endDate,
+    start: document.getElementById('tkf-start').value,
+    end: document.getElementById('tkf-end').value,
+    place: document.getElementById('tkf-place').value.trim(),
+    memo: document.getElementById('tkf-memo').value.trim(),
+    members: members.length ? members : 'all',
+    updatedAt: now, updatedBy: me,
+  };
+  tkCloseModal();
+  TK.selDay = date;
+  if (id) {
+    const prev = { ...TK.events[id] };
+    Object.assign(TK.events[id], rec);
+    tkRefreshAll();
+    await tkSave('events/' + id, 'PATCH', rec, () => { TK.events[id] = prev; });
+  } else {
+    const nid = tkNewId();
+    Object.assign(rec, { createdBy: me, createdAt: now });
+    TK.events[nid] = rec;
+    tkRefreshAll();
+    showToast('予定を追加しました');
+    await tkSave('events/' + nid, 'PUT', rec, () => { delete TK.events[nid]; });
+  }
+}
+async function tkDeleteEvent(id) {
+  const e = TK.events[id];
+  if (!e) return;
+  const ok = await showConfirm(`予定「${e.title}」を削除しますか？（全員の画面から消えます）`);
+  if (!ok) return;
+  tkCloseModal();
+  const prev = e;
+  delete TK.events[id];
+  tkRefreshAll();
+  showToast('削除しました');
+  await tkSave('events/' + id, 'DELETE', undefined, () => { TK.events[id] = prev; });
+}
+
+// ── 表示名（メンバー） ──
+function tkOpenMembersModal() {
+  const me = tkMe();
+  const admin = typeof isAdmin === 'function' && isAdmin();
+  const rows = Object.entries(TK.members || {}).sort((a, b) => (a[1].email === me ? -1 : b[1].email === me ? 1 : 0)).map(([k, m]) => {
+    const editable = admin || m.email === me;
+    return `<div class="tk-f"><label>${tkEsc(m.email)}${m.email === me ? '（自分）' : ''}</label>
+      <input type="text" class="tkf-name" data-key="${tkEsc(k)}" value="${tkEsc(m.name || '')}" ${editable ? '' : 'disabled'}></div>`;
+  }).join('');
+  tkShowModal(`
+    <h3>表示名の設定</h3>
+    <div style="font-size:12px;color:var(--text-sub);margin-bottom:12px;line-height:1.6">タスクの担当者や予定の参加者として表示される名前です。アプリにログインしたことのある人が自動で並びます。${admin ? '' : '（自分の名前だけ変更できます）'}</div>
+    ${rows || '<div class="tk-empty">メンバーがまだいません</div>'}
+    <div class="tk-btns">
+      <button class="tk-btn-cancel" onclick="tkCloseModal()">キャンセル</button>
+      <button class="tk-btn-save" onclick="tkSaveMembers()">保存</button>
+    </div>
+  `);
+}
+async function tkSaveMembers() {
+  const inputs = [...document.querySelectorAll('.tkf-name:not([disabled])')];
+  tkCloseModal();
+  for (const inp of inputs) {
+    const k = inp.dataset.key, name = inp.value.trim();
+    if (!TK.members[k] || !name || TK.members[k].name === name) continue;
+    TK.members[k].name = name;
+    await tkSave('members/' + k + '/name', 'PUT', name);
+  }
+  tkRefreshAll();
+  showToast('表示名を保存しました');
+}
+
+// ── HOMEの「今日やること」 ──
+async function renderHomeTodayCard(noFetch) {
+  const box = document.getElementById('home-today-card');
+  if (!box) return;
+  if (!TK.loaded) {
+    box.innerHTML = '<div class="card"><div class="card-title">今日やること</div><div class="tk-empty">読み込み中…</div></div>';
+    await tkLoad();
+  } else if (!noFetch) {
+    tkLoad(true).then(() => renderHomeTodayCard(true));
+  }
+  const me = tkMe();
+  const today = tkToday();
+  const evs = tkEventsOn(today).filter(e => {
+    if (!e.members || e.members === 'all') return true;
+    const list = Array.isArray(e.members) ? e.members : Object.values(e.members);
+    return !list.length || list.includes(me);
+  });
+  const open = tkTaskList().filter(t => t.status !== 'done');
+  const mine = open.filter(t => t.assignee === me);
+  const myOverdue = mine.filter(tkIsOverdue).sort(tkSortTasks);
+  const myToday = mine.filter(t => !tkIsOverdue(t) && (t.due === today || t.status === 'doing')).sort(tkSortTasks);
+  const teamOverdue = open.filter(t => tkIsOverdue(t) && t.assignee !== me).length;
+  const unassigned = open.filter(t => !t.assignee).length;
+  const row = t => `<div class="tk-today-row">
+      <button class="tk-check" onclick="tkToggleDone('${t.id}')" aria-label="完了">✓</button>
+      <span class="t" onclick="tkOpenTaskModal('${t.id}')">${t.status === 'doing' ? '▶ ' : ''}${tkEsc(t.title)}</span>
+      <span style="font-size:11px;color:${tkIsOverdue(t) ? 'var(--danger)' : 'var(--text-muted)'};flex-shrink:0">${t.dueTime || (t.due && t.due !== today ? tkShortDate(t.due) : '')}</span>
+    </div>`;
+  let html = '<div class="card"><div class="card-title">今日やること</div>';
+  html += `<div class="tk-today-sec"><div class="h">📅 今日の予定</div>${evs.length ? evs.map(e => `<div class="tk-today-row"><span class="tm">${tkEsc(e.start || '終日')}</span><span class="t" onclick="tkOpenEventModal('${e.id}')">${tkEsc(e.title)}${e.place ? ' <span style="color:var(--text-muted);font-size:11px">📍' + tkEsc(e.place) + '</span>' : ''}</span></div>`).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">予定はありません</div>'}</div>`;
+  if (myOverdue.length) html += `<div class="tk-today-sec"><div class="h danger">⚠️ 期限切れ（${myOverdue.length}件）</div>${myOverdue.map(row).join('')}</div>`;
+  html += `<div class="tk-today-sec"><div class="h">✅ 今日のタスク</div>${myToday.length ? myToday.map(row).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">今日が期限のタスクはありません</div>'}</div>`;
+  if (teamOverdue || unassigned) {
+    html += `<div class="tk-today-team" onclick="TK.filter='people';openTasksScreen('tasks')">👥 ${[teamOverdue ? `ほかの人の期限切れ ${teamOverdue}件` : '', unassigned ? `担当者未定 ${unassigned}件` : ''].filter(Boolean).join('／')} → 確認する</div>`;
+  }
+  html += `<div class="tk-today-foot">
+      <button onclick="TK.filter='mine';openTasksScreen('tasks')">✅ タスク一覧</button>
+      <button onclick="openTasksScreen('cal')">📅 カレンダー</button>
+      <button onclick="tkOpenTaskModal()">＋ タスク追加</button>
+    </div></div>`;
+  box.innerHTML = html;
+  tkUpdateBadges();
+}
+
+// ── 件数バッジ（自分の期限切れ＋今日期限の未完了） ──
+function tkUpdateBadges() {
+  const me = tkMe();
+  const today = tkToday();
+  const n = TK.loaded ? tkTaskList().filter(t => t.status !== 'done' && t.assignee === me && t.due && t.due <= today).length : 0;
+  const set = el => { if (!el) return; el.textContent = n > 99 ? '99+' : String(n); el.style.display = n ? 'flex' : 'none'; };
+  set(document.getElementById('home-tk-badge'));
+  const sb = document.querySelector('#side-nav .side-nav-item[data-mode="tasks"] .side-nav-badge');
+  if (sb) { sb.textContent = n ? String(n) : ''; sb.style.display = n ? '' : 'none'; }
+}
+
+// ── パソコン幅の左メニューに「タスク・予定」を追加（全員に表示） ──
+(function tkPatchSideNav() {
+  const ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="8 15 11 18 16 13"/></svg>';
+  const add = () => {
+    const side = document.getElementById('side-nav');
+    if (!side || side.querySelector('[data-mode="tasks"]')) return;
+    const home = side.querySelector('.side-nav-item[data-mode="home"]');
+    if (!home) return;
+    home.insertAdjacentHTML('afterend', `<button type="button" class="side-nav-item" data-mode="tasks" onclick="openTasksScreen()">${ICON}<span>タスク・予定</span><span class="side-nav-badge" style="display:none"></span></button>`);
+    tkUpdateBadges();
+  };
+  if (typeof buildSideNav === 'function') {
+    const orig = buildSideNav;
+    window.buildSideNav = buildSideNav = function () { const r = orig.apply(this, arguments); add(); return r; };
+  }
+  if (typeof syncSideNav === 'function') {
+    const origSync = syncSideNav;
+    window.syncSideNav = syncSideNav = function () {
+      const r = origSync.apply(this, arguments);
+      const item = document.querySelector('#side-nav .side-nav-item[data-mode="tasks"]');
+      if (item) {
+        const onTasks = (typeof currentMode === 'undefined' || currentMode === 'biz') && !!document.getElementById('screen-tasks')?.classList.contains('active');
+        item.classList.toggle('active', onTasks);
+      }
+      return r;
+    };
+  }
+  add();
+  document.addEventListener('DOMContentLoaded', () => setTimeout(add, 0));
+  window.addEventListener('load', () => setTimeout(add, 0));
 })();
 </script>
 
