@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28m">
+<meta name="app-build" content="2026-09-28o">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -18088,6 +18088,33 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
 .tk-cl-edit { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
 .tk-cl-edit input { flex:1; min-width:0; box-sizing:border-box; padding:8px 10px; font-size:16px; font-family:inherit; border:1.5px solid var(--border); border-radius:8px; }
 .tk-cl-edit button { flex-shrink:0; width:32px; height:32px; border:1.5px solid var(--border); border-radius:8px; background:#fff; color:var(--text-sub); font-size:16px; cursor:pointer; }
+.tk-side { display:none; }
+@media (min-width:1280px) {
+  .tk-wide { display:grid; grid-template-columns:minmax(0, 760px) 360px; gap:24px; align-items:start; }
+  .tk-side { display:block; position:sticky; top:12px; }
+}
+.tk-stat-row { display:flex; align-items:center; gap:6px; padding:6px 0; border-bottom:1px dashed var(--border); }
+.tk-stat-row:last-child { border-bottom:none; }
+.tk-stat-row .lbl { width:36px; font-size:12px; font-weight:700; color:var(--text-sub); }
+.tk-stat { flex:1; text-align:center; font-size:11px; color:var(--text-sub); background:var(--surface); border-radius:8px; padding:5px 2px; }
+.tk-stat b { display:block; font-size:17px; color:var(--text); }
+.tk-stat.doing b { color:#0f766e; }
+.tk-stat.done b { color:#16a34a; }
+.tk-side-day { font-size:11px; font-weight:700; color:var(--text-sub); margin:8px 0 2px; }
+.tk-side-day.today { color:#0f766e; }
+.tk-side-ev { display:flex; gap:8px; padding:5px 0; font-size:13px; cursor:pointer; }
+.tk-side-ev .tm { flex-shrink:0; width:44px; font-size:12px; font-weight:700; color:#0f766e; }
+.tk-side-ev .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tk-side-empty { font-size:12px; color:var(--text-muted); padding:4px 0; }
+.tk-side-link { margin-top:8px; background:none; border:none; padding:0; color:var(--gold-dark); font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+.tk-side-person { padding:7px 0; border-bottom:1px dashed var(--border); cursor:pointer; }
+.tk-side-person:last-of-type { border-bottom:none; }
+.tk-side-person .h { display:flex; justify-content:space-between; gap:6px; font-size:13px; }
+.tk-side-person .n { font-weight:700; }
+.tk-side-person .c { font-size:11px; color:var(--text-sub); }
+.tk-side-person .now { font-size:12px; color:var(--text-muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tk-side-person .now.on { color:#0f766e; font-weight:600; }
+.tk-side-un { margin-top:8px; padding:7px 10px; border-radius:8px; background:#fffbeb; border:1px solid #fcd34d; color:#92400e; font-size:12px; cursor:pointer; }
 .tk-notify { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 12px; padding:9px 12px; border-radius:10px; background:#e6f5f3; border:1px solid #8fcfc9; color:#1f5f5a; font-size:12px; line-height:1.5; }
 .card .tk-notify { margin:0 16px 12px; }
 .tk-notify button { flex-shrink:0; padding:7px 10px; font-size:12px; font-weight:700; border:1.5px solid #0f766e; border-radius:8px; background:#fff; color:#0f766e; cursor:pointer; font-family:inherit; }
@@ -18269,9 +18296,69 @@ async function renderTasksScreen(noFetch) {
       <button class="tab-switch-btn ${TK.tab==='tasks'?'active':''}" onclick="tkSetTab('tasks')">✅ タスク</button>
       <button class="tab-switch-btn ${TK.tab==='cal'?'active':''}" onclick="tkSetTab('cal')">📅 予定（カレンダー）</button>
     </div>`;
-  el.innerHTML = head + tkNotifyBannerHtml() + (TK.tab === 'cal' ? tkCalHtml() : tkTasksHtml());
+  if (TK.tab === 'cal') {
+    el.innerHTML = head + tkNotifyBannerHtml() + tkCalHtml();
+  } else {
+    // パソコン幅（1280px以上）では左にタスク一覧、右に「状態の件数・予定・みんなの状況」を並べる。
+    // それより狭い幅では右側（tk-side）は表示せず、今まで通り1列のまま
+    el.innerHTML = `<div class="tk-wide"><div class="tk-main">${head}${tkNotifyBannerHtml()}${tkTasksHtml()}</div><aside class="tk-side">${tkSideHtml()}</aside></div>`;
+  }
   tkUpdateBadges();
   if (typeof syncSideNav === 'function') syncSideNav();
+}
+
+// ── パソコン幅の右側パネル ──
+function tkSideHtml() {
+  const me = tkMe();
+  const today = tkToday();
+  const all = tkTaskList();
+  const isToday = ms => ms && tkYmd(new Date(ms)) === today;
+  const counts = list => ({
+    todo: list.filter(t => t.status !== 'done' && t.status !== 'doing').length,
+    doing: list.filter(t => t.status === 'doing').length,
+    done: list.filter(t => t.status === 'done' && isToday(t.doneAt)).length,
+  });
+  const mine = counts(all.filter(t => tkInvolved(t, me)));
+  const team = counts(all);
+  const statRow = (label, c) => `
+    <div class="tk-stat-row"><span class="lbl">${label}</span>
+      <span class="tk-stat"><b>${c.todo}</b>未着手</span>
+      <span class="tk-stat doing"><b>${c.doing}</b>作業中</span>
+      <span class="tk-stat done"><b>${c.done}</b>今日完了</span>
+    </div>`;
+
+  // 今日から7日分の予定
+  const days = Array.from({ length: 7 }, (_, i) => tkAddDays(today, i));
+  const evHtml = days.map(day => {
+    const evs = tkEventsOn(day);
+    if (!evs.length) return '';
+    return `<div class="tk-side-day ${day === today ? 'today' : ''}">${day === today ? '今日 ' : ''}${tkShortDate(day)}</div>` +
+      evs.map(e => `<div class="tk-side-ev" onclick="tkOpenEventModal('${e.id}')"><span class="tm">${tkEsc(e.start || '終日')}</span><span class="t">${tkEsc(e.title)}</span></div>`).join('');
+  }).join('') || '<div class="tk-side-empty">今週の予定はありません</div>';
+
+  // みんなの状況（作業中のタスクと残り件数）
+  const open = all.filter(t => t.status !== 'done');
+  const emails = tkMemberEmails();
+  const peopleHtml = emails.map(e => {
+    const list = open.filter(t => tkInvolved(t, e));
+    const doing = list.filter(t => t.status === 'doing' && (t.doingBy === e || t.assignee === e));
+    const od = list.filter(tkIsOverdue).length;
+    return `<div class="tk-side-person" onclick="tkSetFilter('people')">
+      <div class="h"><span class="n">${tkEsc(tkName(e))}${e === me ? '（自分）' : ''}</span>
+        <span class="c">残り${list.length}件${od ? `・<b style="color:var(--danger)">期限切れ${od}</b>` : ''}</span></div>
+      <div class="now ${doing.length ? 'on' : ''}">${doing.length ? '▶ ' + tkEsc(doing.map(t => t.title).join('、')) : '作業中のタスクなし'}</div>
+    </div>`;
+  }).join('');
+  const un = open.filter(t => !t.assignee).length;
+
+  return `
+    <div class="card"><div class="card-title">タスクの状態</div><div style="padding:0 16px 14px">
+      ${statRow('自分', mine)}${statRow('全員', team)}
+    </div></div>
+    <div class="card"><div class="card-title">今週の予定</div><div style="padding:0 16px 12px">${evHtml}
+      <button class="tk-side-link" onclick="tkSetTab('cal')">カレンダーを開く →</button></div></div>
+    <div class="card"><div class="card-title">みんなの状況</div><div style="padding:0 16px 12px">${peopleHtml}
+      ${un ? `<div class="tk-side-un" onclick="tkSetFilter('all')">🙋 担当者未定のタスク ${un}件</div>` : ''}</div></div>`;
 }
 
 // ── タスク一覧 ──
@@ -18343,8 +18430,8 @@ function tkItemHtml(t, compact) {
   if (done && t.doneBy) who = `<div class="tk-who done">✅ ${tkEsc(tkName(t.doneBy))}さんが ${tkStamp(t.doneAt)} に完了</div>`;
   else if (doing && t.doingBy) who = `<div class="tk-who">▶ ${tkEsc(tkName(t.doingBy))}さんが作業中（${tkStamp(t.doingAt)}〜）</div>`;
   const startBtn = done || compact ? '' : doing
-    ? `<button class="tk-start stop" onclick="tkToggleDoing('${t.id}')">中断</button>`
-    : `<button class="tk-start" onclick="tkToggleDoing('${t.id}')">着手</button>`;
+    ? `<button class="tk-start stop" onclick="tkToggleDoing('${t.id}')">作業中断</button>`
+    : `<button class="tk-start" onclick="tkToggleDoing('${t.id}')">作業開始</button>`;
   return `<div class="tk-item ${cls}">
     <button class="tk-check ${done ? 'on' : ''}" onclick="tkToggleDone('${t.id}')" aria-label="完了">✓</button>
     <div class="tk-body" onclick="tkToggleExpand('${t.id}')">
