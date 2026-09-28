@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-29b">
+<meta name="app-build" content="2026-09-29f">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -4125,7 +4125,23 @@ function getConsignNewSeenAt() {
   } catch (e) { return Date.now(); }
 }
 let _consignNewSince = getConsignNewSeenAt(); // この画面で「新しい」と表示する基準の日時
-function isConsignNew(m) { return (m.createdAt || 0) > _consignNewSince; }
+// 要望「一度開いたら消えてしまうので、ある期間は残しておきたい」への対応。行の色・NEWの印・
+// 取引先カードの「新規〇件」は、追加されてからこの日数の間は（開いて見た後も）表示し続ける。
+// しばらく委託リストを開かなかった場合は、その間に追加された分もまだ見ていないので「新しい」のまま出す。
+// タブの赤い数字（未確認の件数）だけは、今まで通り委託リストを開いた時点で消える。
+// 要望「毎週月曜日の商談で委託にするか決めているので1週間にしたい。月曜日以降に委託にすることもある」
+// への対応で7日間にした（追加した日ごとに1週間なので、週の途中で追加した分も丸1週間残る）。
+// 月曜日の商談分と、その後に追加した分を見分けられるよう、NEWの印には追加した日（例：9/28(月)）も添える。
+const CONSIGN_NEW_KEEP_DAYS = 7;
+function consignAddedDayLabel(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()}(${['日','月','火','水','木','金','土'][d.getDay()]})`;
+}
+function isConsignNew(m) {
+  const keepFrom = Date.now() - CONSIGN_NEW_KEEP_DAYS * 86400000;
+  return (m.createdAt || 0) > Math.min(_consignNewSince, keepFrom);
+}
 function markConsignNewSeen() {
   _consignNewSince = getConsignNewSeenAt();
   try { localStorage.setItem(CONSIGN_NEW_SEEN_KEY, String(Date.now())); } catch (e) {}
@@ -7399,6 +7415,13 @@ function renderWhConsignClientItemsList(idx) {
   let filtered = qNorm ? holding.filter(m => normalizeModelStr(consignItemModelLive(m)).includes(qNorm)) : holding;
   if (activeSub) filtered = filtered.filter(m => (subOf(m) || '未分類') === activeSub);
   const groups = consignModelGroupsOf(filtered);
+  // 要望「NEWが複数あると、ぱっと見でどれが最新か分からない」への対応。この取引先で一番最近
+  // 委託に追加した日（同じ日に何回か追加した場合はその日の分すべて）だけ背景を緑にする。
+  // それより前の「NEW」（1週間以内）は背景を白に戻し、緑の線・NEW・納品書No.だけ残す。
+  const dayKeyOf = ms => { const d = new Date(ms || 0); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
+  const newestNew = holding.filter(isConsignNew).reduce((mx, m) => Math.max(mx, m.createdAt || 0), 0);
+  const latestDayKey = newestNew ? dayKeyOf(newestNew) : null;
+  const isLatestNew = m => !!latestDayKey && isConsignNew(m) && dayKeyOf(m.createdAt) === latestDayKey;
   const countEl = document.getElementById('wh-consign-client-search-count-' + idx);
   if (countEl) countEl.textContent = q ? `${groups.length}件見つかりました` : '';
   if (!groups.length) {
@@ -7436,8 +7459,8 @@ function renderWhConsignClientItemsList(idx) {
           </div>` : ''}`;
       } else {
         const lines = items.map(m => `
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px dashed var(--border);font-size:12px">
-            <span style="min-width:120px;color:var(--text)">${isConsignNew(m) ? '<span class="wh-new-tag" style="margin:0 6px 0 0">NEW</span>' : ''}${fmtDateJP(m.date)}に預けた分　<b>${m.qty}個</b>${m.memo ? `<span style="color:var(--text-muted)">／${escapeHtmlMain(m.memo)}</span>` : ''}${m.slipNo ? `<span style="color:#0f766e">／納品書 No.${escapeHtmlMain(m.slipNo)} から</span>` : ''}</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px ${isLatestNew(m) ? '8px' : '0'};border-top:1px dashed var(--border);font-size:12px;${isLatestNew(m) ? 'background:#d1fae5;border-radius:6px;' : ''}">
+            <span style="min-width:120px;color:var(--text)">${isConsignNew(m) ? `<span class="wh-new-tag" style="margin:0 6px 0 0">NEW ${consignAddedDayLabel(m.createdAt)}</span>` : ''}${fmtDateJP(m.date)}に預けた分　<b>${m.qty}個</b>${m.memo ? `<span style="color:var(--text-muted)">／${escapeHtmlMain(m.memo)}</span>` : ''}${m.slipNo ? `<span style="color:#0f766e">／納品書 No.${escapeHtmlMain(m.slipNo)} から</span>` : ''}</span>
             ${costInput(m)}
             ${moreOpen ? `<span style="display:flex;gap:6px;margin-left:auto">
               ${btn('精算', `openSettleConsign('${m._key}')`)}${btn('返却', `returnConsign('${m._key}')`)}${btn('数量を編集', `openEditConsignQty('${m._key}')`)}
@@ -7456,14 +7479,14 @@ function renderWhConsignClientItemsList(idx) {
     const newQty = newItems.reduce((t, m) => t + (m.qty || 0), 0);
     const newSlipNos = Array.from(new Set(newItems.map(m => m.slipNo).filter(Boolean)));
     return `
-      <div style="border-bottom:1px solid var(--border);${pendingQty > 0 ? 'background:#fff8e1;' : newQty > 0 ? 'background:#ecfdf5;box-shadow:inset 3px 0 0 #10b981;' : ''}">
+      <div style="border-bottom:1px solid var(--border);${pendingQty > 0 ? 'background:#fff8e1;' : newItems.some(isLatestNew) ? 'background:#ecfdf5;box-shadow:inset 3px 0 0 #10b981;' : newQty > 0 ? 'box-shadow:inset 3px 0 0 #10b981;' : ''}">
         <div onclick="toggleWhConsignModelGroup(${idx}, '${g.gk}')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 4px 9px 8px;cursor:pointer">
-          <div style="min-width:0;flex:1;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(consignItemModelLive(items[0]))}${newQty > 0 ? `<span class="wh-new-tag">NEW${items.length > 1 ? ' +' + newQty + '個' : ''}</span>` : ''}${newSlipNos.length ? `<span class="wh-slip-from">納品書 No.${escapeHtmlMain(newSlipNos.join('・'))} から</span>` : ''}</div>
+          <div style="min-width:0;flex:1;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(consignItemModelLive(items[0]))}${newQty > 0 ? `<span class="wh-new-tag">NEW ${Array.from(new Set(newItems.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).map(m => consignAddedDayLabel(m.createdAt)))).join('・')}${items.length > 1 ? ' +' + newQty + '個' : ''}</span>` : ''}${newSlipNos.length ? `<span class="wh-slip-from">納品書 No.${escapeHtmlMain(newSlipNos.join('・'))} から</span>` : ''}</div>
           ${pendingQty > 0 ? `<span style="flex-shrink:0;font-size:11px;font-weight:700;color:#b8860b">⏳ ${pendingQty}個 ${pendingLabel}申請中</span>` : ''}
           <span style="flex-shrink:0;font-size:13px;color:var(--text)">${g.qty}個</span>
           <span style="flex-shrink:0;color:var(--text-muted);font-size:14px;transition:transform .15s;${isOpen ? 'transform:rotate(90deg)' : ''}">›</span>
         </div>
-        ${isOpen ? `<div style="padding:4px 4px 12px">${pendingQty > 0 ? `<div style="font-size:11.5px;font-weight:700;color:#b8860b;margin-bottom:8px">このうち${pendingQty}個は取引先から${pendingLabel}の申請中です（確認すると正式にお預かり数から引かれます）</div>` : ''}${detail}</div>` : ''}
+        ${isOpen ? `<div style="padding:4px 4px 12px;${items.length > 1 && newItems.some(isLatestNew) ? 'background:#fff;' : ''}">${pendingQty > 0 ? `<div style="font-size:11.5px;font-weight:700;color:#b8860b;margin-bottom:8px">このうち${pendingQty}個は取引先から${pendingLabel}の申請中です（確認すると正式にお預かり数から引かれます）</div>` : ''}${detail}</div>` : ''}
       </div>`;
   }).join('');
 }
