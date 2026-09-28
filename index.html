@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-29g">
+<meta name="app-build" content="2026-09-29i">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -148,11 +148,30 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
 .buyback-quick-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:12px; padding:8px 12px; border-radius:10px; border:1.2px solid var(--border); background:var(--white); font-size:12.5px; color:var(--text-sub); }
 .buyback-quick-bar.stale { border-color:#f59e0b; color:#b45309; background:#fffbeb; }
 .buyback-quick-btn { align-items:center; gap:4px; padding:6px 12px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--white); color:var(--text); cursor:pointer; white-space:nowrap; }
-/* 買取価格の検索結果：パソコンの広い画面では、商品ごとのカードを横に複数並べる */
+/* 買取価格：パソコン幅では左に検索と結果、右に調べた商品の履歴 */
+.bb-right { margin-top:4px; }
 @media (min-width:1024px) {
-  #buyback-search-results { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:10px; align-items:start; padding:0 !important; }
-  #buyback-search-results > div { margin-top:0 !important; background:var(--white) !important; }
+  .bb-wide { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; align-items:start; }
+  .bb-right { margin-top:0; position:sticky; top:calc(var(--side-nav-top, 60px) + 12px); max-height:calc(100vh - var(--side-nav-top, 60px) - 24px); overflow-y:auto; }
+  #buyback-search-results { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:10px; align-items:start; padding:0 !important; }
+  #buyback-search-results > .bb-result > div:first-child { margin-top:0 !important; background:var(--white) !important; }
 }
+.bb-result { margin-top:6px; }
+.bb-result > div:first-child { border-bottom-left-radius:0 !important; border-bottom-right-radius:0 !important; }
+.bb-keep-btn { display:block; width:100%; padding:8px; font-size:12px; font-weight:700; border:1.2px solid var(--border); border-top:none; border-radius:0 0 8px 8px; background:var(--white); color:#0f766e; cursor:pointer; font-family:inherit; }
+.bb-keep-btn.on { background:#e6f5f3; color:#1f5f5a; }
+@media (min-width:1024px) { .bb-result { margin-top:0; } }
+.bb-hist-row { display:flex; align-items:center; gap:10px; padding:9px 4px; border-bottom:1px solid var(--border); cursor:pointer; border-radius:6px; }
+.bb-hist-row:last-child { border-bottom:none; }
+.bb-hist-row:hover { background:var(--surface); }
+.bb-hist-main { flex:1; min-width:0; }
+.bb-hist-name { font-size:13px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bb-hist-sub { font-size:11px; color:var(--text-muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bb-hist-top { flex-shrink:0; text-align:right; line-height:1.3; }
+.bb-hist-top b { display:block; font-size:14px; color:#0f766e; }
+.bb-hist-top span { font-size:11px; color:var(--text-sub); }
+.bb-hist-x { flex-shrink:0; width:24px; height:24px; border:none; background:none; color:var(--text-muted); font-size:13px; cursor:pointer; border-radius:6px; }
+.bb-hist-x:hover { background:#fee2e2; color:#b91c1c; }
 .wh-bb { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin-top:6px; padding:5px 8px; border-radius:8px; background:#f0faf9; font-size:11.5px; color:var(--text-sub); }
 .wh-bb.muted { background:none; padding:0; color:var(--text-muted); font-size:11px; }
 .wh-bb-lbl { font-weight:700; color:#1f5f5a; }
@@ -2262,15 +2281,32 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <span id="buyback-quick-text">📊 買取価格CSV：確認中…</span>
     <label id="buyback-quick-btn" class="buyback-quick-btn" style="display:none">📥 CSVを取り込む<input type="file" accept=".csv" onchange="handleBuybackQuickCsvSelected(event)" style="display:none"></label>
   </div>
+  <!-- 要望「型番を全部入力して調べるので、パソコンで広げると結果が1件だけ左に出て右側が空く。
+       左半分で検索、右半分に検索した履歴を残したい」への対応。パソコン幅（1024px以上）では左に
+       検索と結果、右に「調べた商品の履歴」（最高値つき・押すと左に全社の価格を出し直す）を並べる。
+       履歴はこの端末のブラウザに最大30件まで残す（スマホでは結果の下に表示） -->
+  <div class="bb-wide">
+  <div class="bb-left">
   <div class="card">
     <div class="card-title">買取価格を調べる</div>
     <div class="field">
       <div class="field-label">JANコードまたは商品名で検索</div>
       <input type="text" id="buyback-search-input" placeholder="JANコード・商品名を入力" oninput="renderBuybackSearchResults()">
     </div>
-    <div id="buyback-search-status" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
+    <div id="buyback-search-status" style="font-size:12px;color:var(--text-muted);margin:6px 16px 14px"></div>
   </div>
   <div id="buyback-search-results" style="padding:0 16px 16px"></div>
+  </div>
+  <aside class="bb-right">
+    <div class="card" style="margin-bottom:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 0">
+        <div class="card-title" style="padding:0;margin:0">調べた商品の履歴</div>
+        <button type="button" onclick="clearBuybackHistory()" style="background:none;border:none;padding:0;font-size:11px;color:var(--text-muted);text-decoration:underline;cursor:pointer">履歴をすべて消す</button>
+      </div>
+      <div id="buyback-history" style="padding:8px 16px 14px"></div>
+    </div>
+  </aside>
+  </div>
 </div>
 
 <!-- 請求書（freee）としてまとめるモーダル：選択した納品書（通常／精算分を問わない）の一覧と
@@ -3938,6 +3974,8 @@ function showInvScreen(name) {
     const quickBtn = document.getElementById('buyback-quick-btn');
     if (quickBtn) quickBtn.style.display = isAdmin() ? 'inline-flex' : 'none';
     updateBuybackQuickStatus();
+    renderBuybackHistory();
+    loadBuybackPriceRefIfNeeded().then(renderBuybackHistory);
     const searchInput = document.getElementById('buyback-search-input');
     if (searchInput) searchInput.value = '';
     const resultsEl = document.getElementById('buyback-search-results');
@@ -9796,7 +9834,86 @@ async function renderBuybackSearchResults() {
       ? `${matched.length}件見つかりました${matched.length > LIMIT ? '（上位' + LIMIT + '件を表示）' : ''}`
       : '一致するデータが見つかりませんでした';
   }
-  resultsEl.innerHTML = shown.map(([jan, rec]) => formatBuybackRecordHtml(jan, rec)).join('');
+  // 要望「自動で履歴に入ると、残したくないものまで残る」への対応。履歴には、結果のカードの
+  // 「📌 履歴に残す」ボタンを押したものだけを入れる
+  const inHist = new Set(loadBuybackHistory().map(h => h.jan));
+  resultsEl.innerHTML = shown.map(([jan, rec]) => `<div class="bb-result">${formatBuybackRecordHtml(jan, rec)}
+    <button type="button" class="bb-keep-btn ${inHist.has(jan) ? 'on' : ''}" data-jan="${escapeHtmlMain(jan)}" onclick="toggleBuybackKeep('${escapeHtmlMain(jan)}')">${inHist.has(jan) ? '✓ 履歴に残しました（押すと外す）' : '📌 履歴に残す'}</button></div>`).join('');
+}
+function toggleBuybackKeep(jan) {
+  const data = window._buybackPriceRef || {};
+  if (loadBuybackHistory().some(h => h.jan === jan)) removeBuybackHistory(jan);
+  else if (data[jan]) addBuybackHistory(jan, data[jan]);
+  const inHist = loadBuybackHistory().some(h => h.jan === jan);
+  document.querySelectorAll('.bb-keep-btn').forEach(b => {
+    if (b.dataset.jan !== jan) return;
+    b.classList.toggle('on', inHist);
+    b.textContent = inHist ? '✓ 履歴に残しました（押すと外す）' : '📌 履歴に残す';
+  });
+}
+
+// ── 買取価格：調べた商品の履歴（この端末のブラウザに保存） ──
+const BB_HIST_KEY = 'kanetaka_buyback_history';
+const BB_HIST_MAX = 30;
+function loadBuybackHistory() {
+  try { return JSON.parse(localStorage.getItem(BB_HIST_KEY) || '[]') || []; } catch (e) { return []; }
+}
+function saveBuybackHistory(list) {
+  try { localStorage.setItem(BB_HIST_KEY, JSON.stringify(list.slice(0, BB_HIST_MAX))); } catch (e) {}
+}
+function addBuybackHistory(jan, rec) {
+  const list = loadBuybackHistory().filter(h => h.jan !== jan);
+  list.unshift({ jan, n: rec.n || '', q: (rec.q || []).slice(0, 2), t: Date.now() });
+  saveBuybackHistory(list);
+  renderBuybackHistory();
+}
+function removeBuybackHistory(jan) {
+  saveBuybackHistory(loadBuybackHistory().filter(h => h.jan !== jan));
+  renderBuybackHistory();
+  // 左側の結果に同じ商品が出ていれば、ボタンの表示も戻す
+  document.querySelectorAll('.bb-keep-btn').forEach(b => {
+    if (b.dataset.jan !== jan) return;
+    b.classList.remove('on');
+    b.textContent = '📌 履歴に残す';
+  });
+}
+async function clearBuybackHistory() {
+  if (!loadBuybackHistory().length) return;
+  const ok = await showConfirm('調べた商品の履歴をすべて消しますか？（この端末の履歴だけが消えます）');
+  if (!ok) return;
+  saveBuybackHistory([]);
+  renderBuybackHistory();
+}
+// 履歴の行を押したとき：その商品を左側に出し直す（最新の取り込みデータで表示する）
+async function showBuybackHistoryItem(jan) {
+  const input = document.getElementById('buyback-search-input');
+  if (!input) return;
+  input.value = jan;
+  await renderBuybackSearchResults();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function renderBuybackHistory() {
+  const el = document.getElementById('buyback-history');
+  if (!el) return;
+  const list = loadBuybackHistory();
+  if (!list.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:10px 0">検索結果の「📌 履歴に残す」を押した商品が、ここに新しい順に残ります</div>'; return; }
+  const data = window._buybackPriceRef || null;
+  const today = new Date().toDateString();
+  el.innerHTML = list.map(h => {
+    // 取り込み済みの最新データがあればそちらの価格を使う（履歴に残した時点より新しいCSVを取り込んだ場合）
+    const q = (data && data[h.jan] && data[h.jan].q) ? data[h.jan].q : (h.q || []);
+    const top = q[0], second = q[1];
+    const d = new Date(h.t);
+    const when = d.toDateString() === today ? `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` : `${d.getMonth() + 1}/${d.getDate()}`;
+    return `<div class="bb-hist-row" onclick="showBuybackHistoryItem('${escapeHtmlMain(h.jan)}')">
+      <div class="bb-hist-main">
+        <div class="bb-hist-name">${escapeHtmlMain(h.n || ('JAN:' + h.jan))}</div>
+        <div class="bb-hist-sub">${second ? `2番目 ${escapeHtmlMain(second[0])} ¥${Number(second[1]).toLocaleString('ja-JP')}　` : ''}${when}</div>
+      </div>
+      <div class="bb-hist-top">${top ? `<b>¥${Number(top[1]).toLocaleString('ja-JP')}</b><span>${escapeHtmlMain(top[0])}</span>` : '<span>データなし</span>'}</div>
+      <button type="button" class="bb-hist-x" onclick="event.stopPropagation();removeBuybackHistory('${escapeHtmlMain(h.jan)}')" aria-label="履歴から消す">✕</button>
+    </div>`;
+  }).join('');
 }
 
 // 型番欄に入力があるたびに呼ばれる。（ネットワーク不要な）既存商品との一致を即座に確認し、
