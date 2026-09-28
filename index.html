@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28v">
+<meta name="app-build" content="2026-09-28w">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -113,6 +113,15 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
 .wh-sec-h .hide-sp { display:none; }
 @media (min-width:700px) { .wh-sec-h .hide-sp { display:inline; } }
 @media (min-width:1280px) { .wh-inv-bar { bottom:16px; } }
+/* 出荷管理：パソコン幅での2列表示 */
+@media (min-width:1280px) {
+  .pk-add-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:0 32px; }
+  .pk-add-mid-divider { display:none; }
+  .pk-add-grid > .pk-add-col > .field:first-of-type, .pk-add-grid > .pk-add-col > .pk-add-mid-divider + .field { padding-top:0 !important; }
+  .pk-ec-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.2fr); gap:16px; align-items:start; }
+  #pack-list-sp { display:grid; grid-template-columns:repeat(auto-fill, minmax(420px, 1fr)); gap:10px; align-items:start; }
+  #pack-list-sp > * { margin:0 !important; }
+}
 .wh-bb { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin-top:6px; padding:5px 8px; border-radius:8px; background:#f0faf9; font-size:11.5px; color:var(--text-sub); }
 .wh-bb.muted { background:none; padding:0; color:var(--text-muted); font-size:11px; }
 .wh-bb-lbl { font-weight:700; color:#1f5f5a; }
@@ -1675,6 +1684,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   <div id="packec-body-add" style="display:none">
     <div class="card">
       <div class="card-title">出荷リストに追加</div>
+      <!-- パソコン幅（1280px以上）では、左に商品の情報、右にお届け先の情報を並べる -->
+      <div class="pk-add-grid"><div class="pk-add-col">
       <div class="field">
         <div class="field-label">JANコード</div>
         <div style="margin-bottom:6px">
@@ -1711,7 +1722,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div class="field-label">数量</div>
         <input type="number" id="pack-qty-sp" placeholder="1" min="1">
       </div>
-      <div class="field-divider"></div>
+      </div><div class="pk-add-col">
+      <div class="field-divider pk-add-mid-divider"></div>
       <div class="field" style="padding-top:16px">
         <div class="field-label">お客様名</div>
         <input type="text" id="pack-customer-sp" placeholder="注文者名を入力">
@@ -1736,12 +1748,15 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div class="field-label">メモ（自由入力）</div>
         <input type="text" id="pack-memo-sp" placeholder="自由にメモを入力（任意）">
       </div>
+      </div></div>
       <div style="margin-top:12px">
         <button class="btn btn-gold" onclick="addPackItemSPAndSwitch()" style="width:100%">リストに追加する</button>
       </div>
     </div>
   </div>
   <div id="packec-body-ec" style="display:none">
+    <!-- パソコン幅（1280px以上）では、左に「記録フォーム・集計・本日の明細」、右に「日別・月別グラフ」を並べる -->
+    <div class="pk-ec-grid"><div class="pk-ec-col">
     <!-- EC売上を記録 -->
     <div class="card">
       <div class="card-title">EC売上を記録</div>
@@ -1785,6 +1800,11 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     </div>
     <!-- 販路別集計 -->
     <div id="ec-channel-summary" style="display:flex;gap:8px;margin-bottom:12px"></div>
+    <!-- 本日の明細 -->
+    <div style="font-size:13px;font-weight:700;color:#3a3a3a;margin-bottom:8px">本日の明細</div>
+    <div id="ec-list-sp"></div>
+    <div id="ec-empty-sp" style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px">本日の売上はまだありません</div>
+    </div><div class="pk-ec-col">
     <!-- 日別グラフ（◀▶で前月・翌月に切り替えられる） -->
     <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:12px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -1799,10 +1819,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div style="font-size:12px;font-weight:700;color:#3a3a3a;margin-bottom:8px">月別売上推移</div>
       <div id="ec-monthly-chart" style="overflow-x:auto"></div>
     </div>
-    <!-- 本日の明細 -->
-    <div style="font-size:13px;font-weight:700;color:#3a3a3a;margin-bottom:8px">本日の明細</div>
-    <div id="ec-list-sp"></div>
-    <div id="ec-empty-sp" style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px">本日の売上はまだありません</div>
+    </div></div>
   </div>
 </div>
 
