@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-29f">
+<meta name="app-build" content="2026-09-29g">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -145,6 +145,14 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
 .wh-new-chip { display:inline-block; margin-left:8px; padding:1px 8px; border-radius:999px; background:#d1fae5; color:#047857; font-size:11px; font-weight:700; vertical-align:middle; }
 .wh-new-tag { display:inline-block; margin-left:8px; padding:0 6px; border-radius:4px; background:#10b981; color:#fff; font-size:10px; font-weight:800; letter-spacing:.03em; vertical-align:middle; }
 .wh-slip-from { margin-left:8px; font-size:11px; font-weight:500; color:#0f766e; }
+.buyback-quick-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:12px; padding:8px 12px; border-radius:10px; border:1.2px solid var(--border); background:var(--white); font-size:12.5px; color:var(--text-sub); }
+.buyback-quick-bar.stale { border-color:#f59e0b; color:#b45309; background:#fffbeb; }
+.buyback-quick-btn { align-items:center; gap:4px; padding:6px 12px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--white); color:var(--text); cursor:pointer; white-space:nowrap; }
+/* 買取価格の検索結果：パソコンの広い画面では、商品ごとのカードを横に複数並べる */
+@media (min-width:1024px) {
+  #buyback-search-results { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:10px; align-items:start; padding:0 !important; }
+  #buyback-search-results > div { margin-top:0 !important; background:var(--white) !important; }
+}
 .wh-bb { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin-top:6px; padding:5px 8px; border-radius:8px; background:#f0faf9; font-size:11.5px; color:var(--text-sub); }
 .wh-bb.muted { background:none; padding:0; color:var(--text-muted); font-size:11px; }
 .wh-bb-lbl { font-weight:700; color:#1f5f5a; }
@@ -1286,6 +1294,21 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <button onclick="doLogout()" style="width:100%;padding:14px;background:none;border:1.5px solid #555555;border-radius:var(--radius-sm);color:#3a3a3a;font-size:15px;font-weight:600;cursor:pointer">ログアウト</button>
     </div>
   </div><div class="settings-col">
+    <!-- 買取価格データ（買取スキャナーのCSV）の取り込み：以前は「買取価格」画面にあったものを移した -->
+  <div class="card" id="buyback-import-card">
+    <div class="card-title">買取価格データの取り込み（管理者のみ）</div>
+    <div class="field">
+      <div class="field-label">買取スキャナーのCSVファイル</div>
+      <input type="file" id="buyback-csv-input" accept=".csv" onchange="handleBuybackCsvSelected(event)">
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px">JANコードごとに他社の買取価格が入ったCSVファイルを選択してください。価格は日々変わるため、新しくダウンロードするたびに何度でも取り込み直せます。同じJANコードのデータは最新の内容で置き換わるだけなので、二重に登録されることはありません。</div>
+    </div>
+    <div id="buyback-import-status" style="font-size:12.5px;color:var(--text-muted);margin-top:10px"></div>
+    <div id="buyback-import-progress-wrap" style="display:none;margin-top:8px">
+      <div style="background:var(--surface);border-radius:6px;overflow:hidden;height:8px">
+        <div id="buyback-import-progress-bar" style="height:100%;width:0%;background:var(--gold-dark);transition:width .2s"></div>
+      </div>
+    </div>
+  </div>
     <!-- 楽天の商品検索APIで商品写真を自動で付けるための、楽天のアプリIDとアクセスキー -->
     <div class="card settings-collapse">
       <div class="card-title settings-toggle" role="button" tabindex="0" onclick="toggleSettingsCard(this)" onkeydown="if(event.key==='Enter')toggleSettingsCard(this)"><span>商品写真の自動取得（楽天）</span><span class="settings-toggle-arrow">▼</span></div>
@@ -2232,19 +2255,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
      何度取り込んでも二重に登録されることはない（元々の商品登録・在庫（products／
      stockMoves）とは完全に別の場所に保存しており、そちらには一切影響しない）。 -->
 <div id="screen-inv-buyback" class="screen" style="display:none;padding-top:8px">
-  <div class="card" id="buyback-import-card" style="display:none">
-    <div class="card-title">買取価格データの取り込み（管理者のみ）</div>
-    <div class="field">
-      <div class="field-label">買取スキャナーのCSVファイル</div>
-      <input type="file" id="buyback-csv-input" accept=".csv" onchange="handleBuybackCsvSelected(event)">
-      <div style="font-size:11px;color:var(--text-muted);margin-top:6px">JANコードごとに他社の買取価格が入ったCSVファイルを選択してください。価格は日々変わるため、新しくダウンロードするたびに何度でも取り込み直せます。同じJANコードのデータは最新の内容で置き換わるだけなので、二重に登録されることはありません。</div>
-    </div>
-    <div id="buyback-import-status" style="font-size:12.5px;color:var(--text-muted);margin-top:10px"></div>
-    <div id="buyback-import-progress-wrap" style="display:none;margin-top:8px">
-      <div style="background:var(--surface);border-radius:6px;overflow:hidden;height:8px">
-        <div id="buyback-import-progress-bar" style="height:100%;width:0%;background:var(--gold-dark);transition:width .2s"></div>
-      </div>
-    </div>
+  <!-- 要望「買取価格の画面が横に伸びて見にくい／CSVの取り込みは設定でもいいのでは」への対応。
+       取り込み欄（説明つきの大きなカード）は「設定」に移し、この画面には最終取り込み日時と
+       「📥 CSVを取り込む」ボタンだけの細い帯を置く（毎日の取り込みはHOMEかここからすぐできる） -->
+  <div id="buyback-quick-bar" class="buyback-quick-bar">
+    <span id="buyback-quick-text">📊 買取価格CSV：確認中…</span>
+    <label id="buyback-quick-btn" class="buyback-quick-btn" style="display:none">📥 CSVを取り込む<input type="file" accept=".csv" onchange="handleBuybackQuickCsvSelected(event)" style="display:none"></label>
   </div>
   <div class="card">
     <div class="card-title">買取価格を調べる</div>
@@ -3919,8 +3935,9 @@ function showInvScreen(name) {
   }
   if (name === 'inv-buyback') {
     // CSV取り込みは管理者のみ（検索・閲覧は倉庫作業員も含め全員が利用できる）
-    const importCard = document.getElementById('buyback-import-card');
-    if (importCard) importCard.style.display = isAdmin() ? 'block' : 'none';
+    const quickBtn = document.getElementById('buyback-quick-btn');
+    if (quickBtn) quickBtn.style.display = isAdmin() ? 'inline-flex' : 'none';
+    updateBuybackQuickStatus();
     const searchInput = document.getElementById('buyback-search-input');
     if (searchInput) searchInput.value = '';
     const resultsEl = document.getElementById('buyback-search-results');
@@ -9531,6 +9548,50 @@ function handleBuybackCsvSelected(event) {
     }
   };
   reader.onerror = () => { if (statusEl) statusEl.textContent = 'ファイルの読み込みに失敗しました'; };
+  reader.readAsText(file, 'UTF-8');
+}
+
+// 買取価格画面の上の細い帯：最終取り込み日時の表示と、その場でのCSV取り込み
+async function updateBuybackQuickStatus() {
+  const el = document.getElementById('buyback-quick-text');
+  const bar = document.getElementById('buyback-quick-bar');
+  if (!el) return;
+  try {
+    const res = await fetch(authedUrl('/buybackImportMeta/lastImportedAt.json'));
+    const t = await res.json();
+    if (!t) { el.textContent = '📊 買取価格CSV：まだ取り込まれていません'; bar && bar.classList.add('stale'); return; }
+    const jst = ms => new Date(ms + 9 * 3600000).toISOString().slice(0, 10);
+    const stale = jst(t) !== jst(Date.now());
+    const str = new Date(t).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    el.textContent = `📊 買取価格CSV：最終取り込み ${str}${stale ? '（今日はまだ更新されていません）' : ''}`;
+    if (bar) bar.classList.toggle('stale', stale);
+  } catch (e) { el.textContent = '📊 買取価格CSV'; }
+}
+function handleBuybackQuickCsvSelected(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  const el = document.getElementById('buyback-quick-text');
+  const setText = t => { if (el) el.textContent = t; };
+  setText('📊 ファイルを読み込んでいます…');
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const records = buildBuybackRecordsFromCsv(parseCsvText(String(reader.result || '')));
+      const count = Object.keys(records).length;
+      if (!count) { setText('📊 取り込める行が見つかりませんでした。CSVの形式をご確認ください'); return; }
+      setText(`📊 ${count}件のデータを取り込みます…`);
+      await importBuybackRecords(records, (done, total) => setText(`📊 取り込み中… ${done}/${total}件`));
+      showToast(`買取価格CSVを取り込みました（${count}件）`);
+      updateBuybackQuickStatus();
+      if (typeof updateBuybackCsvStatus === 'function') updateBuybackCsvStatus();
+      if (document.getElementById('buyback-search-input')?.value.trim()) renderBuybackSearchResults();
+    } catch (e) {
+      console.error('買取価格CSV取り込みエラー（買取価格画面）', e);
+      setText('📊 取り込みに失敗しました：' + (e && e.message ? e.message : e));
+    }
+  };
+  reader.onerror = () => setText('📊 ファイルの読み込みに失敗しました');
   reader.readAsText(file, 'UTF-8');
 }
 
