@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-29i">
+<meta name="app-build" content="2026-09-29l">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -7811,6 +7811,13 @@ function toggleWhHistoryActions(key) {
   renderWhConsignHistorySection();
 }
 
+// 未請求カードで、中の商品を開いている取引先
+let _consignUninvOpen = new Set();
+function toggleConsignUninvClient(client) {
+  if (_consignUninvOpen.has(client)) _consignUninvOpen.delete(client); else _consignUninvOpen.add(client);
+  renderWhConsignHistorySection();
+}
+
 // 「未請求」欄の「すべて選択」／「選択を外す」：その取引先の未請求の商品をまとめて選択する
 function selectAllConsignUninvoiced(client, on) {
   (_whConsignHistoryFull || []).forEach(m => {
@@ -7910,12 +7917,19 @@ function renderWhConsignHistorySection() {
     if (!list.length) return '';
     const clientB64 = btoa(unescape(encodeURIComponent(client)));
     const allSelected = list.every(m => _consignInvoiceSelected.has(m._key));
-    return `<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:2px">
-        <span style="font-size:13px;font-weight:700;color:var(--text)">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${list.length}件・¥${list.reduce((sum, m) => sum + (m.amount || 0), 0).toLocaleString('ja-JP')}</span></span>
+    // 要望「未請求が常に開いていて下に伸びて見づらい」への対応。取引先ごとに1行（件数・金額）だけを
+    // 表示し、タップしたときだけ中の商品を開く。「すべて選択」は閉じたままでも押せる
+    const isOpen = _consignUninvOpen.has(client);
+    const selCount = list.filter(m => _consignInvoiceSelected.has(m._key)).length;
+    return `<div style="margin-bottom:8px;padding:8px 10px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa">
+      <div onclick="toggleConsignUninvClient(decodeURIComponent(escape(atob('${clientB64}'))))" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer">
+        <span style="display:flex;align-items:center;gap:6px;min-width:0">
+          <span style="flex-shrink:0;font-size:12px;color:var(--text-muted);transition:transform .15s;${isOpen ? 'transform:rotate(90deg)' : ''}">›</span>
+          <span style="font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${list.length}件・¥${list.reduce((sum, m) => sum + (m.amount || 0), 0).toLocaleString('ja-JP')}</span>${selCount && !isOpen ? `<span style="font-weight:700;color:#c2410c;font-size:11px">　${selCount}件選択中</span>` : ''}</span>
+        </span>
         <span onclick="event.stopPropagation(); selectAllConsignUninvoiced(decodeURIComponent(escape(atob('${clientB64}'))), ${allSelected ? 'false' : 'true'})" style="flex-shrink:0;font-size:11px;font-weight:700;color:#c2410c;text-decoration:underline;cursor:pointer">${allSelected ? '選択を外す' : 'すべて選択'}</span>
       </div>
-      ${list.map(renderHistoryRow).join('')}
+      ${isOpen ? `<div style="margin-top:6px">${list.map(renderHistoryRow).join('')}</div>` : ''}
     </div>`;
   };
 
@@ -18622,6 +18636,34 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
 .tk-f label { display:block; font-size:12px; font-weight:700; color:var(--text-sub); margin-bottom:5px; }
 .tk-f input[type=text], .tk-f input[type=date], .tk-f input[type=time], .tk-f select, .tk-f textarea { width:100%; box-sizing:border-box; padding:10px 12px; font-size:16px; font-family:inherit; border:1.5px solid var(--border); border-radius:10px; background:var(--white); color:var(--text); }
 .tk-f textarea { min-height:70px; resize:vertical; }
+.tk-f input.tk-time-in { width:100%; box-sizing:border-box; padding:10px 12px; font-size:16px; font-family:inherit; border:1.5px solid var(--border); border-radius:10px; letter-spacing:.05em; }
+.tk-time-wrap { position:relative; }
+.tk-f input.tk-time-in { cursor:pointer; font-weight:700; text-align:center; background:#f3f4f6; border-color:transparent; }
+.tk-f input.tk-time-in.active { background:#10b981; color:#fff; border-color:#10b981; }
+.tk-time-clear { position:absolute; right:6px; top:50%; transform:translateY(-50%); width:26px; height:26px; border:none; border-radius:50%; background:transparent; color:var(--text-muted); font-size:13px; cursor:pointer; }
+.tk-wheel-slot { margin:-4px 0 12px; }
+.tk-wheel { position:relative; display:flex; justify-content:center; align-items:stretch; gap:6px; height:200px; overflow:hidden; background:var(--white); border-radius:12px; }
+.tk-wband { position:absolute; left:8px; right:8px; top:80px; height:40px; border-radius:10px; background:#f3f4f6; pointer-events:none; }
+.tk-wcol { position:relative; width:84px; height:200px; overflow-y:scroll; scroll-snap-type:y mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch; -webkit-mask-image:linear-gradient(to bottom, transparent, #000 30%, #000 70%, transparent); mask-image:linear-gradient(to bottom, transparent, #000 30%, #000 70%, transparent); }
+.tk-wcol::-webkit-scrollbar { display:none; }
+.tk-wpad { height:80px; }
+.tk-witem { height:40px; line-height:40px; text-align:center; font-size:22px; color:#9ca3af; scroll-snap-align:center; cursor:pointer; font-variant-numeric:tabular-nums; user-select:none; }
+.tk-witem.sel { color:var(--text); font-weight:600; font-size:26px; }
+.tk-wsep { position:relative; align-self:center; font-size:22px; font-weight:700; color:var(--text); }
+.tk-wheel-foot { display:flex; justify-content:flex-end; margin-top:6px; }
+.tk-wheel-foot button { padding:7px 16px; font-size:13px; font-weight:700; border:none; border-radius:8px; background:#10b981; color:#fff; cursor:pointer; font-family:inherit; }
+.tk-switch { display:flex !important; align-items:center; gap:10px; font-size:14px !important; font-weight:700; color:var(--text) !important; cursor:pointer; }
+.tk-switch input { display:none; }
+.tk-switch .sw { position:relative; width:46px; height:28px; border-radius:14px; background:#9ca3af; transition:background .15s; flex-shrink:0; }
+.tk-switch .sw::after { content:''; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%; background:#fff; transition:left .15s; box-shadow:0 1px 3px rgba(0,0,0,.2); }
+.tk-switch input:checked + .sw { background:#10b981; }
+.tk-switch input:checked + .sw::after { left:21px; }
+.tk-f input.tk-time-in.bad { border-color:#dc2626; background:#fef2f2; }
+.tk-evv { border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+.tk-evv-row { display:flex; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); font-size:14px; }
+.tk-evv-row:last-child { border-bottom:none; }
+.tk-evv-row .k { flex-shrink:0; width:84px; font-size:12px; font-weight:700; color:var(--text-sub); padding-top:1px; }
+.tk-evv-row .v { flex:1; min-width:0; word-break:break-word; line-height:1.6; }
 .tk-row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .tk-mem-list { display:flex; flex-wrap:wrap; gap:6px; }
 .tk-mem-list label { display:inline-flex; align-items:center; gap:4px; padding:6px 10px; border:1.5px solid var(--border); border-radius:999px; font-size:13px; font-weight:600; color:var(--text); margin:0; cursor:pointer; }
@@ -18938,7 +18980,7 @@ function tkSideHtml() {
     const evs = tkEventsOn(day);
     if (!evs.length) return '';
     return `<div class="tk-side-day ${day === today ? 'today' : ''}">${day === today ? '今日 ' : ''}${tkShortDate(day)}</div>` +
-      evs.map(e => `<div class="tk-side-ev" onclick="tkOpenEventModal('${e.id}')"><span class="tm">${tkEsc(e.start || '終日')}</span><span class="t">${tkEsc(e.title)}</span></div>`).join('');
+      evs.map(e => `<div class="tk-side-ev" onclick="tkOpenEventView('${e.id}')"><span class="tm">${tkEsc(e.start || '終日')}</span><span class="t">${tkEsc(e.title)}</span></div>`).join('');
   }).join('') || '<div class="tk-side-empty">今週の予定はありません</div>';
 
   // みんなの状況（作業中のタスクと残り件数）
@@ -19377,9 +19419,10 @@ function tkOpenTaskModal(id, presetDue) {
     </div>
     <div class="tk-f" style="margin-top:-6px;font-size:11px;color:var(--text-muted)">「水〜木のどこかでやればいい」ときは、開始日を水曜・期限日を木曜にします。開始日を空けると期限日だけになります。</div>
     <div class="tk-row2">
-      <div class="tk-f"><label>期限の時刻（任意）</label><input type="time" id="tkf-time" value="${tkEsc(v.dueTime || '')}"></div>
+      <div class="tk-f"><label>期限の時刻（任意）</label>${tkTimeInputHtml('tkf-time', v.dueTime, 'なし', null, 'tk-wslot-task', true)}</div>
       <div class="tk-f"></div>
     </div>
+    <div class="tk-wheel-slot" id="tk-wslot-task" style="display:none"></div>
     <div class="tk-row2">
       <div class="tk-f"><label>優先度</label><select id="tkf-prio">${opt(TK_PRIO, v.priority || 'normal')}</select></div>
       <div class="tk-f"><label>繰り返し</label><select id="tkf-repeat">${opt(TK_REPEAT, v.repeat || 'none')}</select></div>
@@ -19422,7 +19465,7 @@ async function tkSaveTask(id) {
     detail: document.getElementById('tkf-detail').value.trim(),
     assignee: document.getElementById('tkf-assignee').value,
     due: document.getElementById('tkf-due').value,
-    dueTime: document.getElementById('tkf-time').value,
+    dueTime: tkNormTime(document.getElementById('tkf-time').value),
     startDate: document.getElementById('tkf-start').value || null,
     priority: document.getElementById('tkf-prio').value,
     repeat: document.getElementById('tkf-repeat').value,
@@ -19538,7 +19581,7 @@ function tkEvMembers(e) {
 }
 function tkEvRowHtml(e) {
   const meta = [tkEvMembers(e), e.place ? '📍' + e.place : ''].filter(Boolean).join('　');
-  return `<div class="tk-ev" onclick="tkOpenEventModal('${e.id}')">
+  return `<div class="tk-ev" onclick="tkOpenEventView('${e.id}')">
     <div class="tm">${tkEsc(tkEvTime(e))}</div>
     <div class="bd"><div class="t">${tkEsc(e.title)}</div><div class="m">${tkEsc(meta)}</div></div>
   </div>`;
@@ -19610,6 +19653,174 @@ function tkCalHtml() {
     <div class="tk-grid">${cells}</div>` + `<div class="tk-day-inline">${tkDayDetailHtml(TK.selDay)}</div>`;
 }
 
+// ── 時刻の入力（数字だけで入力できる欄） ──
+// 要望「開始と終了の時間が入力しにくい。数字を入れるだけで入力できるように、続けて入力できるように」
+// への対応。type="time"（時・分を別々にタップして選ぶ欄）をやめ、数字を打つだけの欄にした。
+//   930 → 09:30、0930 → 09:30、14 → 14:00、1430 → 14:30、9:30 → 09:30
+// 開始の欄で4桁（または3桁で先頭が3〜9）まで打つと自動で整えて終了の欄へ移り、終了が空なら開始の1時間後を入れる。
+function tkNormTime(v) {
+  v = String(v || '').trim().replace(/[：]/g, ':').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  if (!v) return '';
+  let h, m;
+  if (v.includes(':')) { const [a, b] = v.split(':'); h = parseInt(a, 10); m = parseInt(b || '0', 10); }
+  else {
+    const d = v.replace(/\D/g, '');
+    if (!d) return '';
+    if (d.length <= 2) { h = parseInt(d, 10); m = 0; }
+    else if (d.length === 3) { h = parseInt(d.slice(0, 1), 10); m = parseInt(d.slice(1), 10); }
+    else { h = parseInt(d.slice(0, 2), 10); m = parseInt(d.slice(2, 4), 10); }
+  }
+  if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return '';
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+// 要望「TimeTreeのように、時間と分をくるくる回して選べるようにしたい」への対応。時刻の欄を押すと、
+// 欄の下に「時」「分（5分刻み）」の2列のホイールが開く。パソコンでは数字を打って入力することもできる。
+const TK_WHEEL_ITEM = 40;
+function tkIsCoarse() { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }
+function tkTimeInputHtml(id, value, placeholder, nextId, slotId, clearable) {
+  const coarse = tkIsCoarse();
+  return `<div class="tk-time-wrap"><input type="text" id="${id}" class="tk-time-in" autocomplete="off" maxlength="5" value="${tkEsc(value || '')}" placeholder="${tkEsc(placeholder || '')}"
+    data-slot="${slotId || ''}" data-next="${nextId || ''}" ${coarse ? 'readonly inputmode="none"' : 'inputmode="numeric"'}
+    onclick="tkOpenWheel('${id}')" oninput="tkTimeTyping(this, ${nextId ? `'${nextId}'` : 'null'})" onblur="tkTimeBlur(this)">${clearable ? `<button type="button" class="tk-time-clear" onclick="tkClearTime('${id}')" aria-label="時刻なし">✕</button>` : ''}</div>`;
+}
+const tkMinOf = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const tkTimeOf = mins => { mins = Math.max(0, Math.min(23 * 60 + 55, mins)); return String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0'); };
+// 時刻を入れる（開始の欄なら、終了も同じ長さのまま一緒にずらす。終了が空なら1時間後）
+function tkSetTime(inp, t) {
+  const old = tkNormTime(inp.value);
+  inp.value = t;
+  inp.classList.remove('bad');
+  const nextId = inp.dataset.next;
+  if (!nextId) return;
+  const end = document.getElementById(nextId);
+  if (!end) return;
+  const oldEnd = tkNormTime(end.value);
+  let dur = 60;
+  if (old && oldEnd && tkMinOf(oldEnd) > tkMinOf(old)) dur = tkMinOf(oldEnd) - tkMinOf(old);
+  end.value = tkTimeOf(tkMinOf(t) + dur);
+  end.classList.remove('bad');
+}
+function tkClearTime(id) {
+  const inp = document.getElementById(id);
+  if (inp) { inp.value = ''; inp.classList.remove('bad'); }
+  tkCloseWheels();
+}
+function tkCloseWheels() {
+  document.querySelectorAll('.tk-wheel-slot').forEach(sl => { sl.style.display = 'none'; sl.innerHTML = ''; sl.dataset.for = ''; });
+  document.querySelectorAll('.tk-time-in.active').forEach(x => x.classList.remove('active'));
+}
+function tkOpenWheel(id) {
+  const inp = document.getElementById(id);
+  const slot = inp && document.getElementById(inp.dataset.slot);
+  if (!slot) return;
+  if (slot.dataset.for === id && slot.style.display !== 'none') { tkCloseWheels(); return; }
+  tkCloseWheels();
+  inp.classList.add('active');
+  let t = tkNormTime(inp.value);
+  if (!t) {
+    // 空の欄を押したとき：終了なら開始の1時間後、それ以外は次のちょうどの時刻
+    const startForEnd = Array.from(document.querySelectorAll('.tk-time-in')).find(x => x.dataset.next === id);
+    t = startForEnd && tkNormTime(startForEnd.value) ? tkTimeOf(tkMinOf(tkNormTime(startForEnd.value)) + 60) : tkTimeOf(((new Date().getHours() + 1) % 24) * 60);
+    tkSetTime(inp, t);
+  }
+  const [h, m] = t.split(':').map(Number);
+  const col = (kind, vals) => `<div class="tk-wcol" data-kind="${kind}"><div class="tk-wpad"></div>${vals.map(v => `<div class="tk-witem">${String(v).padStart(2, '0')}</div>`).join('')}<div class="tk-wpad"></div></div>`;
+  slot.dataset.for = id;
+  slot.style.display = 'block';
+  slot.innerHTML = `<div class="tk-wheel">
+      <div class="tk-wband"></div>
+      ${col('h', Array.from({ length: 24 }, (_, i) => i))}
+      <div class="tk-wsep">:</div>
+      ${col('m', Array.from({ length: 12 }, (_, i) => i * 5))}
+    </div>
+    <div class="tk-wheel-foot"><button type="button" onclick="tkCloseWheels()">決定</button></div>`;
+  const colH = slot.querySelector('.tk-wcol[data-kind="h"]');
+  const colM = slot.querySelector('.tk-wcol[data-kind="m"]');
+  colH.scrollTop = h * TK_WHEEL_ITEM;
+  colM.scrollTop = Math.min(11, Math.round(m / 5)) * TK_WHEEL_ITEM;
+  const mark = c => { const i = Math.round(c.scrollTop / TK_WHEEL_ITEM); c.querySelectorAll('.tk-witem').forEach((el, k) => el.classList.toggle('sel', k === i)); return i; };
+  mark(colH); mark(colM);
+  let ready = false;
+  setTimeout(() => { ready = true; }, 200);
+  const onScroll = c => {
+    mark(c);
+    if (!ready) return;
+    clearTimeout(c._t);
+    c._t = setTimeout(() => {
+      const hh = Math.max(0, Math.min(23, Math.round(colH.scrollTop / TK_WHEEL_ITEM)));
+      const mm = Math.max(0, Math.min(11, Math.round(colM.scrollTop / TK_WHEEL_ITEM))) * 5;
+      tkSetTime(inp, String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0'));
+    }, 90);
+  };
+  colH.addEventListener('scroll', () => onScroll(colH), { passive: true });
+  colM.addEventListener('scroll', () => onScroll(colM), { passive: true });
+  // 数字の部分を押したときも、その数字の位置まで回す
+  [colH, colM].forEach(c => c.querySelectorAll('.tk-witem').forEach((el, k) => el.addEventListener('click', () => c.scrollTo({ top: k * TK_WHEEL_ITEM, behavior: 'smooth' }))));
+}
+function tkToggleAllDay(on) {
+  const area = document.getElementById('tkf-time-area');
+  if (area) area.style.display = on ? 'none' : 'block';
+  tkCloseWheels();
+  if (!on) {
+    const st = document.getElementById('tkf-start');
+    if (st && !tkNormTime(st.value)) tkSetTime(st, tkTimeOf(((new Date().getHours() + 1) % 24) * 60));
+  }
+}
+// ホイールの外を押したら閉じる
+document.addEventListener('click', e => {
+  if (!e.target.closest) return;
+  if (e.target.closest('.tk-time-wrap') || e.target.closest('.tk-wheel-slot')) return;
+  if (document.querySelector('.tk-wheel-slot[style*="block"]')) tkCloseWheels();
+}, true);
+function tkTimeTyping(el, nextId) {
+  const raw = el.value;
+  if (raw.includes(':')) return;
+  const d = raw.replace(/\D/g, '');
+  if (d !== raw) el.value = d;
+  const done = d.length >= 4 || (d.length === 3 && parseInt(d[0], 10) >= 3);
+  if (done) {
+    const t = tkNormTime(d);
+    el.classList.toggle('bad', !t);
+    if (!t) return;
+    el.value = '';
+    tkSetTime(el, t);
+    if (nextId) {
+      const next = document.getElementById(nextId);
+      if (next) { next.focus(); next.select(); }
+    }
+  } else el.classList.remove('bad');
+}
+function tkTimeBlur(el) {
+  if (!el.value.trim()) { el.classList.remove('bad'); return; }
+  const t = tkNormTime(el.value);
+  el.classList.toggle('bad', !t);
+  if (t) el.value = t;
+}
+
+// ── 予定の内容を見る画面（タップしただけでは編集画面を開かない） ──
+// 要望「カレンダーの予定をタップすると編集が開いてしまい、間違えて削除・入力してしまうかもしれない。
+// タップしたときはメモなどの内容を確認したい」への対応。編集は、この画面の「✏️ 編集」からだけ開く。
+function tkOpenEventView(id) {
+  const e = TK.events[id];
+  if (!e) return;
+  const when = `${tkShortDate(e.date)}${e.endDate ? ' 〜 ' + tkShortDate(e.endDate) : ''}　${e.start ? e.start + (e.end ? '〜' + e.end : '') : '終日'}`;
+  const row = (icon, label, val) => val ? `<div class="tk-evv-row"><span class="k">${icon} ${label}</span><span class="v">${val}</span></div>` : '';
+  tkShowModal(`
+    <h3 style="margin-bottom:4px">${tkEsc(e.title)}</h3>
+    <div style="font-size:13px;color:#0f766e;font-weight:700;margin-bottom:12px">${tkEsc(when)}</div>
+    <div class="tk-evv">
+      ${row('📍', '場所', tkEsc(e.place || ''))}
+      ${row('👥', '参加者', tkEsc(tkEvMembers(e)))}
+      ${row('📝', 'メモ', e.memo ? tkEsc(e.memo).replace(/\n/g, '<br>') : '<span style="color:var(--text-muted)">なし</span>')}
+    </div>
+    <div class="tk-info">登録：${tkEsc(tkName(e.createdBy))}（${tkStamp(e.createdAt)}）${e.updatedAt && e.updatedAt !== e.createdAt ? `<br>最終更新：${tkEsc(tkName(e.updatedBy))}（${tkStamp(e.updatedAt)}）` : ''}</div>
+    <div class="tk-btns">
+      <button class="tk-btn-cancel" onclick="tkCloseModal()">閉じる</button>
+      <button class="tk-btn-cancel" style="flex:0 0 auto;padding:13px 16px" onclick="tkOpenEventModal('${id}')">✏️ 編集</button>
+    </div>
+  `);
+}
+
 function tkOpenEventModal(id, presetDate) {
   const e = id ? TK.events[id] : null;
   if (id && !e) return;
@@ -19617,6 +19828,11 @@ function tkOpenEventModal(id, presetDate) {
   const sel = v.members === 'all' || !v.members ? [] : (Array.isArray(v.members) ? v.members : Object.values(v.members));
   const isAll = !sel.length;
   const mems = tkMemberEmails().map(em => `<label><input type="checkbox" class="tkf-mem" value="${tkEsc(em)}" ${sel.includes(em) ? 'checked' : ''} onchange="document.getElementById('tkf-allmem').checked=!document.querySelector('.tkf-mem:checked')">${tkEsc(tkName(em))}</label>`).join('');
+  // 新しい予定は、次のちょうどの時刻〜1時間後を初期値にする（終日にしたいときはスイッチで切り替え）
+  const evAllDay = e ? !e.start : false;
+  const nextHour = (new Date().getHours() + 1) % 24;
+  const evStart = e ? (e.start || '') : String(nextHour).padStart(2, '0') + ':00';
+  const evEnd = e ? (e.end || '') : String(Math.min(23, nextHour + 1)).padStart(2, '0') + ':00';
   const info = e ? `<div class="tk-info">登録：${tkEsc(tkName(e.createdBy))}（${tkStamp(e.createdAt)}）${e.updatedAt && e.updatedAt !== e.createdAt ? `<br>最終更新：${tkEsc(tkName(e.updatedBy))}（${tkStamp(e.updatedAt)}）` : ''}</div>` : '';
   tkShowModal(`
     <h3>${e ? '予定の編集' : '予定を追加'}</h3>
@@ -19625,9 +19841,14 @@ function tkOpenEventModal(id, presetDate) {
       <div class="tk-f"><label>日付</label><input type="date" id="tkf-date" value="${tkEsc(v.date)}"></div>
       <div class="tk-f"><label>終了日（複数日の場合）</label><input type="date" id="tkf-enddate" value="${tkEsc(v.endDate || '')}"></div>
     </div>
-    <div class="tk-row2">
-      <div class="tk-f"><label>開始（空欄＝終日）</label><input type="time" id="tkf-start" value="${tkEsc(v.start || '')}"></div>
-      <div class="tk-f"><label>終了</label><input type="time" id="tkf-end" value="${tkEsc(v.end || '')}"></div>
+    <div class="tk-f"><label class="tk-switch"><input type="checkbox" id="tkf-allday" ${evAllDay ? 'checked' : ''} onchange="tkToggleAllDay(this.checked)"><span class="sw"></span>終日</label></div>
+    <div id="tkf-time-area" style="display:${evAllDay ? 'none' : 'block'}">
+      <div class="tk-row2">
+        <div class="tk-f"><label>開始</label>${tkTimeInputHtml('tkf-start', evStart, '', 'tkf-end', 'tk-wslot-ev')}</div>
+        <div class="tk-f"><label>終了</label>${tkTimeInputHtml('tkf-end', evEnd, '', null, 'tk-wslot-ev')}</div>
+      </div>
+      <div class="tk-wheel-slot" id="tk-wslot-ev" style="display:none"></div>
+      <div class="tk-f" style="margin-top:-4px;font-size:11px;color:var(--text-muted)">時刻を押すと、くるくる回して選べます（5分刻み）。開始を動かすと終了も同じ長さのまま動きます。</div>
     </div>
     <div class="tk-f"><label>場所</label><input type="text" id="tkf-place" value="${tkEsc(v.place || '')}" placeholder="任意"></div>
     <div class="tk-f"><label>参加者</label><div class="tk-mem-list">
@@ -19648,6 +19869,10 @@ async function tkSaveEvent(id) {
   const date = document.getElementById('tkf-date').value;
   if (!title) { showToast('予定の内容を入力してください'); return; }
   if (!date) { showToast('日付を選んでください'); return; }
+  if (!document.getElementById('tkf-allday')?.checked) for (const id of ['tkf-start', 'tkf-end']) {
+    const raw = document.getElementById(id).value.trim();
+    if (raw && !tkNormTime(raw)) { showToast('時刻の形式が正しくありません（例：930、1400）'); document.getElementById(id).focus(); return; }
+  }
   let endDate = document.getElementById('tkf-enddate').value;
   if (endDate && endDate <= date) endDate = '';
   const members = [...document.querySelectorAll('.tkf-mem:checked')].map(c => c.value);
@@ -19655,8 +19880,8 @@ async function tkSaveEvent(id) {
   const now = Date.now();
   const rec = {
     title, date, endDate,
-    start: document.getElementById('tkf-start').value,
-    end: document.getElementById('tkf-end').value,
+    start: document.getElementById('tkf-allday')?.checked ? '' : tkNormTime(document.getElementById('tkf-start').value),
+    end: document.getElementById('tkf-allday')?.checked ? '' : tkNormTime(document.getElementById('tkf-end').value),
     place: document.getElementById('tkf-place').value.trim(),
     memo: document.getElementById('tkf-memo').value.trim(),
     members: members.length ? members : 'all',
@@ -19777,7 +20002,7 @@ async function renderHomeTodayCard(noFetch) {
   // 管理者のHOMEには既存の「🔔 通知を有効にする」案内があるので、二重に出さない
   const banner = document.getElementById('home-notify-prompt') ? '' : tkNotifyBannerHtml();
   let html = '<div class="card"><div class="card-title">今日やること</div>' + banner;
-  html += `<div class="tk-today-sec"><div class="h">📅 今日の予定</div>${evs.length ? evs.map(e => `<div class="tk-today-row"><span class="tm">${tkEsc(e.start || '終日')}</span><span class="t" onclick="tkOpenEventModal('${e.id}')">${tkEsc(e.title)}${e.place ? ' <span style="color:var(--text-muted);font-size:11px">📍' + tkEsc(e.place) + '</span>' : ''}</span></div>`).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">予定はありません</div>'}</div>`;
+  html += `<div class="tk-today-sec"><div class="h">📅 今日の予定</div>${evs.length ? evs.map(e => `<div class="tk-today-row"><span class="tm">${tkEsc(e.start || '終日')}</span><span class="t" onclick="tkOpenEventView('${e.id}')">${tkEsc(e.title)}${e.place ? ' <span style="color:var(--text-muted);font-size:11px">📍' + tkEsc(e.place) + '</span>' : ''}</span></div>`).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">予定はありません</div>'}</div>`;
   if (myOverdue.length) html += `<div class="tk-today-sec"><div class="h danger">⚠️ 期限切れ（${myOverdue.length}件）</div>${myOverdue.map(row).join('')}</div>`;
   html += `<div class="tk-today-sec"><div class="h">✅ 今日のタスク</div>${myToday.length ? myToday.map(row).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">今日が期限のタスクはありません</div>'}</div>`;
   if (teamOverdue || unassigned) {
