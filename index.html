@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28x">
+<meta name="app-build" content="2026-09-28y">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -476,6 +476,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 .inv-subcat-group-label { font-size: 10.5px; font-weight: 700; color: var(--text-muted); margin-right: 2px; }
 .inv-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--border); }
 .inv-row-list { margin-top: 6px; }
+.inv-subcat-count { margin-left:4px; font-size:0.95em; font-weight:700; opacity:0.75; }
 /* 在庫一覧（リスト表示）：パソコンの広い画面では、商品の行を新聞のように複数の列に分けて
    上から下へ流し込む（並び順は各列の上から下→次の列、の順）。行を開いても列の途中で切れない */
 @media (min-width:1280px) {
@@ -10861,10 +10862,13 @@ function invRowLocChipHtml(p) {
 
 // カテゴリー内のサブカテゴリータブを組み立てる。ゴルフウェアのようにグループ化されたカテゴリーは、
 // グループ（メンズ／レディースなど）ごとに段を分けて表示し、圧迫感を減らす。表示名からはグループ名の接頭辞を外す。
-function buildInvSubcatTabBar(cat, subs, activeSub) {
+// counts（任意）：{ サブカテゴリー名: 商品数, '': 全体の商品数 }。渡された場合は各タブに件数を小さく添える
+// （要望「在庫一覧のサブカテゴリーにそれぞれの合計数を表示させたい」への対応）
+function buildInvSubcatTabBar(cat, subs, activeSub, counts) {
   if (!subs.length) return '';
-  const tab = s => `<span class="inv-subcat-tab ${activeSub===s?'active':''}" onclick="event.stopPropagation();setInvSubcatTab('${cat}','${s}')">${s}</span>`;
-  const allTab = `<span class="inv-subcat-tab ${!activeSub?'active':''}" onclick="event.stopPropagation();setInvSubcatTab('${cat}','')">すべて</span>`;
+  const cnt = s => (counts && counts[s] != null) ? `<span class="inv-subcat-count">${counts[s]}</span>` : '';
+  const tab = s => `<span class="inv-subcat-tab ${activeSub===s?'active':''}" onclick="event.stopPropagation();setInvSubcatTab('${cat}','${s}')">${s}${cnt(s)}</span>`;
+  const allTab = `<span class="inv-subcat-tab ${!activeSub?'active':''}" onclick="event.stopPropagation();setInvSubcatTab('${cat}','')">すべて${cnt('')}</span>`;
   const groups = getSubcatGroupsFor(cat);
   if (!groups) {
     return `<div class="inv-subcat-tabs">${allTab}${subs.map(tab).join('')}</div>`;
@@ -10876,7 +10880,7 @@ function buildInvSubcatTabBar(cat, subs, activeSub) {
     if (!present.length) return '';
     const tabsHtml = present.map(s => {
       const label = s.startsWith(g + '・') ? s.slice(g.length + 1) : s;
-      return `<span class="inv-subcat-tab ${activeSub===s?'active':''}" onclick="event.stopPropagation();setInvSubcatTab('${cat}','${s}')">${label}</span>`;
+      return `<span class="inv-subcat-tab ${activeSub===s?'active':''}" onclick="event.stopPropagation();setInvSubcatTab('${cat}','${s}')">${label}${cnt(s)}</span>`;
     }).join('');
     return `<div class="inv-subcat-group-row"><span class="inv-subcat-group-label">${g}</span>${tabsHtml}</div>`;
   }).join('');
@@ -11030,7 +11034,9 @@ function renderInventoryList() {
     const subs = Array.from(new Set(inCat.map(p => p.subcategory).filter(Boolean)));
     const activeSub = _invSubcatTab[cat] || '';
     const rowsSrc = (activeSub && subs.includes(activeSub)) ? inCat.filter(p => p.subcategory === activeSub) : inCat;
-    const tabBar = buildInvSubcatTabBar(cat, subs, activeSub);
+    const subCounts = { '': inCat.length };
+    inCat.forEach(p => { if (p.subcategory) subCounts[p.subcategory] = (subCounts[p.subcategory] || 0) + 1; });
+    const tabBar = buildInvSubcatTabBar(cat, subs, activeSub, subCounts);
     const sorted = [...rowsSrc].sort(compareProducts);
     // グリッド（写真）表示のときは、商品登録画面の写真つきカードを流用してカード形式で並べる
     const itemsHtml = isGrid
