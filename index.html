@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28t">
+<meta name="app-build" content="2026-09-28u">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -100,6 +100,19 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
    （.manual-refresh-btnと同じ考え方：既定では隠しておき、PC幅のメディアクエリだけで見せる）。 */
 .wh-desktop-preview-col { display: none; }
 /* 委託リストの精算・返却済みの履歴の1行（型番・個数・金額・日付） */
+.wh-sec-card { background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; margin-top:14px; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+.wh-sec-h { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.wh-sec-h .t { font-size:14px; font-weight:700; color:var(--text); }
+.wh-sec-h .n { font-size:12px; color:var(--text-sub); }
+.wh-sec-sub { font-size:11.5px; color:var(--text-muted); margin:4px 0 10px; }
+.wh-inv-bar { position:sticky; bottom:calc(env(safe-area-inset-bottom) + 72px); z-index:5; display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding:10px 12px; border-radius:10px; background:#1f2937; color:#fff; font-size:13px; box-shadow:0 4px 14px rgba(0,0,0,0.18); }
+.wh-inv-bar b { font-weight:800; }
+.wh-inv-bar button { padding:9px 14px; font-size:13px; font-weight:700; border:none; border-radius:8px; background:#c5e8e5; color:#1f5f5a; cursor:pointer; font-family:inherit; white-space:nowrap; }
+.wh-inv-bar span[onclick] { color:#d1d5db !important; white-space:nowrap; }
+.wh-inv-bar > span:first-child { min-width:0; }
+.wh-sec-h .hide-sp { display:none; }
+@media (min-width:700px) { .wh-sec-h .hide-sp { display:inline; } }
+@media (min-width:1280px) { .wh-inv-bar { bottom:16px; } }
 .wh-hrow { padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; display:flex; align-items:center; gap:6px; }
 .wh-hrow-wrap > .wh-hrow { border-bottom:none; }
 .wh-hrow-wrap { border-bottom:1px solid var(--border); }
@@ -2086,10 +2099,40 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div id="wh-consign-list"></div>
     <div id="wh-consign-empty" style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">現在預けている商品はありません</div>
 
-    <div style="margin-top:16px;background:var(--surface);border-radius:10px;padding:10px 12px">
-      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('wh-consign-history')">
-        <span style="font-size:13px;font-weight:700;color:var(--text)">精算・返却済みの履歴</span>
-        <span class="accordion-arrow" id="acc-arrow-wh-consign-history" style="font-size:10px;color:var(--text-muted)">▼</span>
+    <!-- 要望「精算・返却済みの履歴、選択した精算済み商品で納品書を作成のボタン、精算分の納品書
+         （請求用）がそれぞれ見にくい」への対応。作業の流れ（未請求を選ぶ → 納品書を作る →
+         できた請求用の納品書を確認する）の順に、3つの白いカードに分けた。
+         ① 未請求：まだ納品書にしていない精算済みの商品を取引先ごとに全件表示。1件でも選ぶと
+            下に「〇件選択中・合計¥〇〇　［納品書を作成］」の帯が出る
+         ② 精算分の納品書（請求用）：作成済みの納品書の一覧
+         ③ 精算・返却済みの履歴：請求済み・返却済みの記録（絞り込みはこのカードの中だけ） -->
+    <div class="wh-sec-card" id="wh-consign-uninvoiced-card">
+      <div class="wh-sec-h"><span class="t">🧾 未請求</span><span class="n" id="wh-consign-uninvoiced-count"></span></div>
+      <div class="wh-sec-sub">まだ納品書にしていない精算済みの商品です。チェックを入れて納品書を作成します。</div>
+      <div id="wh-consign-uninvoiced-list"></div>
+      <div class="wh-inv-bar" id="wh-consign-invoice-bar" style="display:none">
+        <span id="wh-consign-invoice-select-count"></span>
+        <span style="display:flex;gap:8px;align-items:center">
+          <span onclick="clearConsignInvoiceSelection()" style="font-size:12px;color:var(--text-muted);text-decoration:underline;cursor:pointer">選択を外す</span>
+          <button type="button" onclick="createConsignInvoiceSlipFromSelection()">📄 納品書を作成</button>
+        </span>
+      </div>
+    </div>
+
+    <div class="wh-sec-card">
+      <div class="wh-sec-h" style="cursor:pointer" onclick="toggleAccordion('wh-consign-invoices')">
+        <span class="t">📄 精算分の納品書（請求用）</span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="n" id="wh-consign-invoices-count"></span><span class="accordion-arrow" id="acc-arrow-wh-consign-invoices" style="font-size:10px;color:var(--text-muted)">▼</span></span>
+      </div>
+      <div class="accordion-body" id="acc-body-wh-consign-invoices" style="margin-top:8px">
+        <div id="wh-consign-invoices-list"></div>
+      </div>
+    </div>
+
+    <div class="wh-sec-card">
+      <div class="wh-sec-h" style="cursor:pointer" onclick="toggleAccordion('wh-consign-history')">
+        <span class="t">🗂 精算・返却済みの履歴</span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="n hide-sp" style="font-weight:400">請求済み・返却済みの記録</span><span class="accordion-arrow" id="acc-arrow-wh-consign-history" style="font-size:10px;color:var(--text-muted)">▼</span></span>
       </div>
       <div class="accordion-body" id="acc-body-wh-consign-history" style="margin-top:8px">
         <!-- 要望：「型番検索や月毎、日にち指定などで絞れるようにしたい」＋「期間の指定
@@ -2110,26 +2153,6 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
           <button type="button" id="wh-consign-history-filter-clear" onclick="clearWhConsignHistoryFilter()" style="display:none;padding:7px 10px;border:1.2px solid var(--border);border-radius:8px;background:var(--white);color:var(--text-muted);font-size:12px;cursor:pointer;white-space:nowrap">✕ 条件をクリア</button>
         </div>
         <div id="wh-consign-history-list"></div>
-        <!-- 要望：「委託リストの納品書を作成する時に、チェックを入れて選択し納品書を作成する
-             のですが、ページを移動すると前のページでチェックを入れたものが全て外されて
-             しまう。ページを移動してチェックを入れても外れないようにしてほしい」への対応。
-             以前はチェック状態をDOMのcheckedプロパティだけで持っていたため、ページ切替・
-             取引先カードの開閉・絞り込みなどでrenderWhConsignHistorySection()が再描画される
-             たびにチェックボックスごと作り直され、チェックが消えてしまっていた。取引先納品書
-             作成画面の_freeeInvoiceSelectedと同じ考え方で、チェック状態を_consignInvoiceSelected
-             （_key単位のSet）に保持し、再描画のたびにそこから復元するようにした -->
-        <div id="wh-consign-invoice-select-count" style="font-size:11.5px;color:var(--gold-dark);font-weight:700;margin-top:8px"></div>
-        <button onclick="createConsignInvoiceSlipFromSelection()" style="width:100%;margin-top:6px;padding:10px;background:var(--surface);color:var(--text);border:1.5px dashed var(--border);border-radius:var(--radius-sm);font-size:12.5px;font-weight:600;cursor:pointer">📄 選択した精算済み商品で納品書を作成</button>
-      </div>
-    </div>
-
-    <div style="margin-top:10px;background:var(--surface);border-radius:10px;padding:10px 12px">
-      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('wh-consign-invoices')">
-        <span style="font-size:13px;font-weight:700;color:var(--text)">精算分の納品書（請求用）</span>
-        <span class="accordion-arrow" id="acc-arrow-wh-consign-invoices" style="font-size:10px;color:var(--text-muted)">▼</span>
-      </div>
-      <div class="accordion-body" id="acc-body-wh-consign-invoices" style="margin-top:8px">
-        <div id="wh-consign-invoices-list"></div>
       </div>
     </div>
 </div>
@@ -7439,9 +7462,17 @@ function toggleConsignInvoiceSelect(key, checked) {
 }
 function updateConsignInvoiceSelectCount() {
   const el = document.getElementById('wh-consign-invoice-select-count');
-  if (!el) return;
+  const bar = document.getElementById('wh-consign-invoice-bar');
   const n = _consignInvoiceSelected.size;
-  el.textContent = n ? `${n}件を選択中（ページや取引先を切り替えても選択は保持されます）` : '';
+  // 選んだ商品の合計金額（まだ納品書にしていない精算済みのもののみ）
+  const total = (_whConsignHistoryFull || []).filter(m => _consignInvoiceSelected.has(m._key))
+    .reduce((sum, m) => sum + (m.amount || 0), 0);
+  if (el) el.innerHTML = n ? `<b>${n}件</b>選択中・合計 <b>¥${total.toLocaleString('ja-JP')}</b>` : '';
+  if (bar) bar.style.display = n ? 'flex' : 'none';
+}
+function clearConsignInvoiceSelection() {
+  _consignInvoiceSelected.clear();
+  renderWhConsignHistorySection();
 }
 
 // 履歴の各行で「⋯」を押して操作リンク（金額を編集・取り消す・完全に削除）を開いている行の_key
@@ -7483,10 +7514,6 @@ function renderWhConsignHistorySection() {
   }
   const filterActive = !!(f.q || f.month || f.dateStart || f.dateEnd);
 
-  if (!history.length) {
-    historyEl.innerHTML = `<div style="font-size:12px;color:var(--text-muted)">${filterActive ? '条件に一致する記録が見つかりませんでした' : 'まだ精算・返却の記録はありません'}</div>`;
-    return;
-  }
   // 取引先が誤って精算・返却してしまった、店舗側が入力を間違えたなど、確定後に取り消したい
   // 場合のための「取り消す」リンク。精算済みですでに精算分の納品書（請求用）を発行済みの
   // ものだけは、先にその納品書を取り消してもらう必要があるため、取り消すリンクを出さず
@@ -7554,14 +7581,44 @@ function renderWhConsignHistorySection() {
     if (!list.length) return '';
     const clientB64 = btoa(unescape(encodeURIComponent(client)));
     const allSelected = list.every(m => _consignInvoiceSelected.has(m._key));
-    return `<div style="margin-bottom:12px;padding:8px 10px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa">
+    return `<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:2px">
-        <span style="font-size:11.5px;font-weight:700;color:#c2410c">未請求（${list.length}件）<span style="font-weight:400;color:var(--text-muted)">　まだ納品書にしていない精算済みの商品</span></span>
+        <span style="font-size:13px;font-weight:700;color:var(--text)">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${list.length}件・¥${list.reduce((sum, m) => sum + (m.amount || 0), 0).toLocaleString('ja-JP')}</span></span>
         <span onclick="event.stopPropagation(); selectAllConsignUninvoiced(decodeURIComponent(escape(atob('${clientB64}'))), ${allSelected ? 'false' : 'true'})" style="flex-shrink:0;font-size:11px;font-weight:700;color:#c2410c;text-decoration:underline;cursor:pointer">${allSelected ? '選択を外す' : 'すべて選択'}</span>
       </div>
       ${list.map(renderHistoryRow).join('')}
     </div>`;
   };
+
+  // ① 未請求カード：絞り込みに関係なく、まだ納品書にしていない精算済みのものを取引先ごとに全件出す
+  const uninvAll = (_whConsignHistoryFull || []).filter(m => m.status === 'settled' && !m.invoicedSlipId)
+    .sort((a, b) => (historyDateOf(b) || 0) - (historyDateOf(a) || 0));
+  const uninvEl = document.getElementById('wh-consign-uninvoiced-list');
+  const uninvCountEl = document.getElementById('wh-consign-uninvoiced-count');
+  if (uninvCountEl) {
+    const uninvTotal = uninvAll.reduce((sum, m) => sum + (m.amount || 0), 0);
+    uninvCountEl.innerHTML = uninvAll.length ? `<b style="color:#c2410c">${uninvAll.length}件</b>・合計 ¥${uninvTotal.toLocaleString('ja-JP')}` : '0件';
+  }
+  // すでに納品書になった・消えた商品は選択から外しておく
+  const uninvKeys = new Set(uninvAll.map(m => m._key));
+  [..._consignInvoiceSelected].forEach(k => { if (!uninvKeys.has(k)) _consignInvoiceSelected.delete(k); });
+  if (uninvEl) {
+    if (!uninvAll.length) {
+      uninvEl.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:6px 0">未請求の商品はありません</div>';
+    } else {
+      const byClient = {}; const cOrder = [];
+      uninvAll.forEach(m => { const c = m.client || '（取引先未設定）'; if (!byClient[c]) { byClient[c] = []; cOrder.push(c); } byClient[c].push(m); });
+      uninvEl.innerHTML = cOrder.map(c => renderUninvoicedSection(byClient[c], c)).join('');
+    }
+  }
+
+  // ③ 履歴カード（請求済み・返却済み）。未請求のものは①に出しているので、ここからは除く
+  history = history.filter(m => !(m.status === 'settled' && !m.invoicedSlipId));
+  if (!history.length) {
+    historyEl.innerHTML = `<div style="font-size:12px;color:var(--text-muted)">${filterActive ? '条件に一致する記録が見つかりませんでした' : 'まだ請求済み・返却済みの記録はありません'}</div>`;
+    updateConsignInvoiceSelectCount();
+    return;
+  }
 
   // 取引先ごとにグループ化する（要望：「履歴の方も同じように取引先ごとに分けて欲しい」）。
   // グループ内・グループの並び順のどちらも、精算・返却された日時が新しい順にする
@@ -7586,10 +7643,8 @@ function renderWhConsignHistorySection() {
     const isOpen = forceOpen || _whConsignHistoryExpandedClients.has(client);
     const settledCount = items.filter(m => m.status === 'settled').length;
     const returnedCount = items.filter(m => m.status === 'returned').length;
-    const uninvoiced = items.filter(m => m.status === 'settled' && !m.invoicedSlipId);
     const countParts = [];
-    if (uninvoiced.length) countParts.push(`<b style="color:#c2410c">未請求${uninvoiced.length}件</b>`);
-    if (settledCount) countParts.push(`精算${settledCount}件`);
+    if (settledCount) countParts.push(`請求済み${settledCount}件`);
     if (returnedCount) countParts.push(`返却${returnedCount}件`);
     return `
       <div style="border:1.2px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px">
@@ -7598,7 +7653,6 @@ function renderWhConsignHistorySection() {
           <div style="font-size:13.5px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${countParts.join('／')}</span></div>
         </div>
         <div class="accordion-body${isOpen ? ' open' : ''}" style="margin-top:8px">
-          ${renderUninvoicedSection(uninvoiced, client)}
           ${renderHistoryStatusSection('精算済み・請求済み', 'var(--success)', items.filter(m => m.status === 'settled' && m.invoicedSlipId), client, 'settled')}
           ${renderHistoryStatusSection('返却済み', 'var(--text-muted)', items.filter(m => m.status === 'returned'), client, 'returned')}
         </div>
@@ -7673,6 +7727,8 @@ function renderConsignInvoicesList() {
     };
   }).sort((a,b) => b.createdAt - a.createdAt);
 
+  const invCountEl = document.getElementById('wh-consign-invoices-count');
+  if (invCountEl) invCountEl.textContent = `${slips.length}件`;
   if (!slips.length) {
     listEl.innerHTML = `<div style="font-size:12px;color:var(--text-muted)">まだ精算分の納品書はありません</div>`;
     updateFreeeInvoiceSelectBar();
