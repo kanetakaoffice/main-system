@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28y">
+<meta name="app-build" content="2026-09-29b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -122,6 +122,29 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
   #pack-list-sp { display:grid; grid-template-columns:repeat(auto-fill, minmax(420px, 1fr)); gap:10px; align-items:start; }
   #pack-list-sp > * { margin:0 !important; }
 }
+.wh-deliv-side { display:none; }
+@media (min-width:1280px) {
+  .wh-deliv-hist-wrap { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.05fr); gap:16px; align-items:start; }
+  .wh-deliv-side { display:block; position:sticky; top:calc(var(--side-nav-top, 60px) + 12px); max-height:calc(100vh - var(--side-nav-top, 60px) - 24px); overflow-y:auto; }
+  /* 一覧は1件を2行（1行目：取引先・日付・件名／2行目：No.・数量・合計）にまとめる */
+  .wh-deliv-hist-wrap .wh-deliv-click-cell { display:block; }
+  .wh-deliv-hist-wrap .wh-deliv-click-cell > .wh-deliv-row-meta { margin-top:2px !important; }
+  .wh-deliv-hist-wrap .wh-deliv-row .accordion-body { display:none !important; }
+  .wh-deliv-hist-wrap .wh-deliv-row .accordion-arrow { display:none; }
+  .wh-deliv-hist-wrap .wh-deliv-row-grid { padding:10px 8px; border-radius:8px; }
+  .wh-deliv-hist-wrap .wh-deliv-row-grid:hover { background:rgba(255,255,255,0.6); }
+  .wh-deliv-hist-wrap .wh-deliv-row.sel .wh-deliv-row-grid { background:#e6f5f3; box-shadow:inset 3px 0 0 #0f766e; }
+}
+.wh-deliv-side-scale-wrap { overflow:hidden; background:var(--surface); padding:8px; border-radius:8px; }
+.wh-deliv-side-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.wh-deliv-side-table th { text-align:left; font-size:11px; color:var(--text-muted); font-weight:700; padding:6px 4px; border-bottom:1.5px solid var(--border); }
+.wh-deliv-side-table td { padding:6px 4px; border-bottom:1px solid var(--border); word-break:break-all; }
+.wh-deliv-side-table .n, .wh-deliv-side-table th:not(:first-child) { text-align:right; white-space:nowrap; }
+.wh-deliv-side-table tfoot td { font-weight:700; border-bottom:none; border-top:1.5px solid var(--border); }
+.wh-new-badge { margin-left:6px; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:#dc2626; color:#fff; font-size:11px; font-weight:700; align-items:center; justify-content:center; box-sizing:border-box; vertical-align:middle; }
+.wh-new-chip { display:inline-block; margin-left:8px; padding:1px 8px; border-radius:999px; background:#d1fae5; color:#047857; font-size:11px; font-weight:700; vertical-align:middle; }
+.wh-new-tag { display:inline-block; margin-left:8px; padding:0 6px; border-radius:4px; background:#10b981; color:#fff; font-size:10px; font-weight:800; letter-spacing:.03em; vertical-align:middle; }
+.wh-slip-from { margin-left:8px; font-size:11px; font-weight:500; color:#0f766e; }
 .wh-bb { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin-top:6px; padding:5px 8px; border-radius:8px; background:#f0faf9; font-size:11.5px; color:var(--text-sub); }
 .wh-bb.muted { background:none; padding:0; color:var(--text-muted); font-size:11px; }
 .wh-bb-lbl { font-weight:700; color:#1f5f5a; }
@@ -1834,7 +1857,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 <div id="screen-inv-wholesale" class="screen" style="display:none;padding-top:8px">
   <div class="tab-switch" style="margin-bottom:12px">
     <button class="tab-switch-btn active" id="wh-tab-deliv" onclick="switchWhTab('deliv')">📝 納品書作成</button>
-    <button class="tab-switch-btn" id="wh-tab-consign" onclick="switchWhTab('consign')">📦 委託リスト</button>
+    <button class="tab-switch-btn" id="wh-tab-consign" onclick="switchWhTab('consign')">📦 委託リスト<span id="wh-consign-new-badge" class="wh-new-badge" style="display:none"></span></button>
   </div>
 
   <!-- 請求書（freee）作成済みへのまとめ：通常の納品書／精算分の納品書のどちらのタブで
@@ -1993,6 +2016,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   </div>
   </div>
 
+    <!-- 要望「パソコンで発行済みの納品書一覧が横に伸びて見にくい。タップすると下に伸びるだけなので、
+         右側に内容を表示させたい」への対応。パソコン幅（1280px以上）では、左に一覧、右に選んだ納品書の
+         プレビュー（「明細」に切り替え可）を並べる。狭い幅では右側は出さず、今まで通り下に開く -->
+    <div class="wh-deliv-hist-wrap"><div class="wh-deliv-hist-main">
     <div style="margin-bottom:16px;background:var(--surface);border-radius:10px;padding:10px 12px">
       <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('wh-deliv-history')">
         <div style="display:flex;align-items:center;gap:6px">
@@ -2021,6 +2048,9 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         </div>
         <div id="wh-deliv-history-list"></div>
       </div>
+    </div>
+    </div>
+    <aside class="wh-deliv-side" id="wh-deliv-side"></aside>
     </div>
   </div>
 
@@ -4078,6 +4108,39 @@ let _editingSlipId = null; // 発行済みの納品書を編集中の場合、�
 let _whDelivItemUidSeq = 1; // 明細行を一意に識別するID（配列の並びが変わっても「傷・潰れ分割」の元行を追跡できるようにする）
 const WH_DELIV_DRAFT_KEY = 'kanetaka_wh_deliv_draft';
 
+// ── 委託リストの「新しく追加された商品」の目印 ──
+// 要望「納品書作成で委託にしたものが、委託リストでどう表示されているか分かりにくい。色や
+// 新規追加の件数などで確認しやすくしたい」への対応。端末ごとに「最後に委託リストを開いた日時」を
+// localStorageに控え、それより後に追加された預け商品（納品書から委託にしたもの・新規作成したもの）を
+// 「新しい」として扱う。委託リストを開くと既読になり、タブのバッジは消えるが、開いている間は
+// どれが新しいかが分かるよう、行の色・NEWの印・取引先カードの「新規〇件」は表示したままにする。
+const CONSIGN_NEW_SEEN_KEY = 'kanetaka_consign_new_seen_at';
+function getConsignNewSeenAt() {
+  try {
+    const v = parseInt(localStorage.getItem(CONSIGN_NEW_SEEN_KEY) || '', 10);
+    if (!isNaN(v)) return v;
+    const now = Date.now();
+    localStorage.setItem(CONSIGN_NEW_SEEN_KEY, String(now)); // 初めての端末では、今ある分は「新しい」にしない
+    return now;
+  } catch (e) { return Date.now(); }
+}
+let _consignNewSince = getConsignNewSeenAt(); // この画面で「新しい」と表示する基準の日時
+function isConsignNew(m) { return (m.createdAt || 0) > _consignNewSince; }
+function markConsignNewSeen() {
+  _consignNewSince = getConsignNewSeenAt();
+  try { localStorage.setItem(CONSIGN_NEW_SEEN_KEY, String(Date.now())); } catch (e) {}
+  updateConsignNewBadge();
+}
+function updateConsignNewBadge() {
+  const badge = document.getElementById('wh-consign-new-badge');
+  if (!badge) return;
+  const seen = getConsignNewSeenAt();
+  const onConsign = document.getElementById('wh-body-consign')?.style.display === 'block' && document.getElementById('screen-inv-wholesale')?.classList.contains('active');
+  const n = onConsign ? 0 : (stockMoves || []).filter(m => m.type === 'consign' && m.status === 'holding' && (m.createdAt || 0) > seen).length;
+  badge.textContent = n > 99 ? '99+' : String(n);
+  badge.style.display = n ? 'inline-flex' : 'none';
+}
+
 function switchWhTab(tab) {
   ['deliv','consign'].forEach(t => {
     const body = document.getElementById('wh-body-' + t);
@@ -4089,6 +4152,7 @@ function switchWhTab(tab) {
   if (tab === 'consign') {
     const dateEl = document.getElementById('wh-consign-date');
     if (dateEl && !dateEl.value) dateEl.value = todayStr();
+    markConsignNewSeen();
     renderWhConsignList();
     renderWhConsignLivePreview();
     markConsignRequestsSeen();
@@ -6485,7 +6549,18 @@ let _whDelivHistoryPage = 1;
 // 展開状態（どのslipIdを開いているか）はrenderWhDelivHistory()の再描画をまたいでも保持する
 // （委託リストの_whConsignExpandedClientsと同じ考え方）
 let _whDelivHistoryExpanded = new Set();
+function isWhDelivWideLayout() {
+  return !!(window.matchMedia && window.matchMedia('(min-width:1280px)').matches);
+}
+let _whDelivSideSlipId = null;
+let _whDelivSideMode = 'preview'; // 'preview' | 'items'
 function toggleWhDelivHistoryRow(slipId) {
+  // パソコン幅では下に開かず、右側に内容を出す
+  if (isWhDelivWideLayout()) {
+    _whDelivSideSlipId = slipId;
+    renderWhDelivHistory();
+    return;
+  }
   if (_whDelivHistoryExpanded.has(slipId)) _whDelivHistoryExpanded.delete(slipId);
   else _whDelivHistoryExpanded.add(slipId);
   renderWhDelivHistory();
@@ -6606,6 +6681,7 @@ function renderWhDelivHistory() {
   if (!slips.length) {
     listEl.innerHTML = `<div style="font-size:12px;color:var(--text-muted)">${filterActive ? '条件に一致する納品書が見つかりませんでした' : 'まだ発行した納品書はありません'}</div>`;
     updateFreeeInvoiceSelectBar();
+    if (typeof renderWhDelivSidePanel === 'function') renderWhDelivSidePanel(null);
     return;
   }
 
@@ -6627,7 +6703,7 @@ function renderWhDelivHistory() {
         <span style="flex-shrink:0;font-size:12px;color:var(--text-muted)">${it.qty}個${it.type !== 'consign' ? `／¥${(it.amount||0).toLocaleString('ja-JP')}` : ''}</span>
       </div>`).join('');
     return `
-    <div style="border-bottom:1px solid var(--border);font-size:13px">
+    <div class="wh-deliv-row ${_whDelivSideSlipId === s.slipId ? 'sel' : ''}" style="border-bottom:1px solid var(--border);font-size:13px">
       <div class="wh-deliv-row-grid" onclick="toggleWhDelivHistoryRow('${s.slipId}')">
         <div class="wh-deliv-click-cell">
           <div class="wh-deliv-row-title" style="color:var(--text);font-weight:600">${s.client || ''}／${fmtDateJP(s.date)}${s.subject ? '／' + s.subject : ''}</div>
@@ -6655,7 +6731,74 @@ function renderWhDelivHistory() {
   }
 
   updateFreeeInvoiceSelectBar();
+  // 右側の内容表示：まだ選んでいない（または選んでいたものが今の一覧に無い）ときは、一覧の先頭を表示する
+  if (!_whDelivSideSlipId || !slips.some(s => s.slipId === _whDelivSideSlipId)) {
+    _whDelivSideSlipId = visibleSlips[0] ? visibleSlips[0].slipId : null;
+    listEl.querySelectorAll('.wh-deliv-row').forEach((el, i) => el.classList.toggle('sel', i === 0));
+  }
+  renderWhDelivSidePanel(slips.find(s => s.slipId === _whDelivSideSlipId));
 }
+
+// パソコン幅の右側：選んだ発行済み納品書のプレビュー（または明細の表）
+function setWhDelivSideMode(mode) {
+  _whDelivSideMode = mode;
+  renderWhDelivHistory();
+}
+function renderWhDelivSidePanel(slip) {
+  const side = document.getElementById('wh-deliv-side');
+  if (!side) return;
+  if (!isWhDelivWideLayout()) { side.innerHTML = ''; return; }
+  if (!slip) { side.innerHTML = '<div class="card"><div class="tk-empty" style="padding:24px">左の一覧から納品書を選ぶと、ここに内容が表示されます</div></div>'; return; }
+  const modeBtn = (m, label) => `<button type="button" class="tab-switch-btn ${_whDelivSideMode === m ? 'active' : ''}" onclick="setWhDelivSideMode('${m}')">${label}</button>`;
+  const itemsTable = `<table class="wh-deliv-side-table"><thead><tr><th>型番</th><th>数量</th><th>単価</th><th>金額</th></tr></thead><tbody>${slip.items.map(it => `
+      <tr><td>${escapeHtmlMain(deliverySlipItemDisplayLabel(it))}${it.type === 'consign' ? ' <span style="color:var(--teal);font-weight:700">📦委託</span>' : ''}</td>
+      <td class="n">${it.qty}</td><td class="n">${it.type !== 'consign' && it.qty ? '¥' + Math.round((it.amount || 0) / it.qty).toLocaleString('ja-JP') : ''}</td>
+      <td class="n">${it.type !== 'consign' ? '¥' + (it.amount || 0).toLocaleString('ja-JP') : '—'}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>合計</td><td class="n">${slip.itemQty}</td><td></td><td class="n">¥${slip.total.toLocaleString('ja-JP')}</td></tr></tfoot></table>`;
+  side.innerHTML = `<div class="card" style="margin-bottom:0">
+    <div style="padding:14px 16px 0">
+      <div style="font-size:14px;font-weight:700;color:var(--text)">${escapeHtmlMain(slip.client || '')}</div>
+      <div style="font-size:12px;color:var(--text-sub);margin-top:2px">${fmtDateJP(slip.date)}${slip.subject ? '／' + escapeHtmlMain(slip.subject) : ''}${slip.slipNo ? '／No.' + escapeHtmlMain(slip.slipNo) : ''}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px">
+        <div class="tab-switch" style="margin:0;flex:0 0 200px">${modeBtn('preview', '📄 プレビュー')}${modeBtn('items', '📋 明細')}</div>
+        <button type="button" onclick="showDeliverySlipPreview('${slip.slipId}')" style="padding:7px 12px;font-size:12px;font-weight:700;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer;white-space:nowrap">🔍 印刷・編集・取消</button>
+      </div>
+    </div>
+    <div style="padding:12px 16px 16px">
+      ${_whDelivSideMode === 'items' ? itemsTable : `<div id="wh-deliv-side-scale-wrap" class="wh-deliv-side-scale-wrap"><div id="wh-deliv-side-page" class="ds-preview-page"></div></div>`}
+    </div>
+  </div>`;
+  if (_whDelivSideMode !== 'items') {
+    const data = buildDeliverySlipDataFromSlipId(slip.slipId);
+    const pageEl = document.getElementById('wh-deliv-side-page');
+    if (!data || !pageEl) return;
+    pageEl.style.transform = 'none';
+    pageEl.innerHTML = dsSlipBodyHtml(data.client, data.date, data.subject, data.slipNo);
+    renderDeliverySlipColumns(pageEl, data.items);
+    fitWhDelivSideScale();
+  }
+}
+function fitWhDelivSideScale() {
+  const wrap = document.getElementById('wh-deliv-side-scale-wrap');
+  const page = document.getElementById('wh-deliv-side-page');
+  if (!wrap || !page) return;
+  requestAnimationFrame(() => {
+    const availW = wrap.clientWidth - 16;
+    if (availW <= 0) return;
+    const scale = Math.min(1, Math.max(0.1, availW / 794));
+    page.style.transformOrigin = 'top left';
+    page.style.transform = 'scale(' + scale + ')';
+    const h = page.getBoundingClientRect().height;
+    wrap.style.height = Math.round(h + 16) + 'px';
+  });
+}
+// 画面幅が変わって、パソコン幅⇔狭い幅をまたいだときは一覧を描き直す
+if (window.matchMedia) {
+  const _whMq = window.matchMedia('(min-width:1280px)');
+  const _onWhMq = () => { if (document.getElementById('wh-deliv-history-list')) renderWhDelivHistory(); };
+  if (_whMq.addEventListener) _whMq.addEventListener('change', _onWhMq); else if (_whMq.addListener) _whMq.addListener(_onWhMq);
+}
+window.addEventListener('resize', () => { clearTimeout(window._whSideFitT); window._whSideFitT = setTimeout(fitWhDelivSideScale, 150); });
 
 // 型番検索・期間（開始／終了）いずれかの入力欄が変わるたびに呼ばれ、フィルター条件を読み取って再描画する
 function filterWhDelivHistory() {
@@ -7285,7 +7428,7 @@ function renderWhConsignClientItemsList(idx) {
         const m = items[0];
         detail = `
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text-muted)">
-            <span>預けた日 ${fmtDateJP(m.date)}${m.memo ? '／' + escapeHtmlMain(m.memo) : ''}</span>${costInput(m)}<span style="font-size:10px">（原価は取引先には表示されません）</span>
+            <span>預けた日 ${fmtDateJP(m.date)}${m.memo ? '／' + escapeHtmlMain(m.memo) : ''}${m.slipNo ? `／<span style="color:#0f766e">納品書 No.${escapeHtmlMain(m.slipNo)} から</span>` : ''}</span>${costInput(m)}<span style="font-size:10px">（原価は取引先には表示されません）</span>
           </div>
           ${moreLink}
           ${moreOpen ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
@@ -7294,7 +7437,7 @@ function renderWhConsignClientItemsList(idx) {
       } else {
         const lines = items.map(m => `
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px dashed var(--border);font-size:12px">
-            <span style="min-width:120px;color:var(--text)">${fmtDateJP(m.date)}に預けた分　<b>${m.qty}個</b>${m.memo ? `<span style="color:var(--text-muted)">／${escapeHtmlMain(m.memo)}</span>` : ''}</span>
+            <span style="min-width:120px;color:var(--text)">${isConsignNew(m) ? '<span class="wh-new-tag" style="margin:0 6px 0 0">NEW</span>' : ''}${fmtDateJP(m.date)}に預けた分　<b>${m.qty}個</b>${m.memo ? `<span style="color:var(--text-muted)">／${escapeHtmlMain(m.memo)}</span>` : ''}${m.slipNo ? `<span style="color:#0f766e">／納品書 No.${escapeHtmlMain(m.slipNo)} から</span>` : ''}</span>
             ${costInput(m)}
             ${moreOpen ? `<span style="display:flex;gap:6px;margin-left:auto">
               ${btn('精算', `openSettleConsign('${m._key}')`)}${btn('返却', `returnConsign('${m._key}')`)}${btn('数量を編集', `openEditConsignQty('${m._key}')`)}
@@ -7309,10 +7452,13 @@ function renderWhConsignClientItemsList(idx) {
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px">まとめて精算・返却は、古く預けた分から順に数を減らします。日付ごとに操作する場合は上の内訳のボタンを使ってください。</div>` : ''}`;
       }
     }
+    const newItems = items.filter(isConsignNew);
+    const newQty = newItems.reduce((t, m) => t + (m.qty || 0), 0);
+    const newSlipNos = Array.from(new Set(newItems.map(m => m.slipNo).filter(Boolean)));
     return `
-      <div style="border-bottom:1px solid var(--border);${pendingQty > 0 ? 'background:#fff8e1;' : ''}">
-        <div onclick="toggleWhConsignModelGroup(${idx}, '${g.gk}')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 4px;cursor:pointer">
-          <div style="min-width:0;flex:1;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(consignItemModelLive(items[0]))}</div>
+      <div style="border-bottom:1px solid var(--border);${pendingQty > 0 ? 'background:#fff8e1;' : newQty > 0 ? 'background:#ecfdf5;box-shadow:inset 3px 0 0 #10b981;' : ''}">
+        <div onclick="toggleWhConsignModelGroup(${idx}, '${g.gk}')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 4px 9px 8px;cursor:pointer">
+          <div style="min-width:0;flex:1;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(consignItemModelLive(items[0]))}${newQty > 0 ? `<span class="wh-new-tag">NEW${items.length > 1 ? ' +' + newQty + '個' : ''}</span>` : ''}${newSlipNos.length ? `<span class="wh-slip-from">納品書 No.${escapeHtmlMain(newSlipNos.join('・'))} から</span>` : ''}</div>
           ${pendingQty > 0 ? `<span style="flex-shrink:0;font-size:11px;font-weight:700;color:#b8860b">⏳ ${pendingQty}個 ${pendingLabel}申請中</span>` : ''}
           <span style="flex-shrink:0;font-size:13px;color:var(--text)">${g.qty}個</span>
           <span style="flex-shrink:0;color:var(--text-muted);font-size:14px;transition:transform .15s;${isOpen ? 'transform:rotate(90deg)' : ''}">›</span>
@@ -7383,6 +7529,7 @@ function renderWhConsignList() {
     .sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
 
   if (summaryEl) summaryEl.textContent = holding.length ? `合計${holding.reduce((t, m) => t + (m.qty || 0), 0)}個` : '';
+  updateConsignNewBadge();
   // 右側プレビュー欄（パソコン幅専用）の「現在预けている一覧」も、holdingの内容が変わる
   // たびに（精算・返却・数量編集・新規の預けの記録など）合わせて更新しておく
   renderWhConsignHoldingMirror();
@@ -7447,7 +7594,7 @@ function renderWhConsignList() {
           <div class="wh-consign-client-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer" onclick="toggleWhConsignClient(${idx})">
             <div style="display:flex;align-items:center;gap:6px;min-width:0">
               <span class="accordion-arrow${isOpen ? ' open' : ''}" style="font-size:10px;flex-shrink:0">▼</span>
-              <div style="font-size:14px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${consignModelGroupsOf(items).length}型番／合計${totalQty}個</span></div>
+              <div style="font-size:14px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${consignModelGroupsOf(items).length}型番／合計${totalQty}個</span>${(() => { const nw = items.filter(isConsignNew); return nw.length ? `<span class="wh-new-chip">🆕 新規${nw.length}件（${nw.reduce((t, m) => t + (m.qty || 0), 0)}個）</span>` : ''; })()}</div>
             </div>
             <button onclick="event.stopPropagation(); showConsignListPreview(decodeURIComponent(escape(atob('${btoa(unescape(encodeURIComponent(client)))}'))))" style="flex-shrink:0;padding:6px 10px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">📄 内容を見る</button>
           </div>
