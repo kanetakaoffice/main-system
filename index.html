@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28e">
+<meta name="app-build" content="2026-09-28f">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -720,6 +720,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
           <option value="">選択してください</option>
           <option value="金髙孝紀">金髙孝紀</option>
           <option value="金髙裕亮">金髙裕亮</option>
+          <option value="横井亨之丞">横井亨之丞</option>
         </select>
       </div>
       <div class="field-divider"></div>
@@ -2720,8 +2721,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 const DB_URL = 'https://trip-app-a1746-default-rtdb.asia-southeast1.firebasedatabase.app';
 function authedUrl(path) { return DB_URL + path + (window._idToken ? (path.includes('?') ? '&' : '?') + 'auth=' + window._idToken : ''); }
 let trips = [], expenses = [], purchases = [], sales = [], selectedMonth = null;
-const NAME_AMOUNT = { '金髙孝紀': 20000, '金髙裕亮': 10000 };
-const NAMES = ['金髙孝紀', '金髙裕亮'];
+const NAME_AMOUNT = { '金髙孝紀': 20000, '金髙裕亮': 10000, '横井亨之丞': 10000 };
+const NAMES = ['金髙孝紀', '金髙裕亮', '横井亨之丞'];
 const SUPPLIERS = ['店舗', '電脳', '（株）HAK', '（株）GAIN'];
 const DOMESTIC_CLIENTS = ['昇輝株式会社','株式会社RISE','ピュアクリエイト株式会社','東谷株式会社','株式会社グルラジトレイディングコーポレイション','株式会社サプライズ','エル・ダブル株式会社','環盛株式会社','株式会社HAK'];
 const OVERSEAS_CLIENTS = ['ANGCO INTERNATIONAL TRADING COMPANY（香港）'];
@@ -12230,8 +12231,8 @@ function getOverseasSalesClients() {
 }
 // 納品書作成・委託リストの取引先選択でも、この国内卸先の一覧をあわせて候補に出せるようにしておく
 window._domesticClientsSeed = DOM_CLIENTS;
-const NAMES_LIST = ['金髙孝紀','金髙裕亮'];
-const NAME_AMT = {'金髙孝紀':20000,'金髙裕亮':10000};
+const NAMES_LIST = ['金髙孝紀','金髙裕亮','横井亨之丞'];
+const NAME_AMT = {'金髙孝紀':20000,'金髙裕亮':10000,'横井亨之丞':10000};
 
 function sel(options, current, id) {
   return `<select id="${id}" style="font-size:13px;padding:6px 8px;border:1.5px solid var(--gold);border-radius:6px;background:var(--white)">${options.map(o=>`<option value="${o}"${o===current?' selected':''}>${o}</option>`).join('')}</select>`;
