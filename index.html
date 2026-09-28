@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28u">
+<meta name="app-build" content="2026-09-28v">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -113,6 +113,16 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
 .wh-sec-h .hide-sp { display:none; }
 @media (min-width:700px) { .wh-sec-h .hide-sp { display:inline; } }
 @media (min-width:1280px) { .wh-inv-bar { bottom:16px; } }
+.wh-bb { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin-top:6px; padding:5px 8px; border-radius:8px; background:#f0faf9; font-size:11.5px; color:var(--text-sub); }
+.wh-bb.muted { background:none; padding:0; color:var(--text-muted); font-size:11px; }
+.wh-bb-lbl { font-weight:700; color:#1f5f5a; }
+.wh-bb-lbl span { font-weight:400; color:var(--text-muted); font-size:10.5px; }
+.wh-bb-q { white-space:nowrap; }
+.wh-bb-q.top { font-weight:800; color:#0f766e; }
+.wh-bb-more { color:#0f766e; text-decoration:underline; cursor:pointer; white-space:nowrap; }
+.wh-bb-diff { margin-left:auto; white-space:nowrap; font-weight:700; }
+.wh-bb-diff.up { color:#16a34a; }
+.wh-bb-diff.down { color:#b45309; }
 .wh-hrow { padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; display:flex; align-items:center; gap:6px; }
 .wh-hrow-wrap > .wh-hrow { border-bottom:none; }
 .wh-hrow-wrap { border-bottom:1px solid var(--border); }
@@ -124,8 +134,9 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
 .wh-hactions { display:flex; justify-content:flex-end; align-items:center; gap:14px; padding:2px 0 8px; }
 .wh-hactions > span { font-size:12px !important; }
 @media (min-width:1280px) {
-  /* パソコン幅では卸売管理（納品書作成・委託リスト）全体を見やすい幅に収め、中央に置く */
-  #screen-inv-wholesale { max-width:1180px; margin-left:auto; margin-right:auto; }
+  /* パソコン幅では委託リストだけ見やすい幅に収めて中央に置く。納品書作成は商談中に
+     明細（左）とプレビュー（右）を広く使いたいので、画面いっぱいのままにする */
+  #wh-body-consign { max-width:1180px; margin-left:auto; margin-right:auto; }
   .wh-hcells { display:grid; grid-template-columns:minmax(0,1fr) 56px 110px 96px; gap:12px; align-items:center; }
   .wh-hc + .wh-hc::before, .wh-hc + .wh-hc:not(:empty)::before { content:none; }
   .wh-hc:empty { display:block; }
@@ -4621,6 +4632,7 @@ function updateWhItemField(idx, field, value) {
   if (amountEl) amountEl.textContent = '¥' + it.amount.toLocaleString('ja-JP');
   updateWhDelivTotalDisplay();
   saveWhDelivDraftDebounced();
+  if (field === 'unitPrice' && typeof refreshWhItemBuybackLines === 'function') refreshWhItemBuybackLines(idx);
 }
 
 // 商品名・型番は、スキャン間違いなどでこの納品書の明細だけ修正したい場合のためのその場編集。
@@ -4630,6 +4642,8 @@ function updateWhItemTextField(idx, field, value) {
   if (!it) return;
   it[field] = value;
   saveWhDelivDraftDebounced();
+  // 型番を手で直したときは、その型番で他社相場を探し直す
+  if (field === 'model' && typeof refreshWhItemBuybackLines === 'function') refreshWhItemBuybackLines(idx);
 }
 
 function updateWhDelivTotalDisplay() {
@@ -4771,10 +4785,76 @@ function renderWhDelivItems() {
           ? `<button onclick="moveWhDelivItemToConsign(${idx})" style="background:none;border:none;color:var(--text-muted);font-size:11px;text-decoration:underline;cursor:pointer;padding:0">↩︎ 委託の印を解除</button>`
           : `<button onclick="moveWhDelivItemToConsign(${idx})" style="background:none;border:none;color:var(--text-muted);font-size:11px;text-decoration:underline;cursor:pointer;padding:0">📦 委託リストへ追加</button>`}
       </div>
+      <div id="wh-item-bb-${idx}">${whItemBuybackHtml(it, idx)}</div>
       ${(!it._consignMarked && it._splitFrom != null) ? whItemDamageSectionHtml(it, idx) : ''}
     </div>`).join('');
   updateWhDelivTotalDisplay();
   renderWhDelivLivePreview();
+  // 買取価格データ（他社相場）をまだ読み込んでいなければ読み込み、終わったら相場の行だけ描き直す
+  if (!window._buybackPriceRef && !window._whBbLoading) {
+    window._whBbLoading = true;
+    loadBuybackPriceRefIfNeeded().then(() => { window._whBbLoading = false; refreshWhItemBuybackLines(); });
+  }
+}
+
+// ── 納品明細の各行に、買取スキャナーの他社相場を表示する ──
+// 要望「商談の時に買取スキャナーの相場を見ながら金額を決めているので、納品明細のところで
+// 他社の相場も出たらありがたい」への対応。買取価格画面と同じデータ（/buybackPriceRef/{JAN}）を使う。
+// 明細の商品のJANコード（なければ登録済み商品から型番で探したJAN）で照会し、見つからない場合は
+// 買取スキャナーの商品名に型番が含まれるものを探す。上位3社を表示し、「すべて」で全社を開く。
+let _whBbOpen = new Set();
+let _whBbNameIndex = null;
+function whItemBuybackRec(it) {
+  const data = window._buybackPriceRef;
+  if (!data) return null;
+  let jan = it.jan;
+  const prodList = (typeof products !== 'undefined' && products) || [];
+  if (!jan && it.productKey) jan = (prodList.find(p => p._key === it.productKey) || {}).jan;
+  const mNorm = normalizeModelStr(it.model || '');
+  if (!jan && mNorm) jan = (prodList.find(p => normalizeModelStr(p.model) === mNorm) || {}).jan;
+  if (jan && data[jan]) return { jan, rec: data[jan], byName: false };
+  if (!mNorm || mNorm.length < 4) return null;
+  if (!_whBbNameIndex || _whBbNameIndex.src !== data) {
+    _whBbNameIndex = { src: data, list: Object.entries(data).map(([j, r]) => [j, r, normalizeModelStr(r.n || '')]) };
+  }
+  let best = null;
+  _whBbNameIndex.list.forEach(([j, r, nn]) => {
+    if (!nn.includes(mNorm)) return;
+    const mx = r.q && r.q[0] ? r.q[0][1] : 0;
+    if (!best || mx > best.mx) best = { jan: j, rec: r, mx };
+  });
+  return best ? { jan: best.jan, rec: best.rec, byName: true } : null;
+}
+function whItemBuybackHtml(it, idx) {
+  if (it._consignMarked) return '';
+  if (!window._buybackPriceRef) return window._whBbLoading ? '<div class="wh-bb muted">他社相場を読み込み中…</div>' : '';
+  const hit = whItemBuybackRec(it);
+  if (!hit || !hit.rec.q || !hit.rec.q.length) return '<div class="wh-bb muted">他社相場：データなし</div>';
+  const q = hit.rec.q;
+  const top = q[0][1];
+  const open = _whBbOpen.has(it._uid);
+  const list = open ? q : q.slice(0, 3);
+  const diff = (it.unitPrice || 0) - top;
+  const diffHtml = it.unitPrice ? `<span class="wh-bb-diff ${diff >= 0 ? 'up' : 'down'}">入力単価 ¥${it.unitPrice.toLocaleString('ja-JP')}（最高値と${diff >= 0 ? '+' : '−'}¥${Math.abs(diff).toLocaleString('ja-JP')}）</span>` : '';
+  return `<div class="wh-bb">
+    <span class="wh-bb-lbl">他社相場${hit.byName ? '<span title="JANコードが一致せず、商品名に型番が含まれるものを表示しています">（名前で一致）</span>' : ''}</span>
+    ${list.map(([name, price], i) => `<span class="wh-bb-q ${i === 0 ? 'top' : ''}">${escapeHtmlMain(name)} ¥${price.toLocaleString('ja-JP')}</span>`).join('')}
+    ${q.length > 3 ? `<span class="wh-bb-more" onclick="toggleWhItemBuyback(${it._uid})">${open ? '閉じる' : `すべて（${q.length}社）`}</span>` : ''}
+    ${hit.rec.a ? `<span class="wh-bb-q">Amazon最安 ¥${hit.rec.a.toLocaleString('ja-JP')}</span>` : ''}
+    ${diffHtml}
+  </div>`;
+}
+function toggleWhItemBuyback(uid) {
+  if (_whBbOpen.has(uid)) _whBbOpen.delete(uid); else _whBbOpen.add(uid);
+  refreshWhItemBuybackLines();
+}
+// 入力中の欄のフォーカスを外さないよう、明細全体ではなく相場の行だけを描き直す
+function refreshWhItemBuybackLines(onlyIdx) {
+  _whDelivItems.forEach((it, idx) => {
+    if (onlyIdx != null && idx !== onlyIdx) return;
+    const el = document.getElementById('wh-item-bb-' + idx);
+    if (el) el.innerHTML = whItemBuybackHtml(it, idx);
+  });
 }
 
 // 要望：「パソコンで納品書を作成している時に、右側に作成中のプレビューがあるとやりやすい」
