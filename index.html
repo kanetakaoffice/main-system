@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28w">
+<meta name="app-build" content="2026-09-28x">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -476,6 +476,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 .inv-subcat-group-label { font-size: 10.5px; font-weight: 700; color: var(--text-muted); margin-right: 2px; }
 .inv-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--border); }
 .inv-row-list { margin-top: 6px; }
+/* 在庫一覧（リスト表示）：パソコンの広い画面では、商品の行を新聞のように複数の列に分けて
+   上から下へ流し込む（並び順は各列の上から下→次の列、の順）。行を開いても列の途中で切れない */
+@media (min-width:1280px) {
+  .inv-rows-cols { column-width:440px; column-gap:28px; column-rule:1px solid var(--border); }
+  .inv-rows-cols > .inv-row { break-inside:avoid; -webkit-column-break-inside:avoid; }
+}
 .inv-row-expand-arrow { font-size: 9px; color: var(--text-muted); display: inline-block; transition: transform 0.15s; flex-shrink: 0; }
 .inv-row-detail { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 12px; color: var(--text-sub); display: flex; flex-direction: column; gap: 4px; cursor: default; }
 .inv-row-detail-label { display: inline-block; min-width: 68px; font-size: 11px; color: var(--text-muted); font-weight: 600; }
@@ -11029,7 +11035,7 @@ function renderInventoryList() {
     // グリッド（写真）表示のときは、商品登録画面の写真つきカードを流用してカード形式で並べる
     const itemsHtml = isGrid
       ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:10px">${sorted.map(p => buildInvCard(p, {editable:true})).join('')}</div>`
-      : sorted.map(buildInvRow).join('');
+      : `<div class="inv-rows-cols">${sorted.map(buildInvRow).join('')}</div>`;
     return `
       <div class="inv-accordion ${isOpen?'open':''}">
         <div class="inv-accordion-head" onclick="toggleInvCatAccordion('${cat}')">
