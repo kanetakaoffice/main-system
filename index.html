@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-28k">
+<meta name="app-build" content="2026-09-28l">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -18073,6 +18073,16 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
 .tk-today-foot { display:flex; gap:8px; padding:4px 16px 14px; flex-wrap:wrap; }
 .tk-today-foot button { flex:1; padding:9px 6px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:10px; background:var(--white); color:var(--text); cursor:pointer; font-family:inherit; white-space:nowrap; }
 .tk-today-team { margin:0 16px 10px; padding:8px 10px; border-radius:10px; background:#fffbeb; border:1px solid #fcd34d; font-size:12px; color:#92400e; cursor:pointer; }
+.tk-cl-box { margin-top:8px; border-top:1px dashed var(--border); padding-top:4px; cursor:default; }
+.tk-cl-row { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:13px; }
+.tk-cl-row.on .tx { color:var(--text-muted); text-decoration:line-through; }
+.tk-cl-row .tx { flex:1; min-width:0; word-break:break-word; }
+.tk-cl-row .by, .tk-cl-edit .by { flex-shrink:0; font-size:11px; color:#16a34a; font-weight:600; }
+.tk-cl-check { flex-shrink:0; width:20px; height:20px; border-radius:5px; border:2px solid #b8b8b8; background:#fff; color:transparent; font-size:11px; font-weight:900; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; }
+.tk-cl-check.on { background:#16a34a; border-color:#16a34a; color:#fff; }
+.tk-cl-edit { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+.tk-cl-edit input { flex:1; min-width:0; box-sizing:border-box; padding:8px 10px; font-size:16px; font-family:inherit; border:1.5px solid var(--border); border-radius:8px; }
+.tk-cl-edit button { flex-shrink:0; width:32px; height:32px; border:1.5px solid var(--border); border-radius:8px; background:#fff; color:var(--text-sub); font-size:16px; cursor:pointer; }
 .tk-notify { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 12px; padding:9px 12px; border-radius:10px; background:#e6f5f3; border:1px solid #8fcfc9; color:#1f5f5a; font-size:12px; line-height:1.5; }
 .card .tk-notify { margin:0 16px 12px; }
 .tk-notify button { flex-shrink:0; padding:7px 10px; font-size:12px; font-weight:700; border:1.5px solid #0f766e; border-radius:8px; background:#fff; color:#0f766e; cursor:pointer; font-family:inherit; }
@@ -18244,6 +18254,21 @@ async function renderTasksScreen(noFetch) {
 }
 
 // ── タスク一覧 ──
+// 一緒にやる人（配列で保存。データベースから戻るときにオブジェクトになる場合にも対応）
+function tkHelpers(t) {
+  const h = t && t.helpers;
+  if (!h) return [];
+  return (Array.isArray(h) ? h : Object.values(h)).filter(Boolean);
+}
+// そのタスクに関わっているか（まとめ役＝担当者、または一緒にやる人）
+function tkInvolved(t, email) {
+  return !!email && (t.assignee === email || tkHelpers(t).includes(email));
+}
+// チェックリスト（{項目ID: {text, order, done, doneBy, doneAt}}）を並び順の配列で返す
+function tkChecklist(t) {
+  return Object.entries((t && t.checklist) || {}).filter(([, c]) => c && c.text)
+    .map(([cid, c]) => ({ ...c, cid })).sort((a, b) => (a.order || 0) - (b.order || 0));
+}
 function tkTaskList() {
   return Object.entries(TK.tasks || {}).filter(([, t]) => t && t.title).map(([id, t]) => ({ ...t, id }));
 }
@@ -18267,6 +18292,22 @@ function tkItemHtml(t, compact) {
   const prioTag = t.priority === 'high' ? '<span class="tk-tag high">優先度：高</span>' : '';
   const statusTag = doing ? '<span class="tk-tag doing">作業中</span>' : '';
   const rep = t.repeat && t.repeat !== 'none' ? `<span class="tk-tag">🔁 ${tkEsc(TK_REPEAT[t.repeat] || '')}</span>` : '';
+  const helpers = tkHelpers(t);
+  const helperTag = helpers.length ? `<span class="tk-tag ${helpers.includes(me) ? 'me' : ''}">👥 ${tkEsc(helpers.map(tkName).join('・'))}</span>` : '';
+  const cl = tkChecklist(t);
+  const clDone = cl.filter(c => c.done).length;
+  const clTag = cl.length ? `<span class="tk-tag ${clDone === cl.length ? 'me' : ''}">☑ ${clDone}/${cl.length}</span>` : '';
+  let groupTag = '';
+  if (t.groupId) {
+    const g = tkTaskList().filter(x => x.groupId === t.groupId);
+    groupTag = `<span class="tk-tag">👪 全員分 ${g.filter(x => x.status === 'done').length}/${g.length}人完了</span>`;
+  }
+  const clHtml = cl.length && !done && !compact ? `<div class="tk-cl-box" onclick="event.stopPropagation()">${cl.map(c => `
+      <div class="tk-cl-row ${c.done ? 'on' : ''}">
+        <button class="tk-cl-check ${c.done ? 'on' : ''}" onclick="tkToggleCheck('${t.id}','${c.cid}')">✓</button>
+        <span class="tx">${tkEsc(c.text)}</span>
+        ${c.done && c.doneBy ? `<span class="by">${tkEsc(tkName(c.doneBy))}</span>` : ''}
+      </div>`).join('')}</div>` : '';
   let who = '';
   if (done && t.doneBy) who = `<div class="tk-who done">✅ ${tkEsc(tkName(t.doneBy))}さんが ${tkStamp(t.doneAt)} に完了</div>`;
   else if (doing && t.doingBy) who = `<div class="tk-who">▶ ${tkEsc(tkName(t.doingBy))}さんが作業中（${tkStamp(t.doingAt)}〜）</div>`;
@@ -18277,8 +18318,9 @@ function tkItemHtml(t, compact) {
     <button class="tk-check ${done ? 'on' : ''}" onclick="tkToggleDone('${t.id}')" aria-label="完了">✓</button>
     <div class="tk-body" onclick="tkOpenTaskModal('${t.id}')">
       <div class="tk-title">${tkEsc(t.title)}</div>
-      <div class="tk-meta">${statusTag}${assignTag}${dueTag}${prioTag}${rep}</div>
+      <div class="tk-meta">${statusTag}${assignTag}${helperTag}${dueTag}${prioTag}${clTag}${groupTag}${rep}</div>
       ${who}
+      ${clHtml}
     </div>
     ${startBtn}
   </div>`;
@@ -18302,7 +18344,7 @@ function tkTasksHtml() {
   if (TK.filter === 'people') return toolbar + tkPeopleHtml(all);
 
   const open = all.filter(t => t.status !== 'done');
-  const scope = TK.filter === 'mine' ? open.filter(t => t.assignee === me) : open;
+  const scope = TK.filter === 'mine' ? open.filter(t => tkInvolved(t, me)) : open;
   const overdue = scope.filter(tkIsOverdue);
   const doing = scope.filter(t => !tkIsOverdue(t) && t.status === 'doing');
   const rest = scope.filter(t => !tkIsOverdue(t) && t.status !== 'doing');
@@ -18312,11 +18354,11 @@ function tkTasksHtml() {
   const unassigned = TK.filter === 'mine' ? open.filter(t => !t.assignee) : [];
   const weekAgo = Date.now() - 7 * 86400000;
   const doneList = all.filter(t => t.status === 'done' && (t.doneAt || 0) >= weekAgo)
-    .filter(t => TK.filter !== 'mine' || t.assignee === me || t.doneBy === me)
+    .filter(t => TK.filter !== 'mine' || tkInvolved(t, me) || t.doneBy === me)
     .sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
 
   let html = toolbar;
-  if (!scope.length && !unassigned.length) html += `<div class="tk-list"><div class="tk-empty">${TK.filter==='mine' ? 'あなたの担当のタスクはありません 🎉' : '未完了のタスクはありません 🎉'}</div></div>`;
+  if (!scope.length && !unassigned.length) html += `<div class="tk-list"><div class="tk-empty">${TK.filter==='mine' ? 'あなたが関わるタスクはありません 🎉' : '未完了のタスクはありません 🎉'}</div></div>`;
   html += tkSection('⚠️ 期限切れ', overdue, true);
   html += tkSection('▶ 作業中', doing);
   html += tkSection('📌 今日まで', todayList);
@@ -18330,16 +18372,16 @@ function tkTasksHtml() {
 function tkPeopleHtml(all) {
   const open = all.filter(t => t.status !== 'done');
   const emails = Object.values(TK.members || {}).map(m => m.email).filter(Boolean);
-  open.forEach(t => { if (t.assignee && !emails.includes(t.assignee)) emails.push(t.assignee); });
+  open.forEach(t => [t.assignee, ...tkHelpers(t)].forEach(e => { if (e && !emails.includes(e)) emails.push(e); }));
   const me = tkMe();
   emails.sort((a, b) => (a === me ? -1 : b === me ? 1 : tkName(a).localeCompare(tkName(b), 'ja')));
-  const card = (label, list, isMe) => {
+  const card = (label, list, isMe, email) => {
     const od = list.filter(tkIsOverdue).length;
     const doing = list.filter(t => t.status === 'doing');
     const rows = [...doing, ...list.filter(t => t.status !== 'doing')].slice(0, 8).map(t => `
       <div class="tk-person-row" onclick="tkOpenTaskModal('${t.id}')">
         <span>${t.status === 'doing' ? '▶' : tkIsOverdue(t) ? '⚠️' : '・'}</span>
-        <span class="t">${tkEsc(t.title)}</span>
+        <span class="t">${tkEsc(t.title)}${email && t.assignee !== email ? ' <span style="color:var(--text-muted);font-size:11px">（👥 協力）</span>' : ''}</span>
         <span style="font-size:11px;color:${tkIsOverdue(t) ? 'var(--danger)' : 'var(--text-muted)'};flex-shrink:0">${t.due ? tkShortDate(t.due) : ''}</span>
       </div>`).join('');
     return `<div class="tk-person">
@@ -18353,7 +18395,7 @@ function tkPeopleHtml(all) {
     </div>`;
   };
   let html = '<div class="tk-people">';
-  emails.forEach(e => { html += card(tkName(e), open.filter(t => t.assignee === e).sort(tkSortTasks), e === me); });
+  emails.forEach(e => { html += card(tkName(e), open.filter(t => tkInvolved(t, e)).sort(tkSortTasks), e === me, e); });
   const un = open.filter(t => !t.assignee).sort(tkSortTasks);
   if (un.length) html += card('🙋 担当者未定', un, false);
   html += '</div>';
@@ -18361,7 +18403,7 @@ function tkPeopleHtml(all) {
 }
 
 // ── タスクの操作 ──
-async function tkToggleDone(id) {
+async function tkToggleDone(id, opts) {
   const t = TK.tasks[id];
   if (!t) return;
   const me = tkMe();
@@ -18375,6 +18417,11 @@ async function tkToggleDone(id) {
   }
   if (t.status === 'doing' && t.doingBy && t.doingBy !== me) {
     const ok = await showConfirm(`${tkName(t.doingBy)}さんが作業中のタスクです。完了にしてよろしいですか？`);
+    if (!ok) return;
+  }
+  const remain = tkChecklist(t).filter(c => !c.done).length;
+  if (remain && !opts?.skipChecklistConfirm) {
+    const ok = await showConfirm(`チェックリストにまだ終わっていない項目が${remain}件あります。タスクを完了にしてよろしいですか？`);
     if (!ok) return;
   }
   // 最新の状態を確認して、すでに誰かが完了にしていたら二重に処理しない
@@ -18395,17 +18442,44 @@ async function tkToggleDone(id) {
     nextId = tkNewId();
     nextRec = {
       title: t.title, detail: t.detail || '', assignee: t.assignee || '', priority: t.priority || 'normal',
+      helpers: tkHelpers(t).length ? tkHelpers(t) : null,
+      checklist: tkChecklist(t).length ? Object.fromEntries(tkChecklist(t).map((c, i) => [tkNewId() + i, { text: c.text, order: i }])) : null,
       due: tkNextDue(t.due || tkToday(), t.repeat), dueTime: t.dueTime || '', repeat: t.repeat,
       status: 'todo', createdBy: t.createdBy || me, createdAt: Date.now(), updatedAt: Date.now(), updatedBy: me,
       autoRepeat: true // 自動で作った次回分（「新しいタスク」の通知は送らない）
     };
     patch.nextId = nextId; t.nextId = nextId;
+    Object.keys(nextRec).forEach(k => { if (nextRec[k] === null) delete nextRec[k]; });
     TK.tasks[nextId] = nextRec;
   }
   tkRefreshAll();
   showToast(nextRec ? `完了しました。次回（${tkShortDate(nextRec.due)}）の分を作成しました` : '完了しました');
   const ok = await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; if (nextId) delete TK.tasks[nextId]; });
   if (ok && nextRec) await tkSave('tasks/' + nextId, 'PUT', nextRec, () => { delete TK.tasks[nextId]; });
+}
+// チェックリストの1項目を付けたり外したりする（その項目だけを書き換えるので、同時に別の人が
+// ほかの項目をチェックしても上書きし合わない）
+async function tkToggleCheck(id, cid) {
+  const t = TK.tasks[id];
+  const c = t && t.checklist && t.checklist[cid];
+  if (!c) return;
+  const me = tkMe();
+  const prev = { ...c };
+  const on = !c.done;
+  const patch = {
+    ['checklist/' + cid + '/done']: on ? true : null,
+    ['checklist/' + cid + '/doneBy']: on ? me : null,
+    ['checklist/' + cid + '/doneAt']: on ? Date.now() : null,
+    updatedAt: Date.now(), updatedBy: me,
+  };
+  if (on) Object.assign(c, { done: true, doneBy: me, doneAt: Date.now() });
+  else { delete c.done; delete c.doneBy; delete c.doneAt; }
+  tkRefreshAll();
+  const ok = await tkSave('tasks/' + id, 'PATCH', patch, () => { t.checklist[cid] = prev; });
+  if (ok && on && t.status !== 'done' && tkChecklist(t).every(x => x.done)) {
+    const fin = await showConfirm('チェックリストの項目がすべて終わりました。このタスクを完了にしますか？');
+    if (fin) await tkToggleDone(id, { skipChecklistConfirm: true });
+  }
 }
 function tkNextDue(due, repeat) {
   const d = tkParse(due);
@@ -18456,9 +18530,10 @@ function tkMemberEmails() {
   if (me && !list.includes(me)) list.push(me);
   return list.sort((a, b) => (a === me ? -1 : b === me ? 1 : tkName(a).localeCompare(tkName(b), 'ja')));
 }
-function tkMemberOptions(selected) {
+function tkMemberOptions(selected, isNew) {
   const me = tkMe();
-  return `<option value="">未定（誰かお願い）</option>` + tkMemberEmails().map(e =>
+  return `<option value="">未定（誰かお願い）</option>` +
+    (isNew ? `<option value="__each__">全員（一人ずつ同じタスクを作る）</option>` : '') + tkMemberEmails().map(e =>
     `<option value="${tkEsc(e)}" ${e === selected ? 'selected' : ''}>${tkEsc(tkName(e))}${e === me ? '（自分）' : ''}</option>`).join('');
 }
 
@@ -18485,7 +18560,12 @@ function tkOpenTaskModal(id, presetDue) {
     <h3>${t ? 'タスクの編集' : 'タスクを追加'}</h3>
     <div class="tk-f"><label>やること</label><input type="text" id="tkf-title" value="${tkEsc(v.title)}" placeholder="例：〇〇社へ見積書を送る"></div>
     <div class="tk-f"><label>メモ（詳しい内容・注意点）</label><textarea id="tkf-detail" placeholder="任意">${tkEsc(v.detail || '')}</textarea></div>
-    <div class="tk-f"><label>担当者</label><select id="tkf-assignee">${tkMemberOptions(v.assignee || '')}</select></div>
+    <div class="tk-f"><label>担当者（まとめ役）</label><select id="tkf-assignee" onchange="tkOnAssigneeChange()">${tkMemberOptions(v.assignee || '', !t)}</select></div>
+    <div class="tk-f" id="tkf-helpers-box"><label>一緒にやる人（任意・何人でも）</label><div class="tk-mem-list">${tkMemberEmails().map(em => `<label><input type="checkbox" class="tkf-helper" value="${tkEsc(em)}" ${tkHelpers(v).includes(em) ? 'checked' : ''}>${tkEsc(tkName(em))}</label>`).join('')}</div></div>
+    <div class="tk-f"><label>チェックリスト（作業を小分けにする・任意）</label>
+      <div id="tkf-cl">${tkChecklist(v).map(c => tkClEditRow(c.cid, c.text, c.done ? tkName(c.doneBy) : '')).join('')}</div>
+      <button type="button" class="tk-chip" style="margin-top:6px" onclick="tkClAddRow()">＋ 項目を追加</button>
+    </div>
     <div class="tk-row2">
       <div class="tk-f"><label>期限日</label><input type="date" id="tkf-due" value="${tkEsc(v.due || '')}"></div>
       <div class="tk-f"><label>時刻（任意）</label><input type="time" id="tkf-time" value="${tkEsc(v.dueTime || '')}"></div>
@@ -18504,6 +18584,24 @@ function tkOpenTaskModal(id, presetDue) {
   `);
   if (!t) setTimeout(() => document.getElementById('tkf-title')?.focus(), 50);
 }
+function tkClEditRow(cid, text, doneName) {
+  return `<div class="tk-cl-edit" data-cid="${tkEsc(cid)}">
+    <input type="text" value="${tkEsc(text || '')}" placeholder="例：A棚の数を数える">
+    ${doneName ? `<span class="by">✓${tkEsc(doneName)}</span>` : ''}
+    <button type="button" onclick="this.parentElement.remove()" aria-label="削除">×</button>
+  </div>`;
+}
+function tkClAddRow() {
+  const box = document.getElementById('tkf-cl');
+  if (!box) return;
+  box.insertAdjacentHTML('beforeend', tkClEditRow('n' + tkNewId(), '', ''));
+  box.lastElementChild.querySelector('input')?.focus();
+}
+function tkOnAssigneeChange() {
+  const v = document.getElementById('tkf-assignee')?.value;
+  const box = document.getElementById('tkf-helpers-box');
+  if (box) box.style.display = v === '__each__' ? 'none' : '';
+}
 async function tkSaveTask(id) {
   const title = document.getElementById('tkf-title').value.trim();
   if (!title) { showToast('やることを入力してください'); return; }
@@ -18519,6 +18617,12 @@ async function tkSaveTask(id) {
     repeat: document.getElementById('tkf-repeat').value,
     updatedAt: now, updatedBy: me,
   };
+  const each = rec.assignee === '__each__';
+  const helpers = each ? [] : [...document.querySelectorAll('.tkf-helper:checked')].map(c => c.value).filter(e => e !== rec.assignee);
+  rec.helpers = helpers.length ? helpers : null;
+  const clRows = [...document.querySelectorAll('#tkf-cl .tk-cl-edit')].map((row, i) => ({
+    cid: row.dataset.cid, text: row.querySelector('input').value.trim(), order: i
+  })).filter(r => r.text);
   const newStatus = document.getElementById('tkf-status')?.value || null;
   tkCloseModal();
   if (id) {
@@ -18528,18 +18632,56 @@ async function tkSaveTask(id) {
     // 「完了」への変更はチェックボタンと同じ処理（二重完了の確認・繰り返しの次回作成）に任せる
     const toDone = newStatus === 'done' && t.status !== 'done';
     if (!toDone) tkApplyStatusChange(id, newStatus, rec);
+    // チェックリストは項目ごとに書き換える（チェック済みの状態は消さない）
+    const patch = { ...rec };
+    const oldCl = { ...(t.checklist || {}) };
+    const keep = new Set();
+    const newCl = {};
+    clRows.forEach(r => {
+      if (oldCl[r.cid]) {
+        keep.add(r.cid);
+        patch['checklist/' + r.cid + '/text'] = r.text;
+        patch['checklist/' + r.cid + '/order'] = r.order;
+        newCl[r.cid] = { ...oldCl[r.cid], text: r.text, order: r.order };
+      } else {
+        const nc = tkNewId() + r.order;
+        patch['checklist/' + nc] = { text: r.text, order: r.order };
+        newCl[nc] = { text: r.text, order: r.order };
+      }
+    });
+    Object.keys(oldCl).forEach(cid => { if (!keep.has(cid)) patch['checklist/' + cid] = null; });
     Object.assign(t, rec);
+    if (Object.keys(newCl).length) t.checklist = newCl; else delete t.checklist;
     Object.keys(t).forEach(k => { if (t[k] === null) delete t[k]; });
     tkRefreshAll();
-    const ok = await tkSave('tasks/' + id, 'PATCH', rec, () => { TK.tasks[id] = prev; });
+    const ok = await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; });
     if (ok && toDone) await tkToggleDone(id);
   } else {
-    const nid = tkNewId();
-    Object.assign(rec, { status: 'todo', createdBy: me, createdAt: now });
-    TK.tasks[nid] = rec;
-    tkRefreshAll();
-    showToast(rec.assignee && rec.assignee !== me ? `${tkName(rec.assignee)}さんにタスクを追加しました` : 'タスクを追加しました');
-    await tkSave('tasks/' + nid, 'PUT', rec, () => { delete TK.tasks[nid]; });
+    const checklist = clRows.length ? Object.fromEntries(clRows.map(r => [tkNewId() + r.order, { text: r.text, order: r.order }])) : null;
+    const base = { ...rec, status: 'todo', createdBy: me, createdAt: now };
+    if (checklist) base.checklist = checklist;
+    Object.keys(base).forEach(k => { if (base[k] === null) delete base[k]; });
+    if (each) {
+      // 「全員（一人ずつ）」：同じタスクを一人1件ずつ作る（それぞれ自分の分を完了にする）
+      const groupId = 'g' + tkNewId();
+      const list = tkMemberEmails();
+      const jobs = list.map((em, i) => {
+        const nid = tkNewId() + i;
+        const r = { ...base, assignee: em, groupId };
+        if (r.checklist) r.checklist = JSON.parse(JSON.stringify(r.checklist));
+        TK.tasks[nid] = r;
+        return [nid, r];
+      });
+      tkRefreshAll();
+      showToast(`全員（${list.length}人）にタスクを追加しました`);
+      for (const [nid, r] of jobs) await tkSave('tasks/' + nid, 'PUT', r, () => { delete TK.tasks[nid]; });
+    } else {
+      const nid = tkNewId();
+      TK.tasks[nid] = base;
+      tkRefreshAll();
+      showToast(base.assignee && base.assignee !== me ? `${tkName(base.assignee)}さんにタスクを追加しました` : 'タスクを追加しました');
+      await tkSave('tasks/' + nid, 'PUT', base, () => { delete TK.tasks[nid]; });
+    }
   }
 }
 function tkApplyStatusChange(id, newStatus, rec) {
@@ -18810,7 +18952,7 @@ async function renderHomeTodayCard(noFetch) {
     return !list.length || list.includes(me);
   });
   const open = tkTaskList().filter(t => t.status !== 'done');
-  const mine = open.filter(t => t.assignee === me);
+  const mine = open.filter(t => tkInvolved(t, me));
   const myOverdue = mine.filter(tkIsOverdue).sort(tkSortTasks);
   const myToday = mine.filter(t => !tkIsOverdue(t) && (t.due === today || t.status === 'doing')).sort(tkSortTasks);
   const teamOverdue = open.filter(t => tkIsOverdue(t) && t.assignee !== me).length;
@@ -18842,7 +18984,7 @@ async function renderHomeTodayCard(noFetch) {
 function tkUpdateBadges() {
   const me = tkMe();
   const today = tkToday();
-  const n = TK.loaded ? tkTaskList().filter(t => t.status !== 'done' && t.assignee === me && t.due && t.due <= today).length : 0;
+  const n = TK.loaded ? tkTaskList().filter(t => t.status !== 'done' && tkInvolved(t, me) && t.due && t.due <= today).length : 0;
   const set = el => { if (!el) return; el.textContent = n > 99 ? '99+' : String(n); el.style.display = n ? 'flex' : 'none'; };
   set(document.getElementById('home-tk-badge'));
   const sb = document.querySelector('#side-nav .side-nav-item[data-mode="tasks"] .side-nav-badge');
