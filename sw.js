@@ -43,6 +43,19 @@ try {
   // そのまま動き続ける
 }
 
+// 要望「タスク・予定の通知」への対応：届いた通知をタップしたら、アプリを開く
+// （すでに開いている場合はその画面を前面に出す）
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil((async () => {
+    const list = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of list) {
+      if ('focus' in c) return c.focus();
+    }
+    if (self.clients.openWindow) return self.clients.openWindow('./');
+  })());
+});
+
 self.addEventListener('install', e => {
   self.skipWaiting();
 });
