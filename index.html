@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-29n">
+<meta name="app-build" content="2026-09-29o">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -19264,8 +19264,9 @@ function tkTomorrowBody(tasks, day, me) {
   let body = summary + '<div class="tk-list">';
   if (!evs.length && !tasks.length) body += '<div class="tk-empty">明日の予定・タスクはまだありません</div>';
   body += allDayEv.map(tkEvRowHtml).join('');
-  if (timed.length) body += `<div class="tk-plan-lbl">時間が決まっているもの</div>` + timed.map(x => x.html).join('');
-  if (untimed.length) body += `<div class="tk-plan-lbl">時間の決まっていないタスク（優先度の高い順）</div>` + untimed.map(t => tkItemHtml(t)).join('');
+  // 要望により「時間が決まっているもの」などの見出しは出さず、時間順の予定・タスク → 時間の決まっていないタスクの順に並べるだけにした
+  body += timed.map(x => x.html).join('');
+  body += untimed.map(t => tkItemHtml(t)).join('');
   return body + '</div>';
 }
 // 明後日以降：日付ごとに見出しを付けて並べる
