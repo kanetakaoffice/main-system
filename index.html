@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-30b">
+<meta name="app-build" content="2026-09-30c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -18877,6 +18877,11 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
 .tk-r-who.none { color:#92400e; font-weight:700; }
 .tk-r-due { font-size:12px; color:var(--text-muted); white-space:nowrap; }
 .tk-r-due.od { color:var(--danger); font-weight:700; }
+.tk-r-due.soft { color:#2563eb; }
+.tk-tag.soft { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+.tk-sec.soft { color:#1d4ed8; }
+.tk-sec.soft .n { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+.tk-soft-btn { color:#1d4ed8 !important; border-color:#bfdbfe !important; background:#eff6ff !important; }
 .tk-item.slim .tk-caret { margin-left:0; }
 .tk-item.slim .tk-detail .tk-meta { margin-top:2px; }
 .tk-item.slim .tk-detail-foot .tk-start { padding:6px 12px; font-size:12px; }
@@ -18998,8 +19003,19 @@ function tkIsDueToday(t, today) {
   if (t.due === today) return true;
   return !!(t.startDate && t.startDate <= today && t.due >= today);
 }
+// 期限の種類：dueType==='soft' は「目安（いつでもOK）」。過ぎても期限切れ（赤）にはせず Someday に回す
+function tkIsSoft(t) { return !!(t && t.dueType === 'soft'); }
+function tkSoftLateDays(t) {
+  if (!tkIsSoft(t) || !t.due || t.status === 'done') return 0;
+  const today = tkToday();
+  if (t.due >= today) return 0;
+  return Math.round((tkParse(today) - tkParse(t.due)) / 86400000);
+}
+// Someday に入れるもの：期限なし、または目安の日を過ぎたもの
+function tkIsSomeday(t) { return t && t.status !== 'done' && (!t.due || tkSoftLateDays(t) > 0); }
 function tkIsOverdue(t) {
   if (!t || t.status === 'done' || !t.due) return false;
+  if (tkIsSoft(t)) return false;
   const today = tkToday();
   if (t.due < today) return true;
   if (t.due === today && t.dueTime) {
@@ -19215,7 +19231,9 @@ function tkItemHtml(t, compact) {
   const assignTag = !t.assignee
     ? '<span class="tk-tag none">担当未定</span>'
     : `<span class="tk-tag ${t.assignee === me ? 'me' : ''}">${tkEsc(tkName(t.assignee))}</span>`;
-  const dueTag = `<span class="tk-tag ${od ? 'od' : ''}">${od ? '⚠️ ' : ''}${tkEsc(tkDueLabel(t))}</span>`;
+  const soft = tkIsSoft(t) && t.due;
+  const lateDays = tkSoftLateDays(t);
+  const dueTag = `<span class="tk-tag ${od ? 'od' : soft ? 'soft' : ''}">${od ? '⚠️ ' : ''}${soft ? '🔵 目安 ' : ''}${tkEsc(tkDueLabel(t))}${lateDays ? `（${lateDays}日経過）` : ''}</span>`;
   const prioTag = t.priority === 'high' ? '<span class="tk-tag high">優先度：高</span>' : '';
   const statusTag = doing ? '<span class="tk-tag doing">作業中</span>' : '';
   const rep = t.repeat && t.repeat !== 'none' ? `<span class="tk-tag">🔁 ${tkEsc(TK_REPEAT[t.repeat] || '')}</span>` : '';
@@ -19250,7 +19268,7 @@ function tkItemHtml(t, compact) {
       ${clHtml}
       <div class="tk-detail-foot">
         <span>作成：${tkEsc(tkName(t.createdBy))}（${tkStamp(t.createdAt)}）</span>
-        <span style="display:flex;gap:6px">${startBtn}<button class="tk-edit-btn" onclick="tkOpenTaskModal('${t.id}')">✏️ 編集</button></span>
+        <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${od ? `<button class="tk-edit-btn tk-soft-btn" onclick="tkSetDueType('${t.id}','soft')">🔵 いつでもOKにする</button>` : ''}${lateDays ? `<button class="tk-edit-btn" onclick="tkSetDueType('${t.id}','hard')">🔴 締切に戻す</button>` : ''}${startBtn}<button class="tk-edit-btn" onclick="tkOpenTaskModal('${t.id}')">✏️ 編集</button></span>
       </div>
     </div>` : '';
   // 閉じているときは1行だけ：タイトル＋小さな印／右側に担当者と期限
@@ -19266,18 +19284,43 @@ function tkItemHtml(t, compact) {
     ? (!t.assignee ? '<span class="tk-r-who none">未定</span>'
       : `<span class="tk-r-who ${t.assignee === me ? 'me' : ''}">${tkEsc(tkName(t.assignee))}${helpers.length ? ' 他' + helpers.length : ''}</span>`)
     : (iAmHelper ? '<span class="tk-r-who">👥協力</span>' : '');
-  const dueShort = done && t.doneAt ? `✅ ${tkStamp(t.doneAt)}` : (od ? '⚠️ ' : '') + tkDueLabel(t).replace(/まで$/, '');
+  const dueShort = done && t.doneAt ? `✅ ${tkStamp(t.doneAt)}`
+    : lateDays ? `目安${tkShortDate(t.due)}・${lateDays}日経過`
+    : (od ? '⚠️ ' : '') + (soft ? '目安 ' : '') + tkDueLabel(t).replace(/まで$/, '');
   return `<div class="tk-item slim ${cls} ${open ? 'open' : ''}">
     <button class="tk-check ${done ? 'on' : ''}" onclick="tkToggleDone('${t.id}')" aria-label="完了">✓</button>
     <div class="tk-body" onclick="tkToggleExpand('${t.id}')">
       <div class="tk-line">
         <span class="tk-title">${doing ? '<span class="tk-doing-mark">▶</span>' : ''}${tkEsc(t.title)}</span>
         ${icons}
-        <span class="tk-r">${whoShort}<span class="tk-r-due ${od ? 'od' : ''}">${tkEsc(dueShort)}</span><span class="tk-caret">${open ? '▲' : '▼'}</span></span>
+        <span class="tk-r">${whoShort}<span class="tk-r-due ${od ? 'od' : soft ? 'soft' : ''}">${tkEsc(dueShort)}</span><span class="tk-caret">${open ? '▲' : '▼'}</span></span>
       </div>
       ${detailHtml}
     </div>
   </div>`;
+}
+// Someday の並び：優先度（高）→ 目安を過ぎた日数が多い順 → 期限なし
+function tkSortSomeday(a, b) {
+  const pa = a.priority === 'high' ? 0 : 1, pb = b.priority === 'high' ? 0 : 1;
+  if (pa !== pb) return pa - pb;
+  const la = a.due ? tkSoftLateDays(a) : -1, lb = b.due ? tkSoftLateDays(b) : -1;
+  if (la !== lb) return lb - la;
+  return (a.createdAt || 0) - (b.createdAt || 0);
+}
+async function tkSetDueType(id, type) {
+  const t = TK.tasks[id];
+  if (!t) return;
+  const prev = { ...t };
+  const me = tkMe(), now = Date.now();
+  if (type === 'soft') t.dueType = 'soft'; else delete t.dueType;
+  t.updatedAt = now; t.updatedBy = me;
+  tkRefreshAll();
+  showToast(type === 'soft' ? '「いつでもOK」にしました（Somedayに移動）' : '締切に戻しました');
+  await tkSave('tasks/' + id, 'PATCH', { dueType: type === 'soft' ? 'soft' : null, updatedAt: now, updatedBy: me }, () => { TK.tasks[id] = prev; });
+}
+function tkSetDueTypeUi(type) {
+  document.querySelectorAll('#tkf-duetype .tab-switch-btn').forEach(b => b.classList.toggle('active', b.dataset.v === type));
+  const box = document.getElementById('tkf-duetype'); if (box) box.dataset.v = type;
 }
 // 開閉できる見出し（key：開閉状態の名前、defaultClosed：最初は閉じておくか）
 const TK_EN_WD = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -19295,7 +19338,7 @@ function tkSectionC(key, title, items, opts) {
   opts = opts || {};
   if (!items.length && !opts.always) return '';
   const closed = tkIsClosed(key, opts.defaultClosed);
-  const head = `<div class="tk-sec ${opts.danger ? 'danger' : ''} tk-sec-t" onclick="tkToggleSec('${key}', ${!!opts.defaultClosed})">
+  const head = `<div class="tk-sec ${opts.danger ? 'danger' : ''} ${opts.soft ? 'soft' : ''} tk-sec-t" onclick="tkToggleSec('${key}', ${!!opts.defaultClosed})">
       <span class="tk-sec-arrow ${closed ? '' : 'open'}">▶</span>${title}<span class="n">${items.length}</span>${opts.extra || ''}</div>`;
   if (closed) return head;
   return head + (opts.bodyHtml != null ? opts.bodyHtml : `<div class="tk-list">${items.length ? items.map(t => tkItemHtml(t)).join('') : `<div class="tk-empty">${opts.emptyText || 'なし'}</div>`}</div>`);
@@ -19361,7 +19404,7 @@ function tkTasksListHtml(all, me, today) {
   const rest = scope.filter(t => !tkIsOverdue(t) && t.status !== 'doing');
   const todayList = rest.filter(t => tkIsDueToday(t, today));
   const later = rest.filter(t => t.due && t.due > today && !tkIsDueToday(t, today));
-  const noDue = rest.filter(t => !t.due);
+  const someday = rest.filter(tkIsSomeday).sort(tkSortSomeday);
   const unassigned = TK.filter === 'mine' ? open.filter(t => !t.assignee) : [];
   const weekAgo = Date.now() - 7 * 86400000;
   const doneList = all.filter(t => t.status === 'done' && (t.doneAt || 0) >= weekAgo)
@@ -19380,7 +19423,7 @@ function tkTasksListHtml(all, me, today) {
   html += tkSectionC('today', `📌 Today<span class="tk-sec-date">${tkEnDate(today)}</span>`, todayList, { always: true, emptyText: '今日が期限のタスクはありません', extra: doneToday ? `<span class="tk-sec-done">✓ ${doneToday} done</span>` : '' });
   html += tkSectionC('tomorrow', `🌅 Tomorrow<span class="tk-sec-date">${tkEnDate(tomorrow)}</span>`, tomorrowList, { always: true, bodyHtml: tkTomorrowBody(tomorrowList, tomorrow, me) });
   html += tkSectionC('upcoming', '🗓 Upcoming', upcoming, { defaultClosed: true, bodyHtml: tkUpcomingBody(upcoming) });
-  html += tkSectionC('nodue', '📝 No due date', noDue, { defaultClosed: true });
+  html += tkSectionC('someday', '🔵 Someday<span class="tk-sec-date">いつでもOK・手が空いたら</span>', someday, { soft: true });
   if (unassigned.length) html += tkSectionC('unassigned', '🙋 Unassigned<span class="tk-sec-date">誰かお願いします</span>', unassigned);
   html += tkSectionC('done', '✅ Completed<span class="tk-sec-date">last 7 days</span>', doneList, { always: true, defaultClosed: true, emptyText: 'まだありません' });
   return html;
@@ -19466,7 +19509,7 @@ function tkPersonViewInner(email) {
   html += tkSection('▶ In progress', doing);
   html += tkSection(`📌 Today<span class="tk-sec-date">${tkEnDate(today)}</span>`, rest.filter(t => tkIsDueToday(t, today)));
   html += tkSection('🗓 Upcoming', rest.filter(t => t.due && t.due > today && !tkIsDueToday(t, today)));
-  html += tkSection('📝 No due date', rest.filter(t => !t.due));
+  html += tkSection('🔵 Someday<span class="tk-sec-date">いつでもOK</span>', rest.filter(tkIsSomeday).sort(tkSortSomeday));
   if (doneList.length) html += tkSection('✅ Completed<span class="tk-sec-date">last 7 days</span>', doneList);
   html += `<div class="tk-btns"><button class="tk-btn-cancel" onclick="tkCloseModal()">閉じる</button></div>`;
   return html;
@@ -19516,6 +19559,7 @@ async function tkToggleDone(id, opts) {
       startDate: null,
       checklist: tkChecklist(t).length ? Object.fromEntries(tkChecklist(t).map((c, i) => [tkNewId() + i, { text: c.text, order: i }])) : null,
       due: tkNextDue(t.due || tkToday(), t.repeat), dueTime: t.dueTime || '', repeat: t.repeat,
+      dueType: tkIsSoft(t) ? 'soft' : null,
       status: 'todo', createdBy: t.createdBy || me, createdAt: Date.now(), updatedAt: Date.now(), updatedBy: me,
       autoRepeat: true // 自動で作った次回分（「新しいタスク」の通知は送らない）
     };
@@ -19647,6 +19691,13 @@ function tkOpenTaskModal(id, presetDue) {
       <div class="tk-f"><label>期限日</label><input type="date" id="tkf-due" value="${tkEsc(v.due || '')}"></div>
     </div>
     <div class="tk-f" style="margin-top:-6px;font-size:11px;color:var(--text-muted)">「水〜木のどこかでやればいい」ときは、開始日を水曜・期限日を木曜にします。開始日を空けると期限日だけになります。</div>
+    <div class="tk-f"><label>期限の種類</label>
+      <div class="tab-switch" id="tkf-duetype" data-v="${v.dueType === 'soft' ? 'soft' : 'hard'}" style="margin:0">
+        <button type="button" class="tab-switch-btn ${v.dueType === 'soft' ? '' : 'active'}" data-v="hard" onclick="tkSetDueTypeUi('hard')">🔴 締切（必ず守る）</button>
+        <button type="button" class="tab-switch-btn ${v.dueType === 'soft' ? 'active' : ''}" data-v="soft" onclick="tkSetDueTypeUi('soft')">🔵 目安（いつでもOK）</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">目安は日付を過ぎても赤い期限切れにならず、Somedayに並びます。</div>
+    </div>
     <div class="tk-row2">
       <div class="tk-f"><label>期限の時刻（任意）</label>${tkTimeInputHtml('tkf-time', v.dueTime, 'なし', null, 'tk-wslot-task', true)}</div>
       <div class="tk-f"></div>
@@ -19698,6 +19749,7 @@ async function tkSaveTask(id) {
     startDate: document.getElementById('tkf-start').value || null,
     priority: document.getElementById('tkf-prio').value,
     repeat: document.getElementById('tkf-repeat').value,
+    dueType: document.getElementById('tkf-duetype')?.dataset.v === 'soft' ? 'soft' : null,
     updatedAt: now, updatedBy: me,
   };
   if (rec.startDate && (!rec.due || rec.startDate >= rec.due)) rec.startDate = null; // 期限日以降の開始日は使わない
