@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-29o">
+<meta name="app-build" content="2026-09-30a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -99,118 +99,6 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
    ままにしておき、画面幅1024px以上のときだけ右側にプレビュー欄を追加した2カラム表示に切り替える
    （.manual-refresh-btnと同じ考え方：既定では隠しておき、PC幅のメディアクエリだけで見せる）。 */
 .wh-desktop-preview-col { display: none; }
-/* 委託リストの精算・返却済みの履歴の1行（型番・個数・金額・日付） */
-.wh-sec-card { background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; margin-top:14px; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-.wh-sec-h { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.wh-sec-h .t { font-size:14px; font-weight:700; color:var(--text); }
-.wh-sec-h .n { font-size:12px; color:var(--text-sub); }
-.wh-sec-sub { font-size:11.5px; color:var(--text-muted); margin:4px 0 10px; }
-.wh-inv-bar { position:sticky; bottom:calc(env(safe-area-inset-bottom) + 72px); z-index:5; display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding:10px 12px; border-radius:10px; background:#1f2937; color:#fff; font-size:13px; box-shadow:0 4px 14px rgba(0,0,0,0.18); }
-.wh-inv-bar b { font-weight:800; }
-.wh-inv-bar button { padding:9px 14px; font-size:13px; font-weight:700; border:none; border-radius:8px; background:#c5e8e5; color:#1f5f5a; cursor:pointer; font-family:inherit; white-space:nowrap; }
-.wh-inv-bar span[onclick] { color:#d1d5db !important; white-space:nowrap; }
-.wh-inv-bar > span:first-child { min-width:0; }
-.wh-sec-h .hide-sp { display:none; }
-@media (min-width:700px) { .wh-sec-h .hide-sp { display:inline; } }
-@media (min-width:1280px) { .wh-inv-bar { bottom:16px; } }
-/* 出荷管理：パソコン幅での2列表示 */
-@media (min-width:1280px) {
-  .pk-add-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:0 32px; }
-  .pk-add-mid-divider { display:none; }
-  .pk-add-grid > .pk-add-col > .field:first-of-type, .pk-add-grid > .pk-add-col > .pk-add-mid-divider + .field { padding-top:0 !important; }
-  .pk-ec-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.2fr); gap:16px; align-items:start; }
-  #pack-list-sp { display:grid; grid-template-columns:repeat(auto-fill, minmax(420px, 1fr)); gap:10px; align-items:start; }
-  #pack-list-sp > * { margin:0 !important; }
-}
-.wh-deliv-side { display:none; }
-@media (min-width:1280px) {
-  .wh-deliv-hist-wrap { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.05fr); gap:16px; align-items:start; }
-  .wh-deliv-side { display:block; position:sticky; top:calc(var(--side-nav-top, 60px) + 12px); max-height:calc(100vh - var(--side-nav-top, 60px) - 24px); overflow-y:auto; }
-  /* 一覧は1件を2行（1行目：取引先・日付・件名／2行目：No.・数量・合計）にまとめる */
-  .wh-deliv-hist-wrap .wh-deliv-click-cell { display:block; }
-  .wh-deliv-hist-wrap .wh-deliv-click-cell > .wh-deliv-row-meta { margin-top:2px !important; }
-  .wh-deliv-hist-wrap .wh-deliv-row .accordion-body { display:none !important; }
-  .wh-deliv-hist-wrap .wh-deliv-row .accordion-arrow { display:none; }
-  .wh-deliv-hist-wrap .wh-deliv-row-grid { padding:10px 8px; border-radius:8px; }
-  .wh-deliv-hist-wrap .wh-deliv-row-grid:hover { background:rgba(255,255,255,0.6); }
-  .wh-deliv-hist-wrap .wh-deliv-row.sel .wh-deliv-row-grid { background:#e6f5f3; box-shadow:inset 3px 0 0 #0f766e; }
-}
-.wh-deliv-side-scale-wrap { overflow:hidden; background:var(--surface); padding:8px; border-radius:8px; }
-.wh-deliv-side-table { width:100%; border-collapse:collapse; font-size:12.5px; }
-.wh-deliv-side-table th { text-align:left; font-size:11px; color:var(--text-muted); font-weight:700; padding:6px 4px; border-bottom:1.5px solid var(--border); }
-.wh-deliv-side-table td { padding:6px 4px; border-bottom:1px solid var(--border); word-break:break-all; }
-.wh-deliv-side-table .n, .wh-deliv-side-table th:not(:first-child) { text-align:right; white-space:nowrap; }
-.wh-deliv-side-table tfoot td { font-weight:700; border-bottom:none; border-top:1.5px solid var(--border); }
-.wh-new-badge { margin-left:6px; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:#dc2626; color:#fff; font-size:11px; font-weight:700; align-items:center; justify-content:center; box-sizing:border-box; vertical-align:middle; }
-.wh-new-chip { display:inline-block; margin-left:8px; padding:1px 8px; border-radius:999px; background:#d1fae5; color:#047857; font-size:11px; font-weight:700; vertical-align:middle; }
-.wh-new-tag { display:inline-block; margin-left:8px; padding:0 6px; border-radius:4px; background:#10b981; color:#fff; font-size:10px; font-weight:800; letter-spacing:.03em; vertical-align:middle; }
-.wh-slip-from { margin-left:8px; font-size:11px; font-weight:500; color:#0f766e; }
-.buyback-quick-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:12px; padding:8px 12px; border-radius:10px; border:1.2px solid var(--border); background:var(--white); font-size:12.5px; color:var(--text-sub); }
-.buyback-quick-bar.stale { border-color:#f59e0b; color:#b45309; background:#fffbeb; }
-.buyback-quick-btn { align-items:center; gap:4px; padding:6px 12px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--white); color:var(--text); cursor:pointer; white-space:nowrap; }
-/* 買取価格：パソコン幅では左に検索と結果、右に調べた商品の履歴 */
-.bb-right { margin-top:4px; }
-@media (min-width:1024px) {
-  .bb-wide { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; align-items:start; }
-  .bb-right { margin-top:0; position:sticky; top:calc(var(--side-nav-top, 60px) + 12px); max-height:calc(100vh - var(--side-nav-top, 60px) - 24px); overflow-y:auto; }
-  #buyback-search-results { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:10px; align-items:start; padding:0 !important; }
-  #buyback-search-results > .bb-result > div:first-child { margin-top:0 !important; background:var(--white) !important; }
-}
-.bb-result { margin-top:6px; }
-.bb-result > div:first-child { border-bottom-left-radius:0 !important; border-bottom-right-radius:0 !important; }
-.bb-keep-btn { display:block; width:100%; padding:8px; font-size:12px; font-weight:700; border:1.2px solid var(--border); border-top:none; border-radius:0 0 8px 8px; background:var(--white); color:#0f766e; cursor:pointer; font-family:inherit; }
-.bb-keep-btn.on { background:#e6f5f3; color:#1f5f5a; }
-@media (min-width:1024px) { .bb-result { margin-top:0; } }
-.bb-hist-row { display:flex; align-items:center; gap:10px; padding:9px 4px; border-bottom:1px solid var(--border); cursor:pointer; border-radius:6px; }
-.bb-hist-row:last-child { border-bottom:none; }
-.bb-hist-row:hover { background:var(--surface); }
-.bb-hist-main { flex:1; min-width:0; }
-.bb-hist-name { font-size:13px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.bb-hist-sub { font-size:11px; color:var(--text-muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.bb-hist-top { flex-shrink:0; text-align:right; line-height:1.3; }
-.bb-hist-top b { display:block; font-size:14px; color:#0f766e; }
-.bb-hist-top span { font-size:11px; color:var(--text-sub); }
-.bb-hist-x { flex-shrink:0; width:24px; height:24px; border:none; background:none; color:var(--text-muted); font-size:13px; cursor:pointer; border-radius:6px; }
-.bb-hist-x:hover { background:#fee2e2; color:#b91c1c; }
-.wh-dhandle { flex:0 0 22px; align-self:center; text-align:center; font-size:18px; line-height:1; color:#b0b0b0; cursor:grab; user-select:none; -webkit-user-select:none; touch-action:none; padding:6px 0; }
-.wh-dhandle:hover { color:var(--text); }
-.wh-drow { position:relative; background:var(--white); -webkit-user-select:none; }
-.wh-drow input, .wh-drow select { -webkit-user-select:text; user-select:text; }
-.wh-drow.wh-dragging { z-index:20; box-shadow:0 10px 24px rgba(0,0,0,.18); border-radius:10px; opacity:.97; transition:none; }
-.wh-drow.wh-drop-before::before, .wh-drow.wh-drop-after::after { content:''; position:absolute; left:0; right:0; height:3px; background:#10b981; border-radius:2px; }
-.wh-drow.wh-drop-before::before { top:-2px; }
-.wh-drow.wh-drop-after::after { bottom:-2px; }
-body.wh-drag-active { cursor:grabbing; user-select:none; -webkit-user-select:none; }
-.wh-bb { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin-top:6px; padding:5px 8px; border-radius:8px; background:#f0faf9; font-size:11.5px; color:var(--text-sub); }
-.wh-bb.muted { background:none; padding:0; color:var(--text-muted); font-size:11px; }
-.wh-bb-lbl { font-weight:700; color:#1f5f5a; }
-.wh-bb-lbl span { font-weight:400; color:var(--text-muted); font-size:10.5px; }
-.wh-bb-q { white-space:nowrap; }
-.wh-bb-q.top { font-weight:800; color:#0f766e; }
-.wh-bb-more { color:#0f766e; text-decoration:underline; cursor:pointer; white-space:nowrap; }
-.wh-bb-diff { margin-left:auto; white-space:nowrap; font-weight:700; }
-.wh-bb-diff.up { color:#16a34a; }
-.wh-bb-diff.down { color:#b45309; }
-.wh-hrow { padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; display:flex; align-items:center; gap:6px; }
-.wh-hrow-wrap > .wh-hrow { border-bottom:none; }
-.wh-hrow-wrap { border-bottom:1px solid var(--border); }
-.wh-hcells { flex:1; min-width:0; }
-.wh-hc + .wh-hc:not(:empty)::before { content:'／'; }
-.wh-hc:empty { display:none; }
-.wh-hmore { flex-shrink:0; width:30px; height:24px; border:1.2px solid var(--border); border-radius:6px; background:var(--white); color:var(--text-sub); font-size:14px; line-height:1; cursor:pointer; padding:0; }
-.wh-hmore.on { background:var(--surface); }
-.wh-hactions { display:flex; justify-content:flex-end; align-items:center; gap:14px; padding:2px 0 8px; }
-.wh-hactions > span { font-size:12px !important; }
-@media (min-width:1280px) {
-  /* パソコン幅では委託リストだけ見やすい幅に収めて中央に置く。納品書作成は商談中に
-     明細（左）とプレビュー（右）を広く使いたいので、画面いっぱいのままにする */
-  #wh-body-consign { max-width:1180px; margin-left:auto; margin-right:auto; }
-  .wh-hcells { display:grid; grid-template-columns:minmax(0,1fr) 56px 110px 96px; gap:12px; align-items:center; }
-  .wh-hc + .wh-hc::before, .wh-hc + .wh-hc:not(:empty)::before { content:none; }
-  .wh-hc:empty { display:block; }
-  .wh-hc.q, .wh-hc.a { text-align:right; }
-  .wh-hc.d { color:var(--text-sub); }
-}
 @media (min-width: 1024px) {
   .wh-desktop-layout { display: flex; align-items: flex-start; gap: 20px; }
   .wh-desktop-layout > .wh-desktop-main { flex: 1 1 0; min-width: 0; }
@@ -348,6 +236,8 @@ body.wh-drag-active { cursor:grabbing; user-select:none; -webkit-user-select:non
   .settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; max-width: 1200px; }
   .settings-col { display: block; min-width: 0; }
 }
+/* 納品書プレビューの印刷ボタンは、タッチ操作のみの端末（スマホ・タブレット）では共有から印刷できるため隠す */
+@media (hover: none) and (pointer: coarse) { .ds-print-btn { display: none !important; } }
 .biz-side { display: none; }
 .chart-layout-main, .chart-layout-side { min-width: 0; }
 @media (min-width: 1280px) {
@@ -535,13 +425,6 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 .inv-subcat-group-label { font-size: 10.5px; font-weight: 700; color: var(--text-muted); margin-right: 2px; }
 .inv-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--border); }
 .inv-row-list { margin-top: 6px; }
-.inv-subcat-count { margin-left:4px; font-size:0.95em; font-weight:700; opacity:0.75; }
-/* 在庫一覧（リスト表示）：パソコンの広い画面では、商品の行を新聞のように複数の列に分けて
-   上から下へ流し込む（並び順は各列の上から下→次の列、の順）。行を開いても列の途中で切れない */
-@media (min-width:1280px) {
-  .inv-rows-cols { column-width:440px; column-gap:28px; column-rule:1px solid var(--border); }
-  .inv-rows-cols > .inv-row { break-inside:avoid; -webkit-column-break-inside:avoid; }
-}
 .inv-row-expand-arrow { font-size: 9px; color: var(--text-muted); display: inline-block; transition: transform 0.15s; flex-shrink: 0; }
 .inv-row-detail { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 12px; color: var(--text-sub); display: flex; flex-direction: column; gap: 4px; cursor: default; }
 .inv-row-detail-label { display: inline-block; min-width: 68px; font-size: 11px; color: var(--text-muted); font-weight: 600; }
@@ -836,16 +719,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <button class="home-action-btn" onclick="showScreen('purchase')"><span class="home-icon">🛒</span><span class="home-label">仕入</span></button>
         <button class="home-action-btn" onclick="showScreen('expense')"><span class="home-icon">💴</span><span class="home-label">経費</span></button>
         <button class="home-action-btn" onclick="showScreen('form')"><span class="home-icon">✈️</span><span class="home-label">出張</span></button>
-        <button class="home-action-btn" onclick="TK.filter='mine';openTasksScreen('tasks')" style="position:relative"><span class="home-icon">✅</span><span class="home-label">タスク</span><span class="tk-tile-badge" id="home-tk-badge"></span></button>
-        <button class="home-action-btn" onclick="openTasksScreen('cal')"><span class="home-icon">📅</span><span class="home-label">予定</span></button>
-        <button class="home-action-btn" onclick="TK.filter='people';openTasksScreen('tasks')"><span class="home-icon">👥</span><span class="home-label">みんなの状況</span></button>
       </div>
     </div>
     <div id="home-notify-prompt" style="display:none;align-items:center;justify-content:space-between;gap:8px;background:var(--surface);border:1.2px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:var(--text-muted)">
       <span>取引先からの連絡や、スタッフによる経費・仕入・売上の登録があったとき、アプリを閉じていてもポップアップでお知らせできます</span>
       <button onclick="requestConsignNotifyPermission()" style="flex-shrink:0;padding:6px 10px;font-size:12px;font-weight:700;border:1.5px solid var(--gold-dark);border-radius:8px;background:var(--white);color:var(--gold-dark);cursor:pointer">🔔 通知を有効にする</button>
     </div>
-    <div id="home-today-card"></div>
     <div id="home-summary"></div>
     </div>
     <aside class="home-col-side" id="home-side-panels"></aside>
@@ -1239,9 +1118,6 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     </div>
   </div>
 
-<!-- タスク・予定（全員で共有）スクリーン -->
-  <div id="screen-tasks" class="screen"></div>
-
 <!-- 一般ユーザー履歴スクリーン -->
   <div id="screen-myhistory" class="screen">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -1322,21 +1198,6 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <button onclick="doLogout()" style="width:100%;padding:14px;background:none;border:1.5px solid #555555;border-radius:var(--radius-sm);color:#3a3a3a;font-size:15px;font-weight:600;cursor:pointer">ログアウト</button>
     </div>
   </div><div class="settings-col">
-    <!-- 買取価格データ（買取スキャナーのCSV）の取り込み：以前は「買取価格」画面にあったものを移した -->
-  <div class="card" id="buyback-import-card">
-    <div class="card-title">買取価格データの取り込み（管理者のみ）</div>
-    <div class="field">
-      <div class="field-label">買取スキャナーのCSVファイル</div>
-      <input type="file" id="buyback-csv-input" accept=".csv" onchange="handleBuybackCsvSelected(event)">
-      <div style="font-size:11px;color:var(--text-muted);margin-top:6px">JANコードごとに他社の買取価格が入ったCSVファイルを選択してください。価格は日々変わるため、新しくダウンロードするたびに何度でも取り込み直せます。同じJANコードのデータは最新の内容で置き換わるだけなので、二重に登録されることはありません。</div>
-    </div>
-    <div id="buyback-import-status" style="font-size:12.5px;color:var(--text-muted);margin-top:10px"></div>
-    <div id="buyback-import-progress-wrap" style="display:none;margin-top:8px">
-      <div style="background:var(--surface);border-radius:6px;overflow:hidden;height:8px">
-        <div id="buyback-import-progress-bar" style="height:100%;width:0%;background:var(--gold-dark);transition:width .2s"></div>
-      </div>
-    </div>
-  </div>
     <!-- 楽天の商品検索APIで商品写真を自動で付けるための、楽天のアプリIDとアクセスキー -->
     <div class="card settings-collapse">
       <div class="card-title settings-toggle" role="button" tabindex="0" onclick="toggleSettingsCard(this)" onkeydown="if(event.key==='Enter')toggleSettingsCard(this)"><span>商品写真の自動取得（楽天）</span><span class="settings-toggle-arrow">▼</span></div>
@@ -1765,8 +1626,6 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   <div id="packec-body-add" style="display:none">
     <div class="card">
       <div class="card-title">出荷リストに追加</div>
-      <!-- パソコン幅（1280px以上）では、左に商品の情報、右にお届け先の情報を並べる -->
-      <div class="pk-add-grid"><div class="pk-add-col">
       <div class="field">
         <div class="field-label">JANコード</div>
         <div style="margin-bottom:6px">
@@ -1803,8 +1662,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div class="field-label">数量</div>
         <input type="number" id="pack-qty-sp" placeholder="1" min="1">
       </div>
-      </div><div class="pk-add-col">
-      <div class="field-divider pk-add-mid-divider"></div>
+      <div class="field-divider"></div>
       <div class="field" style="padding-top:16px">
         <div class="field-label">お客様名</div>
         <input type="text" id="pack-customer-sp" placeholder="注文者名を入力">
@@ -1829,15 +1687,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div class="field-label">メモ（自由入力）</div>
         <input type="text" id="pack-memo-sp" placeholder="自由にメモを入力（任意）">
       </div>
-      </div></div>
       <div style="margin-top:12px">
         <button class="btn btn-gold" onclick="addPackItemSPAndSwitch()" style="width:100%">リストに追加する</button>
       </div>
     </div>
   </div>
   <div id="packec-body-ec" style="display:none">
-    <!-- パソコン幅（1280px以上）では、左に「記録フォーム・集計・本日の明細」、右に「日別・月別グラフ」を並べる -->
-    <div class="pk-ec-grid"><div class="pk-ec-col">
     <!-- EC売上を記録 -->
     <div class="card">
       <div class="card-title">EC売上を記録</div>
@@ -1881,11 +1736,6 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     </div>
     <!-- 販路別集計 -->
     <div id="ec-channel-summary" style="display:flex;gap:8px;margin-bottom:12px"></div>
-    <!-- 本日の明細 -->
-    <div style="font-size:13px;font-weight:700;color:#3a3a3a;margin-bottom:8px">本日の明細</div>
-    <div id="ec-list-sp"></div>
-    <div id="ec-empty-sp" style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px">本日の売上はまだありません</div>
-    </div><div class="pk-ec-col">
     <!-- 日別グラフ（◀▶で前月・翌月に切り替えられる） -->
     <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:12px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -1900,7 +1750,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div style="font-size:12px;font-weight:700;color:#3a3a3a;margin-bottom:8px">月別売上推移</div>
       <div id="ec-monthly-chart" style="overflow-x:auto"></div>
     </div>
-    </div></div>
+    <!-- 本日の明細 -->
+    <div style="font-size:13px;font-weight:700;color:#3a3a3a;margin-bottom:8px">本日の明細</div>
+    <div id="ec-list-sp"></div>
+    <div id="ec-empty-sp" style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px">本日の売上はまだありません</div>
   </div>
 </div>
 
@@ -1908,7 +1761,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 <div id="screen-inv-wholesale" class="screen" style="display:none;padding-top:8px">
   <div class="tab-switch" style="margin-bottom:12px">
     <button class="tab-switch-btn active" id="wh-tab-deliv" onclick="switchWhTab('deliv')">📝 納品書作成</button>
-    <button class="tab-switch-btn" id="wh-tab-consign" onclick="switchWhTab('consign')">📦 委託リスト<span id="wh-consign-new-badge" class="wh-new-badge" style="display:none"></span></button>
+    <button class="tab-switch-btn" id="wh-tab-consign" onclick="switchWhTab('consign')">📦 委託リスト</button>
   </div>
 
   <!-- 請求書（freee）作成済みへのまとめ：通常の納品書／精算分の納品書のどちらのタブで
@@ -2067,10 +1920,6 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   </div>
   </div>
 
-    <!-- 要望「パソコンで発行済みの納品書一覧が横に伸びて見にくい。タップすると下に伸びるだけなので、
-         右側に内容を表示させたい」への対応。パソコン幅（1280px以上）では、左に一覧、右に選んだ納品書の
-         プレビュー（「明細」に切り替え可）を並べる。狭い幅では右側は出さず、今まで通り下に開く -->
-    <div class="wh-deliv-hist-wrap"><div class="wh-deliv-hist-main">
     <div style="margin-bottom:16px;background:var(--surface);border-radius:10px;padding:10px 12px">
       <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('wh-deliv-history')">
         <div style="display:flex;align-items:center;gap:6px">
@@ -2099,9 +1948,6 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         </div>
         <div id="wh-deliv-history-list"></div>
       </div>
-    </div>
-    </div>
-    <aside class="wh-deliv-side" id="wh-deliv-side"></aside>
     </div>
   </div>
 
@@ -2215,40 +2061,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div id="wh-consign-list"></div>
     <div id="wh-consign-empty" style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">現在預けている商品はありません</div>
 
-    <!-- 要望「精算・返却済みの履歴、選択した精算済み商品で納品書を作成のボタン、精算分の納品書
-         （請求用）がそれぞれ見にくい」への対応。作業の流れ（未請求を選ぶ → 納品書を作る →
-         できた請求用の納品書を確認する）の順に、3つの白いカードに分けた。
-         ① 未請求：まだ納品書にしていない精算済みの商品を取引先ごとに全件表示。1件でも選ぶと
-            下に「〇件選択中・合計¥〇〇　［納品書を作成］」の帯が出る
-         ② 精算分の納品書（請求用）：作成済みの納品書の一覧
-         ③ 精算・返却済みの履歴：請求済み・返却済みの記録（絞り込みはこのカードの中だけ） -->
-    <div class="wh-sec-card" id="wh-consign-uninvoiced-card">
-      <div class="wh-sec-h"><span class="t">🧾 未請求</span><span class="n" id="wh-consign-uninvoiced-count"></span></div>
-      <div class="wh-sec-sub">まだ納品書にしていない精算済みの商品です。チェックを入れて納品書を作成します。</div>
-      <div id="wh-consign-uninvoiced-list"></div>
-      <div class="wh-inv-bar" id="wh-consign-invoice-bar" style="display:none">
-        <span id="wh-consign-invoice-select-count"></span>
-        <span style="display:flex;gap:8px;align-items:center">
-          <span onclick="clearConsignInvoiceSelection()" style="font-size:12px;color:var(--text-muted);text-decoration:underline;cursor:pointer">選択を外す</span>
-          <button type="button" onclick="createConsignInvoiceSlipFromSelection()">📄 納品書を作成</button>
-        </span>
-      </div>
-    </div>
-
-    <div class="wh-sec-card">
-      <div class="wh-sec-h" style="cursor:pointer" onclick="toggleAccordion('wh-consign-invoices')">
-        <span class="t">📄 精算分の納品書（請求用）</span>
-        <span style="display:flex;align-items:center;gap:8px"><span class="n" id="wh-consign-invoices-count"></span><span class="accordion-arrow" id="acc-arrow-wh-consign-invoices" style="font-size:10px;color:var(--text-muted)">▼</span></span>
-      </div>
-      <div class="accordion-body" id="acc-body-wh-consign-invoices" style="margin-top:8px">
-        <div id="wh-consign-invoices-list"></div>
-      </div>
-    </div>
-
-    <div class="wh-sec-card">
-      <div class="wh-sec-h" style="cursor:pointer" onclick="toggleAccordion('wh-consign-history')">
-        <span class="t">🗂 精算・返却済みの履歴</span>
-        <span style="display:flex;align-items:center;gap:8px"><span class="n hide-sp" style="font-weight:400">請求済み・返却済みの記録</span><span class="accordion-arrow" id="acc-arrow-wh-consign-history" style="font-size:10px;color:var(--text-muted)">▼</span></span>
+    <div style="margin-top:16px;background:var(--surface);border-radius:10px;padding:10px 12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('wh-consign-history')">
+        <span style="font-size:13px;font-weight:700;color:var(--text)">精算・返却済みの履歴</span>
+        <span class="accordion-arrow" id="acc-arrow-wh-consign-history" style="font-size:10px;color:var(--text-muted)">▼</span>
       </div>
       <div class="accordion-body" id="acc-body-wh-consign-history" style="margin-top:8px">
         <!-- 要望：「型番検索や月毎、日にち指定などで絞れるようにしたい」＋「期間の指定
@@ -2269,6 +2085,26 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
           <button type="button" id="wh-consign-history-filter-clear" onclick="clearWhConsignHistoryFilter()" style="display:none;padding:7px 10px;border:1.2px solid var(--border);border-radius:8px;background:var(--white);color:var(--text-muted);font-size:12px;cursor:pointer;white-space:nowrap">✕ 条件をクリア</button>
         </div>
         <div id="wh-consign-history-list"></div>
+        <!-- 要望：「委託リストの納品書を作成する時に、チェックを入れて選択し納品書を作成する
+             のですが、ページを移動すると前のページでチェックを入れたものが全て外されて
+             しまう。ページを移動してチェックを入れても外れないようにしてほしい」への対応。
+             以前はチェック状態をDOMのcheckedプロパティだけで持っていたため、ページ切替・
+             取引先カードの開閉・絞り込みなどでrenderWhConsignHistorySection()が再描画される
+             たびにチェックボックスごと作り直され、チェックが消えてしまっていた。取引先納品書
+             作成画面の_freeeInvoiceSelectedと同じ考え方で、チェック状態を_consignInvoiceSelected
+             （_key単位のSet）に保持し、再描画のたびにそこから復元するようにした -->
+        <div id="wh-consign-invoice-select-count" style="font-size:11.5px;color:var(--gold-dark);font-weight:700;margin-top:8px"></div>
+        <button onclick="createConsignInvoiceSlipFromSelection()" style="width:100%;margin-top:6px;padding:10px;background:var(--surface);color:var(--text);border:1.5px dashed var(--border);border-radius:var(--radius-sm);font-size:12.5px;font-weight:600;cursor:pointer">📄 選択した精算済み商品で納品書を作成</button>
+      </div>
+    </div>
+
+    <div style="margin-top:10px;background:var(--surface);border-radius:10px;padding:10px 12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('wh-consign-invoices')">
+        <span style="font-size:13px;font-weight:700;color:var(--text)">精算分の納品書（請求用）</span>
+        <span class="accordion-arrow" id="acc-arrow-wh-consign-invoices" style="font-size:10px;color:var(--text-muted)">▼</span>
+      </div>
+      <div class="accordion-body" id="acc-body-wh-consign-invoices" style="margin-top:8px">
+        <div id="wh-consign-invoices-list"></div>
       </div>
     </div>
 </div>
@@ -2283,39 +2119,29 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
      何度取り込んでも二重に登録されることはない（元々の商品登録・在庫（products／
      stockMoves）とは完全に別の場所に保存しており、そちらには一切影響しない）。 -->
 <div id="screen-inv-buyback" class="screen" style="display:none;padding-top:8px">
-  <!-- 要望「買取価格の画面が横に伸びて見にくい／CSVの取り込みは設定でもいいのでは」への対応。
-       取り込み欄（説明つきの大きなカード）は「設定」に移し、この画面には最終取り込み日時と
-       「📥 CSVを取り込む」ボタンだけの細い帯を置く（毎日の取り込みはHOMEかここからすぐできる） -->
-  <div id="buyback-quick-bar" class="buyback-quick-bar">
-    <span id="buyback-quick-text">📊 買取価格CSV：確認中…</span>
-    <label id="buyback-quick-btn" class="buyback-quick-btn" style="display:none">📥 CSVを取り込む<input type="file" accept=".csv" onchange="handleBuybackQuickCsvSelected(event)" style="display:none"></label>
+  <div class="card" id="buyback-import-card" style="display:none">
+    <div class="card-title">買取価格データの取り込み（管理者のみ）</div>
+    <div class="field">
+      <div class="field-label">買取スキャナーのCSVファイル</div>
+      <input type="file" id="buyback-csv-input" accept=".csv" onchange="handleBuybackCsvSelected(event)">
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px">JANコードごとに他社の買取価格が入ったCSVファイルを選択してください。価格は日々変わるため、新しくダウンロードするたびに何度でも取り込み直せます。同じJANコードのデータは最新の内容で置き換わるだけなので、二重に登録されることはありません。</div>
+    </div>
+    <div id="buyback-import-status" style="font-size:12.5px;color:var(--text-muted);margin-top:10px"></div>
+    <div id="buyback-import-progress-wrap" style="display:none;margin-top:8px">
+      <div style="background:var(--surface);border-radius:6px;overflow:hidden;height:8px">
+        <div id="buyback-import-progress-bar" style="height:100%;width:0%;background:var(--gold-dark);transition:width .2s"></div>
+      </div>
+    </div>
   </div>
-  <!-- 要望「型番を全部入力して調べるので、パソコンで広げると結果が1件だけ左に出て右側が空く。
-       左半分で検索、右半分に検索した履歴を残したい」への対応。パソコン幅（1024px以上）では左に
-       検索と結果、右に「調べた商品の履歴」（最高値つき・押すと左に全社の価格を出し直す）を並べる。
-       履歴はこの端末のブラウザに最大30件まで残す（スマホでは結果の下に表示） -->
-  <div class="bb-wide">
-  <div class="bb-left">
   <div class="card">
     <div class="card-title">買取価格を調べる</div>
     <div class="field">
       <div class="field-label">JANコードまたは商品名で検索</div>
       <input type="text" id="buyback-search-input" placeholder="JANコード・商品名を入力" oninput="renderBuybackSearchResults()">
     </div>
-    <div id="buyback-search-status" style="font-size:12px;color:var(--text-muted);margin:6px 16px 14px"></div>
+    <div id="buyback-search-status" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
   </div>
   <div id="buyback-search-results" style="padding:0 16px 16px"></div>
-  </div>
-  <aside class="bb-right">
-    <div class="card" style="margin-bottom:0">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 0">
-        <div class="card-title" style="padding:0;margin:0">調べた商品の履歴</div>
-        <button type="button" onclick="clearBuybackHistory()" style="background:none;border:none;padding:0;font-size:11px;color:var(--text-muted);text-decoration:underline;cursor:pointer">履歴をすべて消す</button>
-      </div>
-      <div id="buyback-history" style="padding:8px 16px 14px"></div>
-    </div>
-  </aside>
-  </div>
 </div>
 
 <!-- 請求書（freee）としてまとめるモーダル：選択した納品書（通常／精算分を問わない）の一覧と
@@ -2497,6 +2323,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div style="display:flex;align-items:center;gap:16px">
         <button id="ds-preview-edit-btn" onclick="previewEditDeliverySlip()" aria-label="編集する" title="編集する" style="display:none;background:none;border:none;padding:8px;margin:-8px;cursor:pointer;align-items:center;justify-content:center;color:var(--text)">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+        </button>
+        <!-- 要望：「パソコンで納品書を印刷したいが、共有を押すとAirDropやメールなどの一覧しか出ず印刷できない
+             （携帯は共有から印刷できる）」への対応。パソコン（マウス操作の端末）だけ、印刷画面を直接開く
+             プリンターのボタンを共有の隣に表示する（スマホは今まで通り共有から印刷） -->
+        <button class="ds-print-btn" onclick="printDeliverySlipFromPreview()" aria-label="印刷" title="印刷" style="background:none;border:none;padding:8px;margin:-8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
         </button>
         <button onclick="shareDeliverySlipPdfDirect()" aria-label="共有" title="共有" style="background:none;border:none;padding:8px;margin:-8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text)">
           <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
@@ -3980,11 +3812,8 @@ function showInvScreen(name) {
   }
   if (name === 'inv-buyback') {
     // CSV取り込みは管理者のみ（検索・閲覧は倉庫作業員も含め全員が利用できる）
-    const quickBtn = document.getElementById('buyback-quick-btn');
-    if (quickBtn) quickBtn.style.display = isAdmin() ? 'inline-flex' : 'none';
-    updateBuybackQuickStatus();
-    renderBuybackHistory();
-    loadBuybackPriceRefIfNeeded().then(renderBuybackHistory);
+    const importCard = document.getElementById('buyback-import-card');
+    if (importCard) importCard.style.display = isAdmin() ? 'block' : 'none';
     const searchInput = document.getElementById('buyback-search-input');
     if (searchInput) searchInput.value = '';
     const resultsEl = document.getElementById('buyback-search-results');
@@ -4172,55 +4001,6 @@ let _editingSlipId = null; // 発行済みの納品書を編集中の場合、�
 let _whDelivItemUidSeq = 1; // 明細行を一意に識別するID（配列の並びが変わっても「傷・潰れ分割」の元行を追跡できるようにする）
 const WH_DELIV_DRAFT_KEY = 'kanetaka_wh_deliv_draft';
 
-// ── 委託リストの「新しく追加された商品」の目印 ──
-// 要望「納品書作成で委託にしたものが、委託リストでどう表示されているか分かりにくい。色や
-// 新規追加の件数などで確認しやすくしたい」への対応。端末ごとに「最後に委託リストを開いた日時」を
-// localStorageに控え、それより後に追加された預け商品（納品書から委託にしたもの・新規作成したもの）を
-// 「新しい」として扱う。委託リストを開くと既読になり、タブのバッジは消えるが、開いている間は
-// どれが新しいかが分かるよう、行の色・NEWの印・取引先カードの「新規〇件」は表示したままにする。
-const CONSIGN_NEW_SEEN_KEY = 'kanetaka_consign_new_seen_at';
-function getConsignNewSeenAt() {
-  try {
-    const v = parseInt(localStorage.getItem(CONSIGN_NEW_SEEN_KEY) || '', 10);
-    if (!isNaN(v)) return v;
-    const now = Date.now();
-    localStorage.setItem(CONSIGN_NEW_SEEN_KEY, String(now)); // 初めての端末では、今ある分は「新しい」にしない
-    return now;
-  } catch (e) { return Date.now(); }
-}
-let _consignNewSince = getConsignNewSeenAt(); // この画面で「新しい」と表示する基準の日時
-// 要望「一度開いたら消えてしまうので、ある期間は残しておきたい」への対応。行の色・NEWの印・
-// 取引先カードの「新規〇件」は、追加されてからこの日数の間は（開いて見た後も）表示し続ける。
-// しばらく委託リストを開かなかった場合は、その間に追加された分もまだ見ていないので「新しい」のまま出す。
-// タブの赤い数字（未確認の件数）だけは、今まで通り委託リストを開いた時点で消える。
-// 要望「毎週月曜日の商談で委託にするか決めているので1週間にしたい。月曜日以降に委託にすることもある」
-// への対応で7日間にした（追加した日ごとに1週間なので、週の途中で追加した分も丸1週間残る）。
-// 月曜日の商談分と、その後に追加した分を見分けられるよう、NEWの印には追加した日（例：9/28(月)）も添える。
-const CONSIGN_NEW_KEEP_DAYS = 7;
-function consignAddedDayLabel(ms) {
-  if (!ms) return '';
-  const d = new Date(ms);
-  return `${d.getMonth() + 1}/${d.getDate()}(${['日','月','火','水','木','金','土'][d.getDay()]})`;
-}
-function isConsignNew(m) {
-  const keepFrom = Date.now() - CONSIGN_NEW_KEEP_DAYS * 86400000;
-  return (m.createdAt || 0) > Math.min(_consignNewSince, keepFrom);
-}
-function markConsignNewSeen() {
-  _consignNewSince = getConsignNewSeenAt();
-  try { localStorage.setItem(CONSIGN_NEW_SEEN_KEY, String(Date.now())); } catch (e) {}
-  updateConsignNewBadge();
-}
-function updateConsignNewBadge() {
-  const badge = document.getElementById('wh-consign-new-badge');
-  if (!badge) return;
-  const seen = getConsignNewSeenAt();
-  const onConsign = document.getElementById('wh-body-consign')?.style.display === 'block' && document.getElementById('screen-inv-wholesale')?.classList.contains('active');
-  const n = onConsign ? 0 : (stockMoves || []).filter(m => m.type === 'consign' && m.status === 'holding' && (m.createdAt || 0) > seen).length;
-  badge.textContent = n > 99 ? '99+' : String(n);
-  badge.style.display = n ? 'inline-flex' : 'none';
-}
-
 function switchWhTab(tab) {
   ['deliv','consign'].forEach(t => {
     const body = document.getElementById('wh-body-' + t);
@@ -4232,7 +4012,6 @@ function switchWhTab(tab) {
   if (tab === 'consign') {
     const dateEl = document.getElementById('wh-consign-date');
     if (dateEl && !dateEl.value) dateEl.value = todayStr();
-    markConsignNewSeen();
     renderWhConsignList();
     renderWhConsignLivePreview();
     markConsignRequestsSeen();
@@ -4766,100 +4545,6 @@ function confirmWhConsignSplit() {
 
 // 追加した商品の並び順を入れ替える（▲▼ボタン）。納品書に印字される順番はこの配列の順になるため、
 // 見せたい順（まとめて並べたい商品同士を隣接させるなど）に自由に並べ替えられるようにする
-// 指定した位置へ明細の行を移動する（ドラッグ・長押しでの並べ替え用）
-function moveWhDelivItemTo(from, to) {
-  if (from === to || from < 0 || from >= _whDelivItems.length) return;
-  const [it] = _whDelivItems.splice(from, 1);
-  _whDelivItems.splice(Math.max(0, Math.min(_whDelivItems.length, to)), 0, it);
-  renderWhDelivItems();
-  saveWhDelivDraft();
-}
-
-// ── 納品明細の並べ替え（ドラッグ） ──
-// 要望「移動幅が大きいときに▲▼を毎回押すのが大変。携帯では長押しで移動したい。パソコンでも簡単に」への対応。
-//  ・スマホ：行（入力欄・ボタン以外の場所）を約0.4秒長押しすると持ち上がり、指を動かして離した位置へ移動する。
-//    長押しの前に指が動いたときは、普通のスクロールとして扱う。
-//  ・パソコン：行の左端の「⠿」をつかんで上下にドラッグする。
-//  動かしている間は入る位置に線を出し、画面の上下の端に近づけると自動でスクロールする。
-let _whDrag = null;
-function setupWhDelivDrag(container) {
-  if (container._dragSetup) return;
-  container._dragSetup = true;
-  // パソコン（マウス）：つまみをつかんでドラッグ
-  container.addEventListener('mousedown', e => {
-    const h = e.target.closest('.wh-dhandle');
-    if (!h || e.button !== 0) return;
-    e.preventDefault();
-    whDragStart(container, parseInt(h.dataset.idx, 10), e.clientY);
-    const move = ev => whDragMove(ev.clientY);
-    const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); whDragEnd(); };
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', up);
-  });
-  // スマホ：長押しで持ち上げる
-  let pressTimer = null, startY = 0, startX = 0, pressIdx = -1;
-  container.addEventListener('touchstart', e => {
-    const row = e.target.closest('.wh-drow');
-    if (!row || e.touches.length !== 1) return;
-    if (e.target.closest('input, select, textarea, button') && !e.target.closest('.wh-dhandle')) return;
-    startY = e.touches[0].clientY; startX = e.touches[0].clientX;
-    pressIdx = parseInt(row.dataset.idx, 10);
-    clearTimeout(pressTimer);
-    pressTimer = setTimeout(() => {
-      pressTimer = null;
-      if (navigator.vibrate) { try { navigator.vibrate(30); } catch (err) {} }
-      whDragStart(container, pressIdx, startY);
-    }, 400);
-  }, { passive: true });
-  container.addEventListener('touchmove', e => {
-    if (_whDrag) { e.preventDefault(); whDragMove(e.touches[0].clientY); return; }
-    if (pressTimer && (Math.abs(e.touches[0].clientY - startY) > 8 || Math.abs(e.touches[0].clientX - startX) > 8)) { clearTimeout(pressTimer); pressTimer = null; }
-  }, { passive: false });
-  const endTouch = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } if (_whDrag) whDragEnd(); };
-  container.addEventListener('touchend', endTouch);
-  container.addEventListener('touchcancel', endTouch);
-  // 長押し中にスマホの文字選択メニューなどが出ないようにする
-  container.addEventListener('contextmenu', e => { if (_whDrag || e.target.closest('.wh-dhandle')) e.preventDefault(); });
-}
-function whDragStart(container, idx, y) {
-  const rows = Array.from(container.querySelectorAll(':scope > .wh-drow'));
-  const row = rows[idx];
-  if (!row) return;
-  _whDrag = { container, rows, from: idx, to: idx, startY: y, lastY: y, row, scrollTimer: null };
-  row.classList.add('wh-dragging');
-  document.body.classList.add('wh-drag-active');
-}
-function whDragMove(y) {
-  const d = _whDrag;
-  if (!d) return;
-  d.lastY = y;
-  const rect0 = d.row.getBoundingClientRect();
-  d.row.style.transform = `translateY(${y - d.startY + (d.scrollDelta || 0)}px)`;
-  // 入る位置：ほかの行の真ん中より上にいれば、その行の前
-  let to = d.rows.length - 1;
-  for (let i = 0; i < d.rows.length; i++) {
-    if (i === d.from) continue;
-    const r = d.rows[i].getBoundingClientRect();
-    if (y < r.top + r.height / 2) { to = i > d.from ? i - 1 : i; break; }
-  }
-  d.to = to;
-  d.rows.forEach((r, i) => { r.classList.toggle('wh-drop-before', i !== d.from && ((to < d.from && i === to) || (to > d.from && i === to + 1))); r.classList.toggle('wh-drop-after', i !== d.from && to > d.from && i === to && to === d.rows.length - 1); });
-  // 画面の端に近いときは自動でスクロール
-  clearInterval(d.scrollTimer);
-  const edge = 70, H = window.innerHeight;
-  const dir = y < edge ? -1 : y > H - edge ? 1 : 0;
-  if (dir) d.scrollTimer = setInterval(() => { window.scrollBy(0, dir * 12); d.scrollDelta = (d.scrollDelta || 0) + dir * 12; whDragMove(d.lastY); }, 16);
-}
-function whDragEnd() {
-  const d = _whDrag;
-  if (!d) return;
-  clearInterval(d.scrollTimer);
-  _whDrag = null;
-  document.body.classList.remove('wh-drag-active');
-  d.rows.forEach(r => { r.classList.remove('wh-drop-before', 'wh-drop-after', 'wh-dragging'); r.style.transform = ''; });
-  if (d.to !== d.from) moveWhDelivItemTo(d.from, d.to);
-}
-
 function moveWhDelivItem(idx, dir) {
   const newIdx = idx + dir;
   if (newIdx < 0 || newIdx >= _whDelivItems.length) return;
@@ -4894,7 +4579,6 @@ function updateWhItemField(idx, field, value) {
   if (amountEl) amountEl.textContent = '¥' + it.amount.toLocaleString('ja-JP');
   updateWhDelivTotalDisplay();
   saveWhDelivDraftDebounced();
-  if (field === 'unitPrice' && typeof refreshWhItemBuybackLines === 'function') refreshWhItemBuybackLines(idx);
 }
 
 // 商品名・型番は、スキャン間違いなどでこの納品書の明細だけ修正したい場合のためのその場編集。
@@ -4904,8 +4588,6 @@ function updateWhItemTextField(idx, field, value) {
   if (!it) return;
   it[field] = value;
   saveWhDelivDraftDebounced();
-  // 型番を手で直したときは、その型番で他社相場を探し直す
-  if (field === 'model' && typeof refreshWhItemBuybackLines === 'function') refreshWhItemBuybackLines(idx);
 }
 
 function updateWhDelivTotalDisplay() {
@@ -5010,9 +4692,8 @@ function renderWhDelivItems() {
   const lbl = t => `<div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">${t}</div>`;
   const inputStyle = 'width:100%;padding:6px 8px;font-size:13px;border:1.5px solid var(--border);border-radius:6px;box-sizing:border-box';
   container.innerHTML = _whDelivItems.map((it, idx) => `
-    <div class="wh-drow" data-idx="${idx}" style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+    <div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
       <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
-        <div class="wh-dhandle" data-idx="${idx}" title="ドラッグで並べ替え（スマホは行を長押し）">⠿</div>
         <div style="flex:2 1 150px;min-width:0">
           ${lbl('型番')}
           <input type="text" value="${(it.model||'').replace(/"/g,'&quot;')}" oninput="updateWhItemTextField(${idx},'model',this.value)" placeholder="型番" title="${(it.name||'').replace(/"/g,'&quot;')}" style="${inputStyle};font-weight:600">
@@ -5048,77 +4729,10 @@ function renderWhDelivItems() {
           ? `<button onclick="moveWhDelivItemToConsign(${idx})" style="background:none;border:none;color:var(--text-muted);font-size:11px;text-decoration:underline;cursor:pointer;padding:0">↩︎ 委託の印を解除</button>`
           : `<button onclick="moveWhDelivItemToConsign(${idx})" style="background:none;border:none;color:var(--text-muted);font-size:11px;text-decoration:underline;cursor:pointer;padding:0">📦 委託リストへ追加</button>`}
       </div>
-      <div id="wh-item-bb-${idx}">${whItemBuybackHtml(it, idx)}</div>
       ${(!it._consignMarked && it._splitFrom != null) ? whItemDamageSectionHtml(it, idx) : ''}
     </div>`).join('');
   updateWhDelivTotalDisplay();
   renderWhDelivLivePreview();
-  setupWhDelivDrag(container);
-  // 買取価格データ（他社相場）をまだ読み込んでいなければ読み込み、終わったら相場の行だけ描き直す
-  if (!window._buybackPriceRef && !window._whBbLoading) {
-    window._whBbLoading = true;
-    loadBuybackPriceRefIfNeeded().then(() => { window._whBbLoading = false; refreshWhItemBuybackLines(); });
-  }
-}
-
-// ── 納品明細の各行に、買取スキャナーの他社相場を表示する ──
-// 要望「商談の時に買取スキャナーの相場を見ながら金額を決めているので、納品明細のところで
-// 他社の相場も出たらありがたい」への対応。買取価格画面と同じデータ（/buybackPriceRef/{JAN}）を使う。
-// 明細の商品のJANコード（なければ登録済み商品から型番で探したJAN）で照会し、見つからない場合は
-// 買取スキャナーの商品名に型番が含まれるものを探す。上位3社を表示し、「すべて」で全社を開く。
-let _whBbOpen = new Set();
-let _whBbNameIndex = null;
-function whItemBuybackRec(it) {
-  const data = window._buybackPriceRef;
-  if (!data) return null;
-  let jan = it.jan;
-  const prodList = (typeof products !== 'undefined' && products) || [];
-  if (!jan && it.productKey) jan = (prodList.find(p => p._key === it.productKey) || {}).jan;
-  const mNorm = normalizeModelStr(it.model || '');
-  if (!jan && mNorm) jan = (prodList.find(p => normalizeModelStr(p.model) === mNorm) || {}).jan;
-  if (jan && data[jan]) return { jan, rec: data[jan], byName: false };
-  if (!mNorm || mNorm.length < 4) return null;
-  if (!_whBbNameIndex || _whBbNameIndex.src !== data) {
-    _whBbNameIndex = { src: data, list: Object.entries(data).map(([j, r]) => [j, r, normalizeModelStr(r.n || '')]) };
-  }
-  let best = null;
-  _whBbNameIndex.list.forEach(([j, r, nn]) => {
-    if (!nn.includes(mNorm)) return;
-    const mx = r.q && r.q[0] ? r.q[0][1] : 0;
-    if (!best || mx > best.mx) best = { jan: j, rec: r, mx };
-  });
-  return best ? { jan: best.jan, rec: best.rec, byName: true } : null;
-}
-function whItemBuybackHtml(it, idx) {
-  if (it._consignMarked) return '';
-  if (!window._buybackPriceRef) return window._whBbLoading ? '<div class="wh-bb muted">他社相場を読み込み中…</div>' : '';
-  const hit = whItemBuybackRec(it);
-  if (!hit || !hit.rec.q || !hit.rec.q.length) return '<div class="wh-bb muted">他社相場：データなし</div>';
-  const q = hit.rec.q;
-  const top = q[0][1];
-  const open = _whBbOpen.has(it._uid);
-  const list = open ? q : q.slice(0, 3);
-  const diff = (it.unitPrice || 0) - top;
-  const diffHtml = it.unitPrice ? `<span class="wh-bb-diff ${diff >= 0 ? 'up' : 'down'}">入力単価 ¥${it.unitPrice.toLocaleString('ja-JP')}（最高値と${diff >= 0 ? '+' : '−'}¥${Math.abs(diff).toLocaleString('ja-JP')}）</span>` : '';
-  return `<div class="wh-bb">
-    <span class="wh-bb-lbl">他社相場${hit.byName ? '<span title="JANコードが一致せず、商品名に型番が含まれるものを表示しています">（名前で一致）</span>' : ''}</span>
-    ${list.map(([name, price], i) => `<span class="wh-bb-q ${i === 0 ? 'top' : ''}">${escapeHtmlMain(name)} ¥${price.toLocaleString('ja-JP')}</span>`).join('')}
-    ${q.length > 3 ? `<span class="wh-bb-more" onclick="toggleWhItemBuyback(${it._uid})">${open ? '閉じる' : `すべて（${q.length}社）`}</span>` : ''}
-    ${hit.rec.a ? `<span class="wh-bb-q">Amazon最安 ¥${hit.rec.a.toLocaleString('ja-JP')}</span>` : ''}
-    ${diffHtml}
-  </div>`;
-}
-function toggleWhItemBuyback(uid) {
-  if (_whBbOpen.has(uid)) _whBbOpen.delete(uid); else _whBbOpen.add(uid);
-  refreshWhItemBuybackLines();
-}
-// 入力中の欄のフォーカスを外さないよう、明細全体ではなく相場の行だけを描き直す
-function refreshWhItemBuybackLines(onlyIdx) {
-  _whDelivItems.forEach((it, idx) => {
-    if (onlyIdx != null && idx !== onlyIdx) return;
-    const el = document.getElementById('wh-item-bb-' + idx);
-    if (el) el.innerHTML = whItemBuybackHtml(it, idx);
-  });
 }
 
 // 要望：「パソコンで納品書を作成している時に、右側に作成中のプレビューがあるとやりやすい」
@@ -6725,18 +6339,7 @@ let _whDelivHistoryPage = 1;
 // 展開状態（どのslipIdを開いているか）はrenderWhDelivHistory()の再描画をまたいでも保持する
 // （委託リストの_whConsignExpandedClientsと同じ考え方）
 let _whDelivHistoryExpanded = new Set();
-function isWhDelivWideLayout() {
-  return !!(window.matchMedia && window.matchMedia('(min-width:1280px)').matches);
-}
-let _whDelivSideSlipId = null;
-let _whDelivSideMode = 'preview'; // 'preview' | 'items'
 function toggleWhDelivHistoryRow(slipId) {
-  // パソコン幅では下に開かず、右側に内容を出す
-  if (isWhDelivWideLayout()) {
-    _whDelivSideSlipId = slipId;
-    renderWhDelivHistory();
-    return;
-  }
   if (_whDelivHistoryExpanded.has(slipId)) _whDelivHistoryExpanded.delete(slipId);
   else _whDelivHistoryExpanded.add(slipId);
   renderWhDelivHistory();
@@ -6857,7 +6460,6 @@ function renderWhDelivHistory() {
   if (!slips.length) {
     listEl.innerHTML = `<div style="font-size:12px;color:var(--text-muted)">${filterActive ? '条件に一致する納品書が見つかりませんでした' : 'まだ発行した納品書はありません'}</div>`;
     updateFreeeInvoiceSelectBar();
-    if (typeof renderWhDelivSidePanel === 'function') renderWhDelivSidePanel(null);
     return;
   }
 
@@ -6879,7 +6481,7 @@ function renderWhDelivHistory() {
         <span style="flex-shrink:0;font-size:12px;color:var(--text-muted)">${it.qty}個${it.type !== 'consign' ? `／¥${(it.amount||0).toLocaleString('ja-JP')}` : ''}</span>
       </div>`).join('');
     return `
-    <div class="wh-deliv-row ${_whDelivSideSlipId === s.slipId ? 'sel' : ''}" style="border-bottom:1px solid var(--border);font-size:13px">
+    <div style="border-bottom:1px solid var(--border);font-size:13px">
       <div class="wh-deliv-row-grid" onclick="toggleWhDelivHistoryRow('${s.slipId}')">
         <div class="wh-deliv-click-cell">
           <div class="wh-deliv-row-title" style="color:var(--text);font-weight:600">${s.client || ''}／${fmtDateJP(s.date)}${s.subject ? '／' + s.subject : ''}</div>
@@ -6907,74 +6509,7 @@ function renderWhDelivHistory() {
   }
 
   updateFreeeInvoiceSelectBar();
-  // 右側の内容表示：まだ選んでいない（または選んでいたものが今の一覧に無い）ときは、一覧の先頭を表示する
-  if (!_whDelivSideSlipId || !slips.some(s => s.slipId === _whDelivSideSlipId)) {
-    _whDelivSideSlipId = visibleSlips[0] ? visibleSlips[0].slipId : null;
-    listEl.querySelectorAll('.wh-deliv-row').forEach((el, i) => el.classList.toggle('sel', i === 0));
-  }
-  renderWhDelivSidePanel(slips.find(s => s.slipId === _whDelivSideSlipId));
 }
-
-// パソコン幅の右側：選んだ発行済み納品書のプレビュー（または明細の表）
-function setWhDelivSideMode(mode) {
-  _whDelivSideMode = mode;
-  renderWhDelivHistory();
-}
-function renderWhDelivSidePanel(slip) {
-  const side = document.getElementById('wh-deliv-side');
-  if (!side) return;
-  if (!isWhDelivWideLayout()) { side.innerHTML = ''; return; }
-  if (!slip) { side.innerHTML = '<div class="card"><div class="tk-empty" style="padding:24px">左の一覧から納品書を選ぶと、ここに内容が表示されます</div></div>'; return; }
-  const modeBtn = (m, label) => `<button type="button" class="tab-switch-btn ${_whDelivSideMode === m ? 'active' : ''}" onclick="setWhDelivSideMode('${m}')">${label}</button>`;
-  const itemsTable = `<table class="wh-deliv-side-table"><thead><tr><th>型番</th><th>数量</th><th>単価</th><th>金額</th></tr></thead><tbody>${slip.items.map(it => `
-      <tr><td>${escapeHtmlMain(deliverySlipItemDisplayLabel(it))}${it.type === 'consign' ? ' <span style="color:var(--teal);font-weight:700">📦委託</span>' : ''}</td>
-      <td class="n">${it.qty}</td><td class="n">${it.type !== 'consign' && it.qty ? '¥' + Math.round((it.amount || 0) / it.qty).toLocaleString('ja-JP') : ''}</td>
-      <td class="n">${it.type !== 'consign' ? '¥' + (it.amount || 0).toLocaleString('ja-JP') : '—'}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td>合計</td><td class="n">${slip.itemQty}</td><td></td><td class="n">¥${slip.total.toLocaleString('ja-JP')}</td></tr></tfoot></table>`;
-  side.innerHTML = `<div class="card" style="margin-bottom:0">
-    <div style="padding:14px 16px 0">
-      <div style="font-size:14px;font-weight:700;color:var(--text)">${escapeHtmlMain(slip.client || '')}</div>
-      <div style="font-size:12px;color:var(--text-sub);margin-top:2px">${fmtDateJP(slip.date)}${slip.subject ? '／' + escapeHtmlMain(slip.subject) : ''}${slip.slipNo ? '／No.' + escapeHtmlMain(slip.slipNo) : ''}</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px">
-        <div class="tab-switch" style="margin:0;flex:0 0 200px">${modeBtn('preview', '📄 プレビュー')}${modeBtn('items', '📋 明細')}</div>
-        <button type="button" onclick="showDeliverySlipPreview('${slip.slipId}')" style="padding:7px 12px;font-size:12px;font-weight:700;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer;white-space:nowrap">🔍 印刷・編集・取消</button>
-      </div>
-    </div>
-    <div style="padding:12px 16px 16px">
-      ${_whDelivSideMode === 'items' ? itemsTable : `<div id="wh-deliv-side-scale-wrap" class="wh-deliv-side-scale-wrap"><div id="wh-deliv-side-page" class="ds-preview-page"></div></div>`}
-    </div>
-  </div>`;
-  if (_whDelivSideMode !== 'items') {
-    const data = buildDeliverySlipDataFromSlipId(slip.slipId);
-    const pageEl = document.getElementById('wh-deliv-side-page');
-    if (!data || !pageEl) return;
-    pageEl.style.transform = 'none';
-    pageEl.innerHTML = dsSlipBodyHtml(data.client, data.date, data.subject, data.slipNo);
-    renderDeliverySlipColumns(pageEl, data.items);
-    fitWhDelivSideScale();
-  }
-}
-function fitWhDelivSideScale() {
-  const wrap = document.getElementById('wh-deliv-side-scale-wrap');
-  const page = document.getElementById('wh-deliv-side-page');
-  if (!wrap || !page) return;
-  requestAnimationFrame(() => {
-    const availW = wrap.clientWidth - 16;
-    if (availW <= 0) return;
-    const scale = Math.min(1, Math.max(0.1, availW / 794));
-    page.style.transformOrigin = 'top left';
-    page.style.transform = 'scale(' + scale + ')';
-    const h = page.getBoundingClientRect().height;
-    wrap.style.height = Math.round(h + 16) + 'px';
-  });
-}
-// 画面幅が変わって、パソコン幅⇔狭い幅をまたいだときは一覧を描き直す
-if (window.matchMedia) {
-  const _whMq = window.matchMedia('(min-width:1280px)');
-  const _onWhMq = () => { if (document.getElementById('wh-deliv-history-list')) renderWhDelivHistory(); };
-  if (_whMq.addEventListener) _whMq.addEventListener('change', _onWhMq); else if (_whMq.addListener) _whMq.addListener(_onWhMq);
-}
-window.addEventListener('resize', () => { clearTimeout(window._whSideFitT); window._whSideFitT = setTimeout(fitWhDelivSideScale, 150); });
 
 // 型番検索・期間（開始／終了）いずれかの入力欄が変わるたびに呼ばれ、フィルター条件を読み取って再描画する
 function filterWhDelivHistory() {
@@ -7045,6 +6580,17 @@ function printFromDeliverySlipPreview() {
 // そのファイルを直接渡す。PDF作成やファイル共有に対応していない環境（パソコンのブラウザなど）や、
 // 何らかの理由で失敗した場合は、これまで通り確実に動くprintFromDeliverySlipPreview（ブラウザの
 // 印刷機能）に自動的に切り替える。
+// 納品書プレビューのプリンターボタン：プレビューに表示中の内容をそのまま印刷画面で開く
+// （共有ボタンと同じく、積み込みチェックが済んでいない行があれば先に知らせる）
+function printDeliverySlipFromPreview() {
+  if (!_dsPreviewSlipId) return;
+  warnIfDeliverySlipLoadChecksIncomplete();
+  const data = buildDeliverySlipDataFromSlipId(_dsPreviewSlipId);
+  const pageEl = document.getElementById('ds-preview-page');
+  if (!data || !pageEl || !pageEl.innerHTML) { showToast('印刷対象が見つかりません'); return; }
+  printRenderedDeliverySlip(pageEl.innerHTML, data.client, data.date);
+}
+
 async function shareDeliverySlipPdfDirect() {
   if (!_dsPreviewSlipId) return;
   warnIfDeliverySlipLoadChecksIncomplete();
@@ -7575,13 +7121,6 @@ function renderWhConsignClientItemsList(idx) {
   let filtered = qNorm ? holding.filter(m => normalizeModelStr(consignItemModelLive(m)).includes(qNorm)) : holding;
   if (activeSub) filtered = filtered.filter(m => (subOf(m) || '未分類') === activeSub);
   const groups = consignModelGroupsOf(filtered);
-  // 要望「NEWが複数あると、ぱっと見でどれが最新か分からない」への対応。この取引先で一番最近
-  // 委託に追加した日（同じ日に何回か追加した場合はその日の分すべて）だけ背景を緑にする。
-  // それより前の「NEW」（1週間以内）は背景を白に戻し、緑の線・NEW・納品書No.だけ残す。
-  const dayKeyOf = ms => { const d = new Date(ms || 0); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
-  const newestNew = holding.filter(isConsignNew).reduce((mx, m) => Math.max(mx, m.createdAt || 0), 0);
-  const latestDayKey = newestNew ? dayKeyOf(newestNew) : null;
-  const isLatestNew = m => !!latestDayKey && isConsignNew(m) && dayKeyOf(m.createdAt) === latestDayKey;
   const countEl = document.getElementById('wh-consign-client-search-count-' + idx);
   if (countEl) countEl.textContent = q ? `${groups.length}件見つかりました` : '';
   if (!groups.length) {
@@ -7611,7 +7150,7 @@ function renderWhConsignClientItemsList(idx) {
         const m = items[0];
         detail = `
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text-muted)">
-            <span>預けた日 ${fmtDateJP(m.date)}${m.memo ? '／' + escapeHtmlMain(m.memo) : ''}${m.slipNo ? `／<span style="color:#0f766e">納品書 No.${escapeHtmlMain(m.slipNo)} から</span>` : ''}</span>${costInput(m)}<span style="font-size:10px">（原価は取引先には表示されません）</span>
+            <span>預けた日 ${fmtDateJP(m.date)}${m.memo ? '／' + escapeHtmlMain(m.memo) : ''}</span>${costInput(m)}<span style="font-size:10px">（原価は取引先には表示されません）</span>
           </div>
           ${moreLink}
           ${moreOpen ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
@@ -7619,8 +7158,8 @@ function renderWhConsignClientItemsList(idx) {
           </div>` : ''}`;
       } else {
         const lines = items.map(m => `
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px ${isLatestNew(m) ? '8px' : '0'};border-top:1px dashed var(--border);font-size:12px;${isLatestNew(m) ? 'background:#d1fae5;border-radius:6px;' : ''}">
-            <span style="min-width:120px;color:var(--text)">${isConsignNew(m) ? `<span class="wh-new-tag" style="margin:0 6px 0 0">NEW ${consignAddedDayLabel(m.createdAt)}</span>` : ''}${fmtDateJP(m.date)}に預けた分　<b>${m.qty}個</b>${m.memo ? `<span style="color:var(--text-muted)">／${escapeHtmlMain(m.memo)}</span>` : ''}${m.slipNo ? `<span style="color:#0f766e">／納品書 No.${escapeHtmlMain(m.slipNo)} から</span>` : ''}</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px dashed var(--border);font-size:12px">
+            <span style="min-width:120px;color:var(--text)">${fmtDateJP(m.date)}に預けた分　<b>${m.qty}個</b>${m.memo ? `<span style="color:var(--text-muted)">／${escapeHtmlMain(m.memo)}</span>` : ''}</span>
             ${costInput(m)}
             ${moreOpen ? `<span style="display:flex;gap:6px;margin-left:auto">
               ${btn('精算', `openSettleConsign('${m._key}')`)}${btn('返却', `returnConsign('${m._key}')`)}${btn('数量を編集', `openEditConsignQty('${m._key}')`)}
@@ -7635,18 +7174,15 @@ function renderWhConsignClientItemsList(idx) {
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px">まとめて精算・返却は、古く預けた分から順に数を減らします。日付ごとに操作する場合は上の内訳のボタンを使ってください。</div>` : ''}`;
       }
     }
-    const newItems = items.filter(isConsignNew);
-    const newQty = newItems.reduce((t, m) => t + (m.qty || 0), 0);
-    const newSlipNos = Array.from(new Set(newItems.map(m => m.slipNo).filter(Boolean)));
     return `
-      <div style="border-bottom:1px solid var(--border);${pendingQty > 0 ? 'background:#fff8e1;' : newItems.some(isLatestNew) ? 'background:#ecfdf5;box-shadow:inset 3px 0 0 #10b981;' : newQty > 0 ? 'box-shadow:inset 3px 0 0 #10b981;' : ''}">
-        <div onclick="toggleWhConsignModelGroup(${idx}, '${g.gk}')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 4px 9px 8px;cursor:pointer">
-          <div style="min-width:0;flex:1;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(consignItemModelLive(items[0]))}${newQty > 0 ? `<span class="wh-new-tag">NEW ${Array.from(new Set(newItems.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).map(m => consignAddedDayLabel(m.createdAt)))).join('・')}${items.length > 1 ? ' +' + newQty + '個' : ''}</span>` : ''}${newSlipNos.length ? `<span class="wh-slip-from">納品書 No.${escapeHtmlMain(newSlipNos.join('・'))} から</span>` : ''}</div>
+      <div style="border-bottom:1px solid var(--border);${pendingQty > 0 ? 'background:#fff8e1;' : ''}">
+        <div onclick="toggleWhConsignModelGroup(${idx}, '${g.gk}')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 4px;cursor:pointer">
+          <div style="min-width:0;flex:1;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(consignItemModelLive(items[0]))}</div>
           ${pendingQty > 0 ? `<span style="flex-shrink:0;font-size:11px;font-weight:700;color:#b8860b">⏳ ${pendingQty}個 ${pendingLabel}申請中</span>` : ''}
           <span style="flex-shrink:0;font-size:13px;color:var(--text)">${g.qty}個</span>
           <span style="flex-shrink:0;color:var(--text-muted);font-size:14px;transition:transform .15s;${isOpen ? 'transform:rotate(90deg)' : ''}">›</span>
         </div>
-        ${isOpen ? `<div style="padding:4px 4px 12px;${items.length > 1 && newItems.some(isLatestNew) ? 'background:#fff;' : ''}">${pendingQty > 0 ? `<div style="font-size:11.5px;font-weight:700;color:#b8860b;margin-bottom:8px">このうち${pendingQty}個は取引先から${pendingLabel}の申請中です（確認すると正式にお預かり数から引かれます）</div>` : ''}${detail}</div>` : ''}
+        ${isOpen ? `<div style="padding:4px 4px 12px">${pendingQty > 0 ? `<div style="font-size:11.5px;font-weight:700;color:#b8860b;margin-bottom:8px">このうち${pendingQty}個は取引先から${pendingLabel}の申請中です（確認すると正式にお預かり数から引かれます）</div>` : ''}${detail}</div>` : ''}
       </div>`;
   }).join('');
 }
@@ -7712,7 +7248,6 @@ function renderWhConsignList() {
     .sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
 
   if (summaryEl) summaryEl.textContent = holding.length ? `合計${holding.reduce((t, m) => t + (m.qty || 0), 0)}個` : '';
-  updateConsignNewBadge();
   // 右側プレビュー欄（パソコン幅専用）の「現在预けている一覧」も、holdingの内容が変わる
   // たびに（精算・返却・数量編集・新規の預けの記録など）合わせて更新しておく
   renderWhConsignHoldingMirror();
@@ -7777,7 +7312,7 @@ function renderWhConsignList() {
           <div class="wh-consign-client-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer" onclick="toggleWhConsignClient(${idx})">
             <div style="display:flex;align-items:center;gap:6px;min-width:0">
               <span class="accordion-arrow${isOpen ? ' open' : ''}" style="font-size:10px;flex-shrink:0">▼</span>
-              <div style="font-size:14px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${consignModelGroupsOf(items).length}型番／合計${totalQty}個</span>${(() => { const nw = items.filter(isConsignNew); return nw.length ? `<span class="wh-new-chip">🆕 新規${nw.length}件（${nw.reduce((t, m) => t + (m.qty || 0), 0)}個）</span>` : ''; })()}</div>
+              <div style="font-size:14px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${consignModelGroupsOf(items).length}型番／合計${totalQty}個</span></div>
             </div>
             <button onclick="event.stopPropagation(); showConsignListPreview(decodeURIComponent(escape(atob('${btoa(unescape(encodeURIComponent(client)))}'))))" style="flex-shrink:0;padding:6px 10px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">📄 内容を見る</button>
           </div>
@@ -7896,40 +7431,9 @@ function toggleConsignInvoiceSelect(key, checked) {
 }
 function updateConsignInvoiceSelectCount() {
   const el = document.getElementById('wh-consign-invoice-select-count');
-  const bar = document.getElementById('wh-consign-invoice-bar');
+  if (!el) return;
   const n = _consignInvoiceSelected.size;
-  // 選んだ商品の合計金額（まだ納品書にしていない精算済みのもののみ）
-  const total = (_whConsignHistoryFull || []).filter(m => _consignInvoiceSelected.has(m._key))
-    .reduce((sum, m) => sum + (m.amount || 0), 0);
-  if (el) el.innerHTML = n ? `<b>${n}件</b>選択中・合計 <b>¥${total.toLocaleString('ja-JP')}</b>` : '';
-  if (bar) bar.style.display = n ? 'flex' : 'none';
-}
-function clearConsignInvoiceSelection() {
-  _consignInvoiceSelected.clear();
-  renderWhConsignHistorySection();
-}
-
-// 履歴の各行で「⋯」を押して操作リンク（金額を編集・取り消す・完全に削除）を開いている行の_key
-let _whHistoryActionsOpen = new Set();
-function toggleWhHistoryActions(key) {
-  if (_whHistoryActionsOpen.has(key)) _whHistoryActionsOpen.delete(key); else _whHistoryActionsOpen.add(key);
-  renderWhConsignHistorySection();
-}
-
-// 未請求カードで、中の商品を開いている取引先
-let _consignUninvOpen = new Set();
-function toggleConsignUninvClient(client) {
-  if (_consignUninvOpen.has(client)) _consignUninvOpen.delete(client); else _consignUninvOpen.add(client);
-  renderWhConsignHistorySection();
-}
-
-// 「未請求」欄の「すべて選択」／「選択を外す」：その取引先の未請求の商品をまとめて選択する
-function selectAllConsignUninvoiced(client, on) {
-  (_whConsignHistoryFull || []).forEach(m => {
-    if ((m.client || '（取引先未設定）') !== client || m.status !== 'settled' || m.invoicedSlipId) return;
-    if (on) _consignInvoiceSelected.add(m._key); else _consignInvoiceSelected.delete(m._key);
-  });
-  renderWhConsignHistorySection();
+  el.textContent = n ? `${n}件を選択中（ページや取引先を切り替えても選択は保持されます）` : '';
 }
 
 function renderWhConsignHistorySection() {
@@ -7955,6 +7459,10 @@ function renderWhConsignHistorySection() {
   }
   const filterActive = !!(f.q || f.month || f.dateStart || f.dateEnd);
 
+  if (!history.length) {
+    historyEl.innerHTML = `<div style="font-size:12px;color:var(--text-muted)">${filterActive ? '条件に一致する記録が見つかりませんでした' : 'まだ精算・返却の記録はありません'}</div>`;
+    return;
+  }
   // 取引先が誤って精算・返却してしまった、店舗側が入力を間違えたなど、確定後に取り消したい
   // 場合のための「取り消す」リンク。精算済みですでに精算分の納品書（請求用）を発行済みの
   // ものだけは、先にその納品書を取り消してもらう必要があるため、取り消すリンクを出さず
@@ -7970,34 +7478,32 @@ function renderWhConsignHistorySection() {
   // ダイアログの文言でもその旨を明示し、色も警告色にして誤操作しにくくしている。すでに
   // 精算分の納品書を発行済みのものは「取り消す」同様に削除もできない（confirmDeleteConsignHistory側で二重にガード）
   const deleteLinkHtml = (m) => `<span onclick="event.stopPropagation(); confirmDeleteConsignHistory('${m._key}')" style="flex-shrink:0;font-size:11px;color:var(--danger);text-decoration:underline;cursor:pointer">完全に削除</span>`;
-  // 要望「金額を編集・取り消す・完全に削除のリンクが常に出ていると見にくく、間違えて押してしまう
-  // 可能性がある」への対応。各行の右端の「⋯」を押したときだけ、その行の下に操作リンクを出す。
-  // 行の中身は「型番・個数・金額・日付」を別々の枠にして、パソコン幅では表のように列をそろえる
-  // （スマホ幅では今まで通り「／」区切りで1続きに表示される）
   const renderHistoryRow = (m) => {
+    const amountStr = m.status === 'settled' && m.amount != null ? `／¥${m.amount.toLocaleString('ja-JP')}` : '';
     const dateVal = historyDateOf(m);
     const dateStr = dateVal ? fmtDateJP(dateVal) : '';
-    const amountHtml = m.status === 'settled' && m.amount != null ? `<span class="wh-hc a">¥${m.amount.toLocaleString('ja-JP')}</span>` : '<span class="wh-hc a"></span>';
-    const cells = `<span class="wh-hc m">${escapeHtmlMain(consignItemModel(m))}</span><span class="wh-hc q">${m.qty}個</span>${amountHtml}<span class="wh-hc d">${dateStr}</span>`;
-    const actionsOpen = _whHistoryActionsOpen.has(m._key);
-    const moreBtn = `<button type="button" class="wh-hmore ${actionsOpen ? 'on' : ''}" onclick="event.stopPropagation(); toggleWhHistoryActions('${m._key}')" aria-label="操作">⋯</button>`;
-    const actions = (links) => actionsOpen ? `<div class="wh-hactions">${links}<span onclick="event.stopPropagation(); toggleWhHistoryActions('${m._key}')" style="font-size:11px;color:var(--text-muted);cursor:pointer">閉じる</span></div>` : '';
+    // 取引先ごとのカードにまとめたため、行の中に改めて「預け先」を繰り返す必要はなくなった
+    const rowText = `${escapeHtmlMain(consignItemModel(m))}／${m.qty}個${amountStr}${dateStr ? '／' + dateStr : ''}`;
     if (m.status === 'settled') {
       if (m.invoicedSlipId) {
-        return `<div class="wh-hrow"><span class="wh-hcells">${cells}</span>
-          <span style="font-size:11px;font-weight:700;color:var(--gold-dark);flex-shrink:0;min-width:28px;text-align:right">請求済み</span>
+        return `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;align-items:center;gap:6px">
+          <span style="flex:1">${rowText}</span>
+          <span style="font-size:11px;font-weight:700;color:var(--gold-dark);flex-shrink:0">請求済み</span>
         </div>`;
       }
-      return `<div class="wh-hrow-wrap"><div class="wh-hrow">
+      return `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;align-items:center;gap:6px">
         <input type="checkbox" class="consign-invoice-checkbox" data-key="${m._key}" onchange="toggleConsignInvoiceSelect('${m._key}', this.checked)" ${_consignInvoiceSelected.has(m._key) ? 'checked' : ''} style="flex-shrink:0;width:16px;height:16px">
-        <span class="wh-hcells">${cells}</span>
-        ${moreBtn}
-      </div>${actions(editAmountLinkHtml(m) + undoLinkHtml(m) + deleteLinkHtml(m))}</div>`;
+        <span style="flex:1">${rowText}</span>
+        ${editAmountLinkHtml(m)}
+        ${undoLinkHtml(m)}
+        ${deleteLinkHtml(m)}
+      </div>`;
     }
-    return `<div class="wh-hrow-wrap"><div class="wh-hrow">
-      <span class="wh-hcells">${cells}</span>
-      ${moreBtn}
-    </div>${actions(undoLinkHtml(m) + deleteLinkHtml(m))}</div>`;
+    return `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;align-items:center;gap:6px">
+      <span style="flex:1">${rowText}</span>
+      ${undoLinkHtml(m)}
+      ${deleteLinkHtml(m)}
+    </div>`;
   };
   const renderHistoryStatusSection = (label, color, list, client, status) => {
     if (!list.length) return '';
@@ -8013,60 +7519,6 @@ function renderWhConsignHistorySection() {
       ${pagerHtml}
     </div>`;
   };
-
-  // 要望「取引先から後日まとめて精算連絡が来ると、売れた日が古いものは2ページ目・4ページ目などに
-  // 入ってしまい、納品書にするときに探すのが大変」への対応。まだ納品書にしていない精算済み
-  // （未請求）のものは、売れた日に関係なくカードの一番上に「未請求」としてページ分けせず全件並べる。
-  // 下の履歴（ページ分けあり）には、納品書にした「請求済み」のものだけを残す。
-  const renderUninvoicedSection = (list, client) => {
-    if (!list.length) return '';
-    const clientB64 = btoa(unescape(encodeURIComponent(client)));
-    const allSelected = list.every(m => _consignInvoiceSelected.has(m._key));
-    // 要望「未請求が常に開いていて下に伸びて見づらい」への対応。取引先ごとに1行（件数・金額）だけを
-    // 表示し、タップしたときだけ中の商品を開く。「すべて選択」は閉じたままでも押せる
-    const isOpen = _consignUninvOpen.has(client);
-    const selCount = list.filter(m => _consignInvoiceSelected.has(m._key)).length;
-    return `<div style="margin-bottom:8px;padding:8px 10px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa">
-      <div onclick="toggleConsignUninvClient(decodeURIComponent(escape(atob('${clientB64}'))))" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer">
-        <span style="display:flex;align-items:center;gap:6px;min-width:0">
-          <span style="flex-shrink:0;font-size:12px;color:var(--text-muted);transition:transform .15s;${isOpen ? 'transform:rotate(90deg)' : ''}">›</span>
-          <span style="font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${list.length}件・¥${list.reduce((sum, m) => sum + (m.amount || 0), 0).toLocaleString('ja-JP')}</span>${selCount && !isOpen ? `<span style="font-weight:700;color:#c2410c;font-size:11px">　${selCount}件選択中</span>` : ''}</span>
-        </span>
-        <span onclick="event.stopPropagation(); selectAllConsignUninvoiced(decodeURIComponent(escape(atob('${clientB64}'))), ${allSelected ? 'false' : 'true'})" style="flex-shrink:0;font-size:11px;font-weight:700;color:#c2410c;text-decoration:underline;cursor:pointer">${allSelected ? '選択を外す' : 'すべて選択'}</span>
-      </div>
-      ${isOpen ? `<div style="margin-top:6px">${list.map(renderHistoryRow).join('')}</div>` : ''}
-    </div>`;
-  };
-
-  // ① 未請求カード：絞り込みに関係なく、まだ納品書にしていない精算済みのものを取引先ごとに全件出す
-  const uninvAll = (_whConsignHistoryFull || []).filter(m => m.status === 'settled' && !m.invoicedSlipId)
-    .sort((a, b) => (historyDateOf(b) || 0) - (historyDateOf(a) || 0));
-  const uninvEl = document.getElementById('wh-consign-uninvoiced-list');
-  const uninvCountEl = document.getElementById('wh-consign-uninvoiced-count');
-  if (uninvCountEl) {
-    const uninvTotal = uninvAll.reduce((sum, m) => sum + (m.amount || 0), 0);
-    uninvCountEl.innerHTML = uninvAll.length ? `<b style="color:#c2410c">${uninvAll.length}件</b>・合計 ¥${uninvTotal.toLocaleString('ja-JP')}` : '0件';
-  }
-  // すでに納品書になった・消えた商品は選択から外しておく
-  const uninvKeys = new Set(uninvAll.map(m => m._key));
-  [..._consignInvoiceSelected].forEach(k => { if (!uninvKeys.has(k)) _consignInvoiceSelected.delete(k); });
-  if (uninvEl) {
-    if (!uninvAll.length) {
-      uninvEl.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:6px 0">未請求の商品はありません</div>';
-    } else {
-      const byClient = {}; const cOrder = [];
-      uninvAll.forEach(m => { const c = m.client || '（取引先未設定）'; if (!byClient[c]) { byClient[c] = []; cOrder.push(c); } byClient[c].push(m); });
-      uninvEl.innerHTML = cOrder.map(c => renderUninvoicedSection(byClient[c], c)).join('');
-    }
-  }
-
-  // ③ 履歴カード（請求済み・返却済み）。未請求のものは①に出しているので、ここからは除く
-  history = history.filter(m => !(m.status === 'settled' && !m.invoicedSlipId));
-  if (!history.length) {
-    historyEl.innerHTML = `<div style="font-size:12px;color:var(--text-muted)">${filterActive ? '条件に一致する記録が見つかりませんでした' : 'まだ請求済み・返却済みの記録はありません'}</div>`;
-    updateConsignInvoiceSelectCount();
-    return;
-  }
 
   // 取引先ごとにグループ化する（要望：「履歴の方も同じように取引先ごとに分けて欲しい」）。
   // グループ内・グループの並び順のどちらも、精算・返却された日時が新しい順にする
@@ -8092,7 +7544,7 @@ function renderWhConsignHistorySection() {
     const settledCount = items.filter(m => m.status === 'settled').length;
     const returnedCount = items.filter(m => m.status === 'returned').length;
     const countParts = [];
-    if (settledCount) countParts.push(`請求済み${settledCount}件`);
+    if (settledCount) countParts.push(`精算${settledCount}件`);
     if (returnedCount) countParts.push(`返却${returnedCount}件`);
     return `
       <div style="border:1.2px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px">
@@ -8101,7 +7553,7 @@ function renderWhConsignHistorySection() {
           <div style="font-size:13.5px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${countParts.join('／')}</span></div>
         </div>
         <div class="accordion-body${isOpen ? ' open' : ''}" style="margin-top:8px">
-          ${renderHistoryStatusSection('精算済み・請求済み', 'var(--success)', items.filter(m => m.status === 'settled' && m.invoicedSlipId), client, 'settled')}
+          ${renderHistoryStatusSection('精算済み', 'var(--success)', items.filter(m => m.status === 'settled'), client, 'settled')}
           ${renderHistoryStatusSection('返却済み', 'var(--text-muted)', items.filter(m => m.status === 'returned'), client, 'returned')}
         </div>
       </div>`;
@@ -8175,8 +7627,6 @@ function renderConsignInvoicesList() {
     };
   }).sort((a,b) => b.createdAt - a.createdAt);
 
-  const invCountEl = document.getElementById('wh-consign-invoices-count');
-  if (invCountEl) invCountEl.textContent = `${slips.length}件`;
   if (!slips.length) {
     listEl.innerHTML = `<div style="font-size:12px;color:var(--text-muted)">まだ精算分の納品書はありません</div>`;
     updateFreeeInvoiceSelectBar();
@@ -9708,50 +9158,6 @@ function handleBuybackCsvSelected(event) {
   reader.readAsText(file, 'UTF-8');
 }
 
-// 買取価格画面の上の細い帯：最終取り込み日時の表示と、その場でのCSV取り込み
-async function updateBuybackQuickStatus() {
-  const el = document.getElementById('buyback-quick-text');
-  const bar = document.getElementById('buyback-quick-bar');
-  if (!el) return;
-  try {
-    const res = await fetch(authedUrl('/buybackImportMeta/lastImportedAt.json'));
-    const t = await res.json();
-    if (!t) { el.textContent = '📊 買取価格CSV：まだ取り込まれていません'; bar && bar.classList.add('stale'); return; }
-    const jst = ms => new Date(ms + 9 * 3600000).toISOString().slice(0, 10);
-    const stale = jst(t) !== jst(Date.now());
-    const str = new Date(t).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    el.textContent = `📊 買取価格CSV：最終取り込み ${str}${stale ? '（今日はまだ更新されていません）' : ''}`;
-    if (bar) bar.classList.toggle('stale', stale);
-  } catch (e) { el.textContent = '📊 買取価格CSV'; }
-}
-function handleBuybackQuickCsvSelected(event) {
-  const file = event.target.files && event.target.files[0];
-  event.target.value = '';
-  if (!file) return;
-  const el = document.getElementById('buyback-quick-text');
-  const setText = t => { if (el) el.textContent = t; };
-  setText('📊 ファイルを読み込んでいます…');
-  const reader = new FileReader();
-  reader.onload = async () => {
-    try {
-      const records = buildBuybackRecordsFromCsv(parseCsvText(String(reader.result || '')));
-      const count = Object.keys(records).length;
-      if (!count) { setText('📊 取り込める行が見つかりませんでした。CSVの形式をご確認ください'); return; }
-      setText(`📊 ${count}件のデータを取り込みます…`);
-      await importBuybackRecords(records, (done, total) => setText(`📊 取り込み中… ${done}/${total}件`));
-      showToast(`買取価格CSVを取り込みました（${count}件）`);
-      updateBuybackQuickStatus();
-      if (typeof updateBuybackCsvStatus === 'function') updateBuybackCsvStatus();
-      if (document.getElementById('buyback-search-input')?.value.trim()) renderBuybackSearchResults();
-    } catch (e) {
-      console.error('買取価格CSV取り込みエラー（買取価格画面）', e);
-      setText('📊 取り込みに失敗しました：' + (e && e.message ? e.message : e));
-    }
-  };
-  reader.onerror = () => setText('📊 ファイルの読み込みに失敗しました');
-  reader.readAsText(file, 'UTF-8');
-}
-
 // 買取価格チェック画面用：一覧をまとめて1回だけ取得し、その場で絞り込めるようキャッシュする
 async function loadBuybackPriceRefIfNeeded() {
   if (window._buybackPriceRef) return window._buybackPriceRef;
@@ -9953,86 +9359,7 @@ async function renderBuybackSearchResults() {
       ? `${matched.length}件見つかりました${matched.length > LIMIT ? '（上位' + LIMIT + '件を表示）' : ''}`
       : '一致するデータが見つかりませんでした';
   }
-  // 要望「自動で履歴に入ると、残したくないものまで残る」への対応。履歴には、結果のカードの
-  // 「📌 履歴に残す」ボタンを押したものだけを入れる
-  const inHist = new Set(loadBuybackHistory().map(h => h.jan));
-  resultsEl.innerHTML = shown.map(([jan, rec]) => `<div class="bb-result">${formatBuybackRecordHtml(jan, rec)}
-    <button type="button" class="bb-keep-btn ${inHist.has(jan) ? 'on' : ''}" data-jan="${escapeHtmlMain(jan)}" onclick="toggleBuybackKeep('${escapeHtmlMain(jan)}')">${inHist.has(jan) ? '✓ 履歴に残しました（押すと外す）' : '📌 履歴に残す'}</button></div>`).join('');
-}
-function toggleBuybackKeep(jan) {
-  const data = window._buybackPriceRef || {};
-  if (loadBuybackHistory().some(h => h.jan === jan)) removeBuybackHistory(jan);
-  else if (data[jan]) addBuybackHistory(jan, data[jan]);
-  const inHist = loadBuybackHistory().some(h => h.jan === jan);
-  document.querySelectorAll('.bb-keep-btn').forEach(b => {
-    if (b.dataset.jan !== jan) return;
-    b.classList.toggle('on', inHist);
-    b.textContent = inHist ? '✓ 履歴に残しました（押すと外す）' : '📌 履歴に残す';
-  });
-}
-
-// ── 買取価格：調べた商品の履歴（この端末のブラウザに保存） ──
-const BB_HIST_KEY = 'kanetaka_buyback_history';
-const BB_HIST_MAX = 30;
-function loadBuybackHistory() {
-  try { return JSON.parse(localStorage.getItem(BB_HIST_KEY) || '[]') || []; } catch (e) { return []; }
-}
-function saveBuybackHistory(list) {
-  try { localStorage.setItem(BB_HIST_KEY, JSON.stringify(list.slice(0, BB_HIST_MAX))); } catch (e) {}
-}
-function addBuybackHistory(jan, rec) {
-  const list = loadBuybackHistory().filter(h => h.jan !== jan);
-  list.unshift({ jan, n: rec.n || '', q: (rec.q || []).slice(0, 2), t: Date.now() });
-  saveBuybackHistory(list);
-  renderBuybackHistory();
-}
-function removeBuybackHistory(jan) {
-  saveBuybackHistory(loadBuybackHistory().filter(h => h.jan !== jan));
-  renderBuybackHistory();
-  // 左側の結果に同じ商品が出ていれば、ボタンの表示も戻す
-  document.querySelectorAll('.bb-keep-btn').forEach(b => {
-    if (b.dataset.jan !== jan) return;
-    b.classList.remove('on');
-    b.textContent = '📌 履歴に残す';
-  });
-}
-async function clearBuybackHistory() {
-  if (!loadBuybackHistory().length) return;
-  const ok = await showConfirm('調べた商品の履歴をすべて消しますか？（この端末の履歴だけが消えます）');
-  if (!ok) return;
-  saveBuybackHistory([]);
-  renderBuybackHistory();
-}
-// 履歴の行を押したとき：その商品を左側に出し直す（最新の取り込みデータで表示する）
-async function showBuybackHistoryItem(jan) {
-  const input = document.getElementById('buyback-search-input');
-  if (!input) return;
-  input.value = jan;
-  await renderBuybackSearchResults();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-function renderBuybackHistory() {
-  const el = document.getElementById('buyback-history');
-  if (!el) return;
-  const list = loadBuybackHistory();
-  if (!list.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:10px 0">検索結果の「📌 履歴に残す」を押した商品が、ここに新しい順に残ります</div>'; return; }
-  const data = window._buybackPriceRef || null;
-  const today = new Date().toDateString();
-  el.innerHTML = list.map(h => {
-    // 取り込み済みの最新データがあればそちらの価格を使う（履歴に残した時点より新しいCSVを取り込んだ場合）
-    const q = (data && data[h.jan] && data[h.jan].q) ? data[h.jan].q : (h.q || []);
-    const top = q[0], second = q[1];
-    const d = new Date(h.t);
-    const when = d.toDateString() === today ? `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` : `${d.getMonth() + 1}/${d.getDate()}`;
-    return `<div class="bb-hist-row" onclick="showBuybackHistoryItem('${escapeHtmlMain(h.jan)}')">
-      <div class="bb-hist-main">
-        <div class="bb-hist-name">${escapeHtmlMain(h.n || ('JAN:' + h.jan))}</div>
-        <div class="bb-hist-sub">${second ? `2番目 ${escapeHtmlMain(second[0])} ¥${Number(second[1]).toLocaleString('ja-JP')}　` : ''}${when}</div>
-      </div>
-      <div class="bb-hist-top">${top ? `<b>¥${Number(top[1]).toLocaleString('ja-JP')}</b><span>${escapeHtmlMain(top[0])}</span>` : '<span>データなし</span>'}</div>
-      <button type="button" class="bb-hist-x" onclick="event.stopPropagation();removeBuybackHistory('${escapeHtmlMain(h.jan)}')" aria-label="履歴から消す">✕</button>
-    </div>`;
-  }).join('');
+  resultsEl.innerHTML = shown.map(([jan, rec]) => formatBuybackRecordHtml(jan, rec)).join('');
 }
 
 // 型番欄に入力があるたびに呼ばれる。（ネットワーク不要な）既存商品との一致を即座に確認し、
@@ -11329,13 +10656,10 @@ function invRowLocChipHtml(p) {
 
 // カテゴリー内のサブカテゴリータブを組み立てる。ゴルフウェアのようにグループ化されたカテゴリーは、
 // グループ（メンズ／レディースなど）ごとに段を分けて表示し、圧迫感を減らす。表示名からはグループ名の接頭辞を外す。
-// counts（任意）：{ サブカテゴリー名: 商品数, '': 全体の商品数 }。渡された場合は各タブに件数を小さく添える
-// （要望「在庫一覧のサブカテゴリーにそれぞれの合計数を表示させたい」への対応）
-function buildInvSubcatTabBar(cat, subs, activeSub, counts) {
+function buildInvSubcatTabBar(cat, subs, activeSub) {
   if (!subs.length) return '';
-  const cnt = s => (counts && counts[s] != null) ? `<span class="inv-subcat-count">${counts[s]}</span>` : '';
-  const tab = s => `<span class="inv-subcat-tab ${activeSub===s?'active':''}" onclick="event.stopPropagation();setInvSubcatTab('${cat}','${s}')">${s}${cnt(s)}</span>`;
-  const allTab = `<span class="inv-subcat-tab ${!activeSub?'active':''}" onclick="event.stopPropagation();setInvSubcatTab('${cat}','')">すべて${cnt('')}</span>`;
+  const tab = s => `<span class="inv-subcat-tab ${activeSub===s?'active':''}" onclick="event.stopPropagation();setInvSubcatTab('${cat}','${s}')">${s}</span>`;
+  const allTab = `<span class="inv-subcat-tab ${!activeSub?'active':''}" onclick="event.stopPropagation();setInvSubcatTab('${cat}','')">すべて</span>`;
   const groups = getSubcatGroupsFor(cat);
   if (!groups) {
     return `<div class="inv-subcat-tabs">${allTab}${subs.map(tab).join('')}</div>`;
@@ -11347,7 +10671,7 @@ function buildInvSubcatTabBar(cat, subs, activeSub, counts) {
     if (!present.length) return '';
     const tabsHtml = present.map(s => {
       const label = s.startsWith(g + '・') ? s.slice(g.length + 1) : s;
-      return `<span class="inv-subcat-tab ${activeSub===s?'active':''}" onclick="event.stopPropagation();setInvSubcatTab('${cat}','${s}')">${label}${cnt(s)}</span>`;
+      return `<span class="inv-subcat-tab ${activeSub===s?'active':''}" onclick="event.stopPropagation();setInvSubcatTab('${cat}','${s}')">${label}</span>`;
     }).join('');
     return `<div class="inv-subcat-group-row"><span class="inv-subcat-group-label">${g}</span>${tabsHtml}</div>`;
   }).join('');
@@ -11501,14 +10825,12 @@ function renderInventoryList() {
     const subs = Array.from(new Set(inCat.map(p => p.subcategory).filter(Boolean)));
     const activeSub = _invSubcatTab[cat] || '';
     const rowsSrc = (activeSub && subs.includes(activeSub)) ? inCat.filter(p => p.subcategory === activeSub) : inCat;
-    const subCounts = { '': inCat.length };
-    inCat.forEach(p => { if (p.subcategory) subCounts[p.subcategory] = (subCounts[p.subcategory] || 0) + 1; });
-    const tabBar = buildInvSubcatTabBar(cat, subs, activeSub, subCounts);
+    const tabBar = buildInvSubcatTabBar(cat, subs, activeSub);
     const sorted = [...rowsSrc].sort(compareProducts);
     // グリッド（写真）表示のときは、商品登録画面の写真つきカードを流用してカード形式で並べる
     const itemsHtml = isGrid
       ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:10px">${sorted.map(p => buildInvCard(p, {editable:true})).join('')}</div>`
-      : `<div class="inv-rows-cols">${sorted.map(buildInvRow).join('')}</div>`;
+      : sorted.map(buildInvRow).join('');
     return `
       <div class="inv-accordion ${isOpen?'open':''}">
         <div class="inv-accordion-head" onclick="toggleInvCatAccordion('${cat}')">
@@ -12449,8 +11771,6 @@ window._initApp = async function() {
   // ログイン直後、静的に表示されているホーム画面の中身を描画しておく（管理者は経営サマリー、
   // 一般ユーザーは倉庫作業向けの簡易版HOMEをそれぞれ表示）
   if (window.renderHomeScreen) renderHomeScreen();
-  // タスク・予定：自分をメンバー一覧に登録し、30秒ごとに最新の状態を取り込む
-  if (typeof tkInit === 'function') tkInit();
 };
 
 function applyRoleUI() {
@@ -14645,7 +13965,6 @@ async function renderHomeScreen() {
   updateBuybackCsvStatus();
   try { renderHomeSidePanels(); } catch (e) { console.error('home side panels error', e); }
   try { renderHomeAwayCard(); } catch (e) { console.error('home away card error', e); }
-  try { renderHomeTodayCard(); } catch (e) { console.error('home today card error', e); }
 }
 
 // 要望「買取価格CSVの状態を、HOMEのQuick Menuの上に小さく表示したい」への対応。
@@ -14767,11 +14086,8 @@ async function renderGeneralHomeScreen() {
         <button class="home-action-btn" onclick="goHomeToInv('inv-packec')"><span class="home-icon">🚚</span><span class="home-label">出荷管理</span></button>
         <button class="home-action-btn" onclick="goHomeToInv('inv-list')"><span class="home-icon">📋</span><span class="home-label">在庫一覧</span></button>
         <button class="home-action-btn" onclick="showPCLayout()"><span class="home-icon">📝</span><span class="home-label">経費・仕入・売上</span></button>
-        <button class="home-action-btn" onclick="TK.filter='mine';openTasksScreen('tasks')" style="position:relative"><span class="home-icon">✅</span><span class="home-label">タスク</span><span class="tk-tile-badge" id="home-tk-badge"></span></button>
-        <button class="home-action-btn" onclick="openTasksScreen('cal')"><span class="home-icon">📅</span><span class="home-label">予定</span></button>
       </div>
     </div>
-    <div id="home-today-card"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
       <div class="home-stat-card" onclick="goHomeToInv('inv-list')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center">
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">在庫アラート</div>
@@ -14790,7 +14106,6 @@ async function renderGeneralHomeScreen() {
       </div>
     </div>
   `;
-  try { renderHomeTodayCard(); } catch (e) { console.error('home today card error', e); }
 }
 
 // ホーム画面の「仕入・売上の推移（直近6ヶ月）」ミニグラフ
@@ -15874,7 +15189,6 @@ function showScreen(name) {
   if (name === 'receivable')  renderReceivable();
   if (name === 'settings')    initSettingsScreen();
   if (name === 'myhistory')   renderMyHistory();
-  if (name === 'tasks')       renderTasksScreen();
   if (window.bzRefreshSidePanels) window.bzRefreshSidePanels();
 }
 
@@ -18660,1577 +17974,6 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
   else if (BZ_WIDE_MQ.addListener) BZ_WIDE_MQ.addListener(onWideChange);
   // 「NEW」の目印は5分で消えるので、表示中なら1分ごとに描き直す
   setInterval(() => { if (bzIsWide() && document.visibilityState === 'visible') { const a = document.querySelector('.screen.active'); if (a && BZ_SCREEN_KIND[a.id.replace('screen-', '')]) bzRefreshSidePanels(); } }, 60000);
-})();
-</script>
-
-<!-- ══ タスク・予定（全員で共有）══ -->
-<style>
-.tk-toolbar { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
-.tk-chip { padding:6px 12px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:999px; background:var(--white); color:var(--text-sub); cursor:pointer; font-family:inherit; -webkit-tap-highlight-color:transparent; }
-.tk-chip.active { background:#c5e8e5; border-color:#8fcfc9; color:#1f5f5a; }
-.tk-add-btn { margin-left:auto; padding:8px 14px; font-size:13px; font-weight:700; border:none; border-radius:10px; background:linear-gradient(135deg,#d8d8d8,#a8a8a8); color:#1a1a1a; cursor:pointer; font-family:inherit; }
-.tk-sec { font-size:12px; font-weight:700; color:var(--text-sub); margin:14px 2px 6px; display:flex; align-items:center; gap:6px; }
-.tk-sec .n { font-size:11px; color:var(--text-muted); font-weight:600; }
-.tk-sec.danger { color:var(--danger); }
-.tk-list { background:var(--white); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
-.tk-item { display:flex; align-items:flex-start; gap:10px; padding:11px 12px; border-bottom:1px solid var(--border); }
-.tk-item:last-child { border-bottom:none; }
-.tk-item.overdue { background:#fff5f5; }
-.tk-item.doing { background:#f0faf9; }
-.tk-item.done .tk-title { color:var(--text-muted); text-decoration:line-through; }
-.tk-check { flex-shrink:0; width:26px; height:26px; margin-top:1px; border-radius:50%; border:2px solid #b8b8b8; background:var(--white); color:transparent; font-size:14px; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
-.tk-check.on { background:#16a34a; border-color:#16a34a; color:#fff; }
-.tk-body { flex:1; min-width:0; cursor:pointer; }
-.tk-title { font-size:14px; font-weight:700; color:var(--text); line-height:1.4; word-break:break-word; }
-.tk-meta { display:flex; flex-wrap:wrap; gap:4px 6px; margin-top:4px; font-size:11px; color:var(--text-sub); align-items:center; }
-.tk-tag { display:inline-block; padding:1px 7px; border-radius:999px; background:var(--surface); border:1px solid var(--border); font-size:11px; font-weight:600; color:var(--text-sub); }
-.tk-tag.me { background:#c5e8e5; border-color:#8fcfc9; color:#1f5f5a; }
-.tk-tag.none { background:#fffbeb; border-color:#fcd34d; color:#92400e; }
-.tk-tag.od { background:#fef2f2; border-color:#fca5a5; color:#b91c1c; }
-.tk-tag.doing { background:#0f766e; border-color:#0f766e; color:#fff; }
-.tk-tag.high { background:#fef2f2; border-color:#fca5a5; color:#b91c1c; }
-.tk-who { margin-top:4px; font-size:11px; color:#0f766e; font-weight:600; }
-.tk-who.done { color:#16a34a; }
-.tk-start { flex-shrink:0; padding:5px 9px; font-size:11px; font-weight:700; border:1.5px solid #8fcfc9; border-radius:8px; background:var(--white); color:#1f5f5a; cursor:pointer; font-family:inherit; }
-.tk-start.stop { border-color:var(--border); color:var(--text-sub); }
-.tk-empty { padding:18px; text-align:center; font-size:12px; color:var(--text-muted); }
-.tk-people { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:10px; }
-.tk-person { background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:12px; }
-.tk-person-h { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
-.tk-person-name { font-size:14px; font-weight:700; }
-.tk-person-stats { font-size:11px; color:var(--text-sub); display:flex; gap:6px; }
-.tk-person-row { font-size:12px; padding:5px 0; border-top:1px dashed var(--border); cursor:pointer; display:flex; gap:6px; align-items:baseline; }
-.tk-person-row .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-/* カレンダー */
-.tk-cal-head { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
-.tk-cal-head .ttl { font-size:16px; font-weight:700; flex:1; text-align:center; }
-.tk-nav-btn { width:34px; height:34px; border-radius:10px; border:1.5px solid var(--border); background:var(--white); font-size:16px; cursor:pointer; font-family:inherit; }
-.tk-grid { display:grid; grid-template-columns:repeat(7,1fr); background:var(--white); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
-.tk-wd { font-size:11px; font-weight:700; text-align:center; padding:6px 0; background:var(--surface); color:var(--text-sub); border-bottom:1px solid var(--border); }
-.tk-wd.sun, .tk-cell.sun .d { color:#dc2626; }
-.tk-wd.sat, .tk-cell.sat .d { color:#2563eb; }
-.tk-cell { min-height:64px; padding:3px; border-right:1px solid #eee; border-bottom:1px solid #eee; cursor:pointer; overflow:hidden; min-width:0; }
-.tk-cell:nth-child(7n) { border-right:none; }
-.tk-cell.other { background:#fafafa; }
-.tk-cell.other .d { opacity:.4; }
-.tk-cell.today .d { background:#0f766e; color:#fff !important; border-radius:50%; }
-.tk-cell.sel { background:#e6f5f3; }
-.tk-cell .d { display:inline-flex; width:20px; height:20px; align-items:center; justify-content:center; font-size:11px; font-weight:700; }
-.tk-cl { font-size:9.5px; line-height:1.35; padding:0 3px; margin-top:1px; border-radius:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.tk-cl.ev { background:#c5e8e5; color:#1f5f5a; }
-.tk-cl.tk { background:#f0f0f0; color:#4a4a4a; }
-.tk-cl.tk.od { background:#fee2e2; color:#b91c1c; }
-.tk-cl.more { color:var(--text-muted); }
-@media (min-width:900px) { .tk-cell { min-height:92px; } .tk-cl { font-size:11px; } }
-.tk-day-h { display:flex; align-items:center; justify-content:space-between; margin:14px 2px 6px; font-size:13px; font-weight:700; }
-.tk-ev { display:flex; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); cursor:pointer; }
-.tk-ev:last-child { border-bottom:none; }
-.tk-ev .tm { flex-shrink:0; width:62px; font-size:12px; font-weight:700; color:#0f766e; }
-.tk-ev .bd { flex:1; min-width:0; }
-.tk-ev .bd .t { font-size:14px; font-weight:700; }
-.tk-ev .bd .m { font-size:11px; color:var(--text-sub); margin-top:2px; }
-.tk-week-day { margin-bottom:10px; }
-.tk-week-day .h { font-size:12px; font-weight:700; margin:0 2px 4px; display:flex; justify-content:space-between; }
-.tk-week-day.today .h { color:#0f766e; }
-/* モーダル */
-#tk-modal { display:none; position:fixed; inset:0; z-index:650; background:rgba(0,0,0,0.4); align-items:flex-end; justify-content:center; }
-#tk-modal .box { background:var(--white); width:100%; max-width:520px; max-height:92vh; overflow-y:auto; border-radius:18px 18px 0 0; padding:18px 18px max(18px,env(safe-area-inset-bottom)); }
-@media (min-width:700px) { #tk-modal { align-items:center; } #tk-modal .box { border-radius:18px; } }
-#tk-modal h3 { font-size:16px; margin:0 0 14px; }
-.tk-f { margin-bottom:12px; }
-.tk-f label { display:block; font-size:12px; font-weight:700; color:var(--text-sub); margin-bottom:5px; }
-.tk-f input[type=text], .tk-f input[type=date], .tk-f input[type=time], .tk-f select, .tk-f textarea { width:100%; box-sizing:border-box; padding:10px 12px; font-size:16px; font-family:inherit; border:1.5px solid var(--border); border-radius:10px; background:var(--white); color:var(--text); }
-.tk-f textarea { min-height:70px; resize:vertical; }
-.tk-f input.tk-time-in { width:100%; box-sizing:border-box; padding:10px 12px; font-size:16px; font-family:inherit; border:1.5px solid var(--border); border-radius:10px; letter-spacing:.05em; }
-.tk-time-wrap { position:relative; }
-.tk-f input.tk-time-in { cursor:pointer; font-weight:700; text-align:center; background:#f3f4f6; border-color:transparent; }
-.tk-f input.tk-time-in.active { background:#10b981; color:#fff; border-color:#10b981; }
-.tk-time-clear { position:absolute; right:6px; top:50%; transform:translateY(-50%); width:26px; height:26px; border:none; border-radius:50%; background:transparent; color:var(--text-muted); font-size:13px; cursor:pointer; }
-.tk-wheel-slot { margin:-4px 0 12px; }
-.tk-wheel { position:relative; display:flex; justify-content:center; align-items:stretch; gap:6px; height:200px; overflow:hidden; background:var(--white); border-radius:12px; }
-.tk-wband { position:absolute; left:8px; right:8px; top:80px; height:40px; border-radius:10px; background:#f3f4f6; pointer-events:none; }
-.tk-wcol { position:relative; width:84px; height:200px; overflow-y:scroll; scroll-snap-type:y mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch; -webkit-mask-image:linear-gradient(to bottom, transparent, #000 30%, #000 70%, transparent); mask-image:linear-gradient(to bottom, transparent, #000 30%, #000 70%, transparent); }
-.tk-wcol::-webkit-scrollbar { display:none; }
-.tk-wpad { height:80px; }
-.tk-witem { height:40px; line-height:40px; text-align:center; font-size:22px; color:#9ca3af; scroll-snap-align:center; cursor:pointer; font-variant-numeric:tabular-nums; user-select:none; }
-.tk-witem.sel { color:var(--text); font-weight:600; font-size:26px; }
-.tk-wsep { position:relative; align-self:center; font-size:22px; font-weight:700; color:var(--text); }
-.tk-wheel-foot { display:flex; justify-content:flex-end; margin-top:6px; }
-.tk-wheel-foot button { padding:7px 16px; font-size:13px; font-weight:700; border:none; border-radius:8px; background:#10b981; color:#fff; cursor:pointer; font-family:inherit; }
-.tk-switch { display:flex !important; align-items:center; gap:10px; font-size:14px !important; font-weight:700; color:var(--text) !important; cursor:pointer; }
-.tk-switch input { display:none; }
-.tk-switch .sw { position:relative; width:46px; height:28px; border-radius:14px; background:#9ca3af; transition:background .15s; flex-shrink:0; }
-.tk-switch .sw::after { content:''; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%; background:#fff; transition:left .15s; box-shadow:0 1px 3px rgba(0,0,0,.2); }
-.tk-switch input:checked + .sw { background:#10b981; }
-.tk-switch input:checked + .sw::after { left:21px; }
-.tk-f input.tk-time-in.bad { border-color:#dc2626; background:#fef2f2; }
-.tk-evv { border:1px solid var(--border); border-radius:10px; overflow:hidden; }
-.tk-evv-row { display:flex; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); font-size:14px; }
-.tk-evv-row:last-child { border-bottom:none; }
-.tk-evv-row .k { flex-shrink:0; width:84px; font-size:12px; font-weight:700; color:var(--text-sub); padding-top:1px; }
-.tk-evv-row .v { flex:1; min-width:0; word-break:break-word; line-height:1.6; }
-.tk-row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-.tk-mem-list { display:flex; flex-wrap:wrap; gap:6px; }
-.tk-mem-list label { display:inline-flex; align-items:center; gap:4px; padding:6px 10px; border:1.5px solid var(--border); border-radius:999px; font-size:13px; font-weight:600; color:var(--text); margin:0; cursor:pointer; }
-.tk-mem-list input { margin:0; }
-.tk-btns { display:flex; gap:8px; margin-top:16px; }
-.tk-btns button { flex:1; padding:13px; font-size:15px; font-weight:700; border-radius:10px; cursor:pointer; font-family:inherit; }
-.tk-btn-save { border:none; background:linear-gradient(135deg,#d8d8d8,#a8a8a8); color:#1a1a1a; }
-.tk-btn-cancel { border:1.5px solid var(--border); background:var(--white); color:var(--text-sub); }
-.tk-btn-del { flex:0 0 auto !important; border:1.5px solid #fca5a5; background:var(--white); color:#b91c1c; padding:13px 14px !important; }
-.tk-info { font-size:11px; color:var(--text-muted); margin-top:10px; line-height:1.6; }
-/* HOMEの今日やること */
-.tk-today-sec { padding:0 16px 10px; }
-.tk-today-sec .h { font-size:12px; font-weight:700; color:var(--text-sub); margin:4px 0 4px; }
-.tk-today-sec .h.danger { color:var(--danger); }
-.tk-today-row { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px dashed var(--border); font-size:13px; }
-.tk-today-row:last-child { border-bottom:none; }
-.tk-today-row .tm { flex-shrink:0; font-size:12px; font-weight:700; color:#0f766e; min-width:44px; }
-.tk-today-row .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
-.tk-today-row .tk-check { width:22px; height:22px; font-size:12px; }
-.tk-today-foot { display:flex; gap:8px; padding:4px 16px 14px; flex-wrap:wrap; }
-.tk-today-foot button { flex:1; padding:9px 6px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:10px; background:var(--white); color:var(--text); cursor:pointer; font-family:inherit; white-space:nowrap; }
-.tk-today-team { margin:0 16px 10px; padding:8px 10px; border-radius:10px; background:#fffbeb; border:1px solid #fcd34d; font-size:12px; color:#92400e; cursor:pointer; }
-.tk-cl-box { margin-top:6px; padding-top:2px; }
-.tk-sec { letter-spacing:.02em; }
-.tk-sec .n { background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:0 7px; font-size:11px; color:var(--text-sub); }
-.tk-sec.danger .n { background:#fef2f2; border-color:#fca5a5; color:#b91c1c; font-weight:700; }
-.tk-sec-t { cursor:pointer; user-select:none; }
-.tk-sec-arrow { display:inline-block; font-size:9px; color:var(--text-muted); transition:transform .15s; }
-.tk-sec-arrow.open { transform:rotate(90deg); }
-.tk-sec-date { font-size:11px; font-weight:600; color:var(--text-muted); margin-left:2px; }
-.tk-sec-hint { font-size:10.5px; font-weight:500; color:#dc2626; opacity:.75; }
-.tk-sec-done { margin-left:auto; font-size:11px; font-weight:700; color:#16a34a; }
-.tk-plan-sum { font-size:12px; color:var(--text-sub); background:#f0faf9; border:1px solid #c5e8e5; border-radius:10px; padding:7px 10px; margin:0 0 6px; line-height:1.6; }
-.tk-plan-lbl { font-size:11px; font-weight:700; color:var(--text-muted); padding:7px 12px 3px; background:var(--surface); border-bottom:1px solid var(--border); }
-.tk-link { cursor:pointer; }
-.tk-link:hover { text-decoration:underline; }
-#tk-person-view .tk-sec:first-of-type { margin-top:10px; }
-.tk-item.slim { align-items:flex-start; padding:9px 12px; gap:10px; }
-.tk-item.slim .tk-check { width:22px; height:22px; font-size:12px; margin-top:0; }
-.tk-line { display:flex; align-items:center; gap:6px; min-height:22px; }
-.tk-line .tk-title { flex:1; min-width:0; font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.tk-item.slim.open .tk-line .tk-title { white-space:normal; }
-.tk-doing-mark { color:#0f766e; margin-right:4px; font-size:12px; }
-.tk-item.slim.doing .tk-line .tk-title { color:#0f766e; }
-.tk-ic { flex-shrink:0; font-size:11px; color:var(--text-sub); }
-.tk-ic.hi { color:#fff; background:#dc2626; border-radius:4px; padding:0 4px; font-weight:800; }
-.tk-r { flex-shrink:0; display:flex; align-items:center; gap:8px; margin-left:6px; }
-.tk-r-who { font-size:12px; color:var(--text-sub); max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.tk-r-who.me { color:#1f5f5a; font-weight:700; }
-.tk-r-who.none { color:#92400e; font-weight:700; }
-.tk-r-due { font-size:12px; color:var(--text-muted); white-space:nowrap; }
-.tk-r-due.od { color:var(--danger); font-weight:700; }
-.tk-item.slim .tk-caret { margin-left:0; }
-.tk-item.slim .tk-detail .tk-meta { margin-top:2px; }
-.tk-item.slim .tk-detail-foot .tk-start { padding:6px 12px; font-size:12px; }
-.tk-caret { margin-left:6px; font-size:10px; color:var(--text-muted); font-weight:400; }
-.tk-detail { margin-top:8px; border-top:1px dashed var(--border); padding-top:6px; cursor:default; }
-.tk-detail-memo { font-size:13px; color:var(--text); line-height:1.6; background:var(--surface); border-radius:8px; padding:8px 10px; margin:4px 0 6px; word-break:break-word; }
-.tk-detail-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px; font-size:11px; color:var(--text-muted); }
-.tk-edit-btn { flex-shrink:0; padding:6px 12px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:#fff; color:var(--text-sub); cursor:pointer; font-family:inherit; }
-.tk-cl-row { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:13px; }
-.tk-cl-row.on .tx { color:var(--text-muted); text-decoration:line-through; }
-.tk-cl-row .tx { flex:1; min-width:0; word-break:break-word; }
-.tk-cl-row .by, .tk-cl-edit .by { flex-shrink:0; font-size:11px; color:#16a34a; font-weight:600; }
-.tk-cl-check { flex-shrink:0; width:20px; height:20px; border-radius:5px; border:2px solid #b8b8b8; background:#fff; color:transparent; font-size:11px; font-weight:900; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; }
-.tk-cl-check.on { background:#16a34a; border-color:#16a34a; color:#fff; }
-.tk-cl-edit { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
-.tk-cl-edit input { flex:1; min-width:0; box-sizing:border-box; padding:8px 10px; font-size:16px; font-family:inherit; border:1.5px solid var(--border); border-radius:8px; }
-.tk-cl-edit button { flex-shrink:0; width:32px; height:32px; border:1.5px solid var(--border); border-radius:8px; background:#fff; color:var(--text-sub); font-size:16px; cursor:pointer; }
-.tk-side { display:none; }
-@media (min-width:1280px) {
-  /* 画面の幅に合わせて左側の一覧が広がる（右側は固定幅）。とても広い画面では全体を中央に寄せ、
-     一覧が間延びしすぎないようにする */
-  .tk-wide { display:grid; grid-template-columns:minmax(0, 1fr) 380px; gap:24px; align-items:start; max-width:1320px; margin:0 auto; }
-  .tk-side { display:block; position:sticky; top:12px; }
-  .tk-wide.cal { grid-template-columns:minmax(0, 1fr) 400px; max-width:1440px; }
-  .tk-wide.cal .tk-day-inline { display:none; }
-  .tk-side-daycard { max-height:calc(100vh - 140px); overflow-y:auto; }
-  .tk-side-daycard .tk-day-h { flex-wrap:wrap; gap:6px; }
-}
-.tk-stat-row { display:flex; align-items:center; gap:6px; padding:6px 0; border-bottom:1px dashed var(--border); }
-.tk-stat-row:last-child { border-bottom:none; }
-.tk-stat-row .lbl { width:36px; font-size:12px; font-weight:700; color:var(--text-sub); }
-.tk-stat { flex:1; text-align:center; font-size:11px; color:var(--text-sub); background:var(--surface); border-radius:8px; padding:5px 2px; }
-.tk-stat b { display:block; font-size:17px; color:var(--text); }
-.tk-stat.doing b { color:#0f766e; }
-.tk-stat.done b { color:#16a34a; }
-.tk-side-day { font-size:11px; font-weight:700; color:var(--text-sub); margin:8px 0 2px; }
-.tk-side-day.today { color:#0f766e; }
-.tk-side-ev { display:flex; gap:8px; padding:5px 0; font-size:13px; cursor:pointer; }
-.tk-side-ev .tm { flex-shrink:0; width:44px; font-size:12px; font-weight:700; color:#0f766e; }
-.tk-side-ev .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.tk-side-empty { font-size:12px; color:var(--text-muted); padding:4px 0; }
-.tk-side-link { margin-top:8px; background:none; border:none; padding:0; color:var(--gold-dark); font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
-.tk-side-person { padding:7px 0; border-bottom:1px dashed var(--border); cursor:pointer; }
-.tk-side-person:last-of-type { border-bottom:none; }
-.tk-side-person .h { display:flex; justify-content:space-between; gap:6px; font-size:13px; }
-.tk-side-person .n { font-weight:700; }
-.tk-side-person .c { font-size:11px; color:var(--text-sub); }
-.tk-side-person .now { font-size:12px; color:var(--text-muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.tk-side-person .now.on { color:#0f766e; font-weight:600; }
-.tk-side-un { margin-top:8px; padding:7px 10px; border-radius:8px; background:#fffbeb; border:1px solid #fcd34d; color:#92400e; font-size:12px; cursor:pointer; }
-.tk-notify { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 12px; padding:9px 12px; border-radius:10px; background:#e6f5f3; border:1px solid #8fcfc9; color:#1f5f5a; font-size:12px; line-height:1.5; }
-.card .tk-notify { margin:0 16px 12px; }
-.tk-notify button { flex-shrink:0; padding:7px 10px; font-size:12px; font-weight:700; border:1.5px solid #0f766e; border-radius:8px; background:#fff; color:#0f766e; cursor:pointer; font-family:inherit; }
-.tk-tile-badge { position:absolute; top:6px; right:8px; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:#dc2626; color:#fff; font-size:11px; font-weight:700; display:none; align-items:center; justify-content:center; box-sizing:border-box; }
-</style>
-
-<div id="tk-modal" onclick="if(event.target===this)tkCloseModal()"><div class="box" id="tk-modal-box"></div></div>
-
-<script>
-// ══════════════════════════════════════════════════════════════
-// タスク・予定（全員で共有）
-// 「誰が・何を・いつまでに」「今だれが何をしているか」「もう終わったか」を全員が同じ画面で
-// 見られるようにして、「あの人がやってくれたと思った」「終わってると知らずに二重にやった」を防ぐ。
-// データはRealtime Databaseの /tasks /events /members に保存する（他の機能と同じREST方式）。
-// ══════════════════════════════════════════════════════════════
-const TK = {
-  tasks: {}, events: {}, members: {},
-  loaded: false, loading: null,
-  tab: 'tasks',          // 'tasks' | 'cal'
-  filter: 'mine',        // 'mine' | 'all' | 'people'
-  showDone: false,
-  calView: 'month',      // 'month' | 'week'
-  calCursor: null,       // 表示中の月／週の基準日（Date）
-  selDay: null,          // 選択中の日（'YYYY-MM-DD'）
-  expanded: {},          // 一覧で中身を開いているタスク（{タスクID: true}）
-};
-const TK_PRIO = { high: '高', normal: '普通', low: '低' };
-const TK_REPEAT = { none: 'なし', daily: '毎日', weekday: '平日（月〜金）', weekly: '毎週', monthly: '毎月' };
-const TK_STATUS = { todo: '未着手', doing: '作業中', done: '完了' };
-const TK_WD = ['日','月','火','水','木','金','土'];
-
-const tkEsc = s => (typeof escapeHtmlMain === 'function') ? escapeHtmlMain(s) : String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const tkYmd = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-const tkToday = () => tkYmd(new Date());
-const tkParse = s => { const [y,m,d] = String(s).split('-').map(Number); return new Date(y, (m||1)-1, d||1); };
-const tkAddDays = (s, n) => { const d = tkParse(s); d.setDate(d.getDate()+n); return tkYmd(d); };
-const tkMe = () => (typeof currentSessionEmail === 'function' ? currentSessionEmail() : '');
-const tkKey = email => String(email || '').toLowerCase().replace(/\./g, ',').replace(/[#$\[\]\/]/g, '_');
-const tkNewId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-function tkName(email) {
-  if (!email) return '未定';
-  const m = TK.members[tkKey(email)];
-  return (m && m.name) || String(email).split('@')[0];
-}
-function tkShortDate(s) {
-  if (!s) return '';
-  const d = tkParse(s);
-  return `${d.getMonth()+1}/${d.getDate()}(${TK_WD[d.getDay()]})`;
-}
-function tkStamp(ms) {
-  if (!ms) return '';
-  const d = new Date(ms);
-  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-}
-function tkDueLabel(t) {
-  if (!t.due) return '期限なし';
-  const today = tkToday();
-  const nice = d => d === today ? '今日' : d === tkAddDays(today, 1) ? '明日' : tkShortDate(d);
-  let lbl = nice(t.due);
-  if (t.dueTime) lbl += ' ' + t.dueTime;
-  // 開始日がある場合は「水〜木」のように期間で表示する
-  if (t.startDate && t.startDate < t.due) return `${nice(t.startDate)}〜${lbl}`;
-  return lbl + 'まで';
-}
-// 今日やる対象か（期限が今日、または開始日〜期限日の期間に今日が入っている）
-function tkIsDueToday(t, today) {
-  today = today || tkToday();
-  if (!t.due) return false;
-  if (t.due === today) return true;
-  return !!(t.startDate && t.startDate <= today && t.due >= today);
-}
-function tkIsOverdue(t) {
-  if (!t || t.status === 'done' || !t.due) return false;
-  const today = tkToday();
-  if (t.due < today) return true;
-  if (t.due === today && t.dueTime) {
-    const now = new Date();
-    const hm = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
-    return t.dueTime < hm;
-  }
-  return false;
-}
-
-// ── 通信 ──
-async function tkReq(path, method, body) {
-  const opt = { method: method || 'GET' };
-  if (body !== undefined) { opt.headers = { 'Content-Type': 'application/json' }; opt.body = JSON.stringify(body); }
-  const r = await fetch(authedUrl('/' + path + '.json'), opt);
-  if (!r.ok) throw new Error('通信エラー（' + r.status + '）');
-  return r.json();
-}
-async function tkLoad(force) {
-  if (TK.loading && !force) return TK.loading;
-  TK.loading = (async () => {
-    try {
-      const [tasks, events, members] = await Promise.all([
-        tkReq('tasks'), tkReq('events'), tkReq('members')
-      ]);
-      TK.tasks = tasks || {}; TK.events = events || {}; TK.members = members || {};
-      TK.loaded = true;
-    } catch (e) {
-      console.error('タスク・予定の読み込みエラー', e);
-    } finally {
-      TK.loading = null;
-    }
-  })();
-  return TK.loading;
-}
-async function tkSave(path, method, body, rollback) {
-  try {
-    await tkReq(path, method, body);
-    return true;
-  } catch (e) {
-    console.error('タスク・予定の保存エラー', e);
-    showToast('保存できませんでした。通信状況をご確認ください');
-    if (rollback) rollback();
-    await tkLoad(true);
-    tkRefreshAll();
-    return false;
-  }
-}
-
-// ログイン後に一度呼ぶ：自分をメンバー一覧に登録し、定期的に最新状態を取り込む
-async function tkInit() {
-  await tkLoad(true);
-  const me = tkMe();
-  if (me && TK.loaded && !TK.members[tkKey(me)]) {
-    const rec = { email: me, name: me.split('@')[0], createdAt: Date.now() };
-    TK.members[tkKey(me)] = rec;
-    tkSave('members/' + tkKey(me), 'PUT', rec);
-  }
-  tkUpdateBadges();
-  // 通知を許可済みの端末（倉庫スタッフの端末を含む）は、通知の宛先を静かに登録しておく
-  try { if (typeof updateConsignNotifyPromptVisibility === 'function') updateConsignNotifyPromptVisibility(); } catch (e) {}
-  if (!window._tkTimer) {
-    window._tkTimer = setInterval(async () => {
-      if (document.hidden) return;
-      if (document.getElementById('tk-modal')?.style.display === 'flex') return;
-      await tkLoad(true);
-      tkRefreshAll();
-    }, 30000);
-  }
-}
-function tkRefreshAll() {
-  const pv = document.getElementById('tk-person-view');
-  if (pv && document.getElementById('tk-modal').style.display === 'flex') pv.innerHTML = tkPersonViewHtml(pv.dataset.email || '');
-  const view = document.getElementById('tk-view');
-  if (view && document.getElementById('tk-modal').style.display === 'flex') {
-    const t = TK.tasks[view.dataset.id];
-    if (t) { TK.expanded[view.dataset.id] = true; view.innerHTML = tkViewHtml({ ...t, id: view.dataset.id }); }
-  }
-  if (document.getElementById('screen-tasks')?.classList.contains('active')) renderTasksScreen(true);
-  if (document.getElementById('home-today-card')) renderHomeTodayCard(true);
-  tkUpdateBadges();
-}
-
-// ── 画面の切り替え ──
-function openTasksScreen(tab) {
-  if (tab) TK.tab = tab;
-  const go = () => showScreen('tasks');
-  if (typeof currentMode !== 'undefined' && currentMode !== 'biz') { switchMode('biz'); setTimeout(go, 80); }
-  else go();
-}
-function tkSetTab(tab) { TK.tab = tab; renderTasksScreen(true); }
-function tkSetFilter(f) { TK.filter = f; renderTasksScreen(true); }
-function tkToggleShowDone() { TK.showDone = !TK.showDone; renderTasksScreen(true); }
-
-async function renderTasksScreen(noFetch) {
-  const el = document.getElementById('screen-tasks');
-  if (!el) return;
-  if (!TK.loaded || !noFetch) {
-    if (!TK.loaded) el.innerHTML = '<div class="tk-empty">読み込み中…</div>';
-    await tkLoad(!noFetch);
-  }
-  const head = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div style="font-size:20px;font-weight:700;letter-spacing:0.03em">タスク・予定</div>
-      <button class="tk-chip" onclick="tkOpenMembersModal()">👤 表示名</button>
-    </div>
-    <div class="tab-switch">
-      <button class="tab-switch-btn ${TK.tab==='tasks'?'active':''}" onclick="tkSetTab('tasks')">✅ タスク</button>
-      <button class="tab-switch-btn ${TK.tab==='cal'?'active':''}" onclick="tkSetTab('cal')">📅 予定（カレンダー）</button>
-    </div>`;
-  if (TK.tab === 'cal') {
-    // パソコン幅では左にカレンダー、右に「選んだ日の予定・タスク」（週表示のときは状態・みんなの状況）を並べる。
-    // 狭い幅では右側は出さず、今まで通りカレンダーの下に選んだ日の一覧を出す
-    const side = TK.calView === 'month'
-      ? `<div class="card tk-side-daycard"><div style="padding:4px 14px 14px">${tkDayDetailHtml(TK.selDay || tkToday())}</div></div>`
-      : tkSideHtml();
-    el.innerHTML = `<div class="tk-wide cal"><div class="tk-main">${head}${tkNotifyBannerHtml()}${tkCalHtml()}</div><aside class="tk-side">${side}</aside></div>`;
-  } else {
-    // パソコン幅（1280px以上）では左にタスク一覧、右に「状態の件数・予定・みんなの状況」を並べる。
-    // それより狭い幅では右側（tk-side）は表示せず、今まで通り1列のまま
-    el.innerHTML = `<div class="tk-wide"><div class="tk-main">${head}${tkNotifyBannerHtml()}${tkTasksHtml()}</div><aside class="tk-side">${tkSideHtml()}</aside></div>`;
-  }
-  tkUpdateBadges();
-  if (typeof syncSideNav === 'function') syncSideNav();
-}
-
-// ── パソコン幅の右側パネル ──
-function tkSideHtml() {
-  const me = tkMe();
-  const today = tkToday();
-  const all = tkTaskList();
-  const isToday = ms => ms && tkYmd(new Date(ms)) === today;
-  const counts = list => ({
-    todo: list.filter(t => t.status !== 'done' && t.status !== 'doing').length,
-    doing: list.filter(t => t.status === 'doing').length,
-    done: list.filter(t => t.status === 'done' && isToday(t.doneAt)).length,
-  });
-  const mine = counts(all.filter(t => tkInvolved(t, me)));
-  const team = counts(all);
-  const statRow = (label, c) => `
-    <div class="tk-stat-row"><span class="lbl">${label}</span>
-      <span class="tk-stat"><b>${c.todo}</b>未着手</span>
-      <span class="tk-stat doing"><b>${c.doing}</b>作業中</span>
-      <span class="tk-stat done"><b>${c.done}</b>今日完了</span>
-    </div>`;
-
-  // 今日から7日分の予定
-  const days = Array.from({ length: 7 }, (_, i) => tkAddDays(today, i));
-  const evHtml = days.map(day => {
-    const evs = tkEventsOn(day);
-    if (!evs.length) return '';
-    return `<div class="tk-side-day ${day === today ? 'today' : ''}">${day === today ? '今日 ' : ''}${tkShortDate(day)}</div>` +
-      evs.map(e => `<div class="tk-side-ev" onclick="tkOpenEventView('${e.id}')"><span class="tm">${tkEsc(e.start || '終日')}</span><span class="t">${tkEsc(e.title)}</span></div>`).join('');
-  }).join('') || '<div class="tk-side-empty">今週の予定はありません</div>';
-
-  // みんなの状況（作業中のタスクと残り件数）
-  const open = all.filter(t => t.status !== 'done');
-  const emails = tkMemberEmails();
-  const peopleHtml = emails.map(e => {
-    const list = open.filter(t => tkInvolved(t, e));
-    const doing = list.filter(t => t.status === 'doing' && (t.doingBy === e || t.assignee === e));
-    const od = list.filter(tkIsOverdue).length;
-    return `<div class="tk-side-person" onclick="tkSetFilter('people')">
-      <div class="h"><span class="n">${tkEsc(tkName(e))}${e === me ? '（自分）' : ''}</span>
-        <span class="c">残り${list.length}件${od ? `・<b style="color:var(--danger)">期限切れ${od}</b>` : ''}</span></div>
-      <div class="now ${doing.length ? 'on' : ''}">${doing.length ? '▶ ' + tkEsc(doing.map(t => t.title).join('、')) : '作業中のタスクなし'}</div>
-    </div>`;
-  }).join('');
-  const un = open.filter(t => !t.assignee).length;
-
-  return `
-    <div class="card"><div class="card-title">タスクの状態</div><div style="padding:0 16px 14px">
-      ${statRow('自分', mine)}${statRow('全員', team)}
-    </div></div>
-    <div class="card"><div class="card-title">今週の予定</div><div style="padding:0 16px 12px">${evHtml}
-      <button class="tk-side-link" onclick="tkSetTab('cal')">カレンダーを開く →</button></div></div>
-    <div class="card"><div class="card-title">みんなの状況</div><div style="padding:0 16px 12px">${peopleHtml}
-      ${un ? `<div class="tk-side-un" onclick="tkSetFilter('all')">🙋 担当者未定のタスク ${un}件</div>` : ''}</div></div>`;
-}
-
-// ── タスク一覧 ──
-// 一緒にやる人（配列で保存。データベースから戻るときにオブジェクトになる場合にも対応）
-function tkHelpers(t) {
-  const h = t && t.helpers;
-  if (!h) return [];
-  return (Array.isArray(h) ? h : Object.values(h)).filter(Boolean);
-}
-// そのタスクに関わっているか（まとめ役＝担当者、または一緒にやる人）
-function tkInvolved(t, email) {
-  return !!email && (t.assignee === email || tkHelpers(t).includes(email));
-}
-// チェックリスト（{項目ID: {text, order, done, doneBy, doneAt}}）を並び順の配列で返す
-function tkChecklist(t) {
-  return Object.entries((t && t.checklist) || {}).filter(([, c]) => c && c.text)
-    .map(([cid, c]) => ({ ...c, cid })).sort((a, b) => (a.order || 0) - (b.order || 0));
-}
-function tkTaskList() {
-  return Object.entries(TK.tasks || {}).filter(([, t]) => t && t.title).map(([id, t]) => ({ ...t, id }));
-}
-function tkSortTasks(a, b) {
-  const pr = { high: 0, normal: 1, low: 2 };
-  if ((a.due || '9999') !== (b.due || '9999')) return (a.due || '9999') < (b.due || '9999') ? -1 : 1;
-  if ((a.dueTime || '99') !== (b.dueTime || '99')) return (a.dueTime || '99') < (b.dueTime || '99') ? -1 : 1;
-  if ((pr[a.priority] ?? 1) !== (pr[b.priority] ?? 1)) return (pr[a.priority] ?? 1) - (pr[b.priority] ?? 1);
-  return (a.createdAt || 0) - (b.createdAt || 0);
-}
-function tkItemHtml(t, compact) {
-  const me = tkMe();
-  const done = t.status === 'done';
-  const doing = t.status === 'doing';
-  const od = tkIsOverdue(t);
-  const cls = done ? 'done' : od ? 'overdue' : doing ? 'doing' : '';
-  const assignTag = !t.assignee
-    ? '<span class="tk-tag none">担当未定</span>'
-    : `<span class="tk-tag ${t.assignee === me ? 'me' : ''}">${tkEsc(tkName(t.assignee))}</span>`;
-  const dueTag = `<span class="tk-tag ${od ? 'od' : ''}">${od ? '⚠️ ' : ''}${tkEsc(tkDueLabel(t))}</span>`;
-  const prioTag = t.priority === 'high' ? '<span class="tk-tag high">優先度：高</span>' : '';
-  const statusTag = doing ? '<span class="tk-tag doing">作業中</span>' : '';
-  const rep = t.repeat && t.repeat !== 'none' ? `<span class="tk-tag">🔁 ${tkEsc(TK_REPEAT[t.repeat] || '')}</span>` : '';
-  const helpers = tkHelpers(t);
-  const helperTag = helpers.length ? `<span class="tk-tag ${helpers.includes(me) ? 'me' : ''}">👥 ${tkEsc(helpers.map(tkName).join('・'))}</span>` : '';
-  const cl = tkChecklist(t);
-  const clDone = cl.filter(c => c.done).length;
-  const clTag = cl.length ? `<span class="tk-tag ${clDone === cl.length ? 'me' : ''}">☑ ${clDone}/${cl.length}</span>` : '';
-  let groupTag = '';
-  if (t.groupId) {
-    const g = tkTaskList().filter(x => x.groupId === t.groupId);
-    groupTag = `<span class="tk-tag">👪 全員分 ${g.filter(x => x.status === 'done').length}/${g.length}人完了</span>`;
-  }
-  const open = !!TK.expanded[t.id];
-  const clHtml = cl.length ? `<div class="tk-cl-box">${cl.map(c => `
-      <div class="tk-cl-row ${c.done ? 'on' : ''}">
-        <button class="tk-cl-check ${c.done ? 'on' : ''}" onclick="tkToggleCheck('${t.id}','${c.cid}')">✓</button>
-        <span class="tx">${tkEsc(c.text)}</span>
-        ${c.done && c.doneBy ? `<span class="by">${tkEsc(tkName(c.doneBy))}</span>` : ''}
-      </div>`).join('')}</div>` : '';
-  let who = '';
-  if (done && t.doneBy) who = `<div class="tk-who done">✅ ${tkEsc(tkName(t.doneBy))}さんが ${tkStamp(t.doneAt)} に完了</div>`;
-  else if (doing && t.doingBy) who = `<div class="tk-who">▶ ${tkEsc(tkName(t.doingBy))}さんが作業中（${tkStamp(t.doingAt)}〜）</div>`;
-  const startBtn = done ? '' : doing
-    ? `<button class="tk-start stop" onclick="tkToggleDoing('${t.id}')">作業中断</button>`
-    : `<button class="tk-start" onclick="tkToggleDoing('${t.id}')">作業開始</button>`;
-  // タップで開く中身：詳しいタグ・作業中の人・メモ・チェックリスト・作業開始／編集ボタン
-  const detailHtml = open ? `<div class="tk-detail" onclick="event.stopPropagation()">
-      <div class="tk-meta">${statusTag}${assignTag}${helperTag}${dueTag}${prioTag}${clTag}${groupTag}${rep}</div>
-      ${who}
-      ${t.detail ? `<div class="tk-detail-memo">${tkEsc(t.detail).replace(/\n/g, '<br>')}</div>` : ''}
-      ${clHtml}
-      <div class="tk-detail-foot">
-        <span>作成：${tkEsc(tkName(t.createdBy))}（${tkStamp(t.createdAt)}）</span>
-        <span style="display:flex;gap:6px">${startBtn}<button class="tk-edit-btn" onclick="tkOpenTaskModal('${t.id}')">✏️ 編集</button></span>
-      </div>
-    </div>` : '';
-  // 閉じているときは1行だけ：タイトル＋小さな印／右側に担当者と期限
-  const icons = [
-    t.priority === 'high' && !done ? '<span class="tk-ic hi" title="優先度：高">！</span>' : '',
-    cl.length ? `<span class="tk-ic">☑${clDone}/${cl.length}</span>` : '',
-    t.groupId ? '<span class="tk-ic">👪</span>' : '',
-    t.repeat && t.repeat !== 'none' ? '<span class="tk-ic">🔁</span>' : '',
-  ].join('');
-  const showAssignee = !TK._hideAssignee;
-  const iAmHelper = helpers.includes(me) && t.assignee !== me;
-  const whoShort = showAssignee
-    ? (!t.assignee ? '<span class="tk-r-who none">未定</span>'
-      : `<span class="tk-r-who ${t.assignee === me ? 'me' : ''}">${tkEsc(tkName(t.assignee))}${helpers.length ? ' 他' + helpers.length : ''}</span>`)
-    : (iAmHelper ? '<span class="tk-r-who">👥協力</span>' : '');
-  const dueShort = done && t.doneAt ? `✅ ${tkStamp(t.doneAt)}` : (od ? '⚠️ ' : '') + tkDueLabel(t).replace(/まで$/, '');
-  return `<div class="tk-item slim ${cls} ${open ? 'open' : ''}">
-    <button class="tk-check ${done ? 'on' : ''}" onclick="tkToggleDone('${t.id}')" aria-label="完了">✓</button>
-    <div class="tk-body" onclick="tkToggleExpand('${t.id}')">
-      <div class="tk-line">
-        <span class="tk-title">${doing ? '<span class="tk-doing-mark">▶</span>' : ''}${tkEsc(t.title)}</span>
-        ${icons}
-        <span class="tk-r">${whoShort}<span class="tk-r-due ${od ? 'od' : ''}">${tkEsc(dueShort)}</span><span class="tk-caret">${open ? '▲' : '▼'}</span></span>
-      </div>
-      ${detailHtml}
-    </div>
-  </div>`;
-}
-// 開閉できる見出し（key：開閉状態の名前、defaultClosed：最初は閉じておくか）
-const TK_EN_WD = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-function tkEnDate(ymd) { const d = tkParse(ymd); return `${d.getMonth() + 1}/${d.getDate()} ${TK_EN_WD[d.getDay()]}`; }
-function tkIsClosed(key, defaultClosed) {
-  if (!TK.collapsed) TK.collapsed = {};
-  return key in TK.collapsed ? TK.collapsed[key] : !!defaultClosed;
-}
-function tkToggleSec(key, defaultClosed) {
-  if (!TK.collapsed) TK.collapsed = {};
-  TK.collapsed[key] = !tkIsClosed(key, defaultClosed);
-  tkRefreshAll();
-}
-function tkSectionC(key, title, items, opts) {
-  opts = opts || {};
-  if (!items.length && !opts.always) return '';
-  const closed = tkIsClosed(key, opts.defaultClosed);
-  const head = `<div class="tk-sec ${opts.danger ? 'danger' : ''} tk-sec-t" onclick="tkToggleSec('${key}', ${!!opts.defaultClosed})">
-      <span class="tk-sec-arrow ${closed ? '' : 'open'}">▶</span>${title}<span class="n">${items.length}</span>${opts.extra || ''}</div>`;
-  if (closed) return head;
-  return head + (opts.bodyHtml != null ? opts.bodyHtml : `<div class="tk-list">${items.length ? items.map(t => tkItemHtml(t)).join('') : `<div class="tk-empty">${opts.emptyText || 'なし'}</div>`}</div>`);
-}
-// 明日の段取り：予定（時間つき）とタスクを時間順に並べ、そのあとに時間指定のないタスクを優先度順に並べる
-function tkTomorrowBody(tasks, day, me) {
-  const evs = tkEventsOn(day).filter(e => {
-    if (TK.filter !== 'mine') return true;
-    if (!e.members || e.members === 'all') return true;
-    const list = Array.isArray(e.members) ? e.members : Object.values(e.members);
-    return !list.length || list.includes(me);
-  });
-  const pr = { high: 0, normal: 1, low: 2 };
-  const timed = [
-    ...evs.filter(e => e.start).map(e => ({ k: e.start, html: tkEvRowHtml(e) })),
-    ...tasks.filter(t => t.dueTime).map(t => ({ k: t.dueTime, html: tkItemHtml(t) })),
-  ].sort((a, b) => a.k < b.k ? -1 : a.k > b.k ? 1 : 0);
-  const allDayEv = evs.filter(e => !e.start);
-  const untimed = tasks.filter(t => !t.dueTime).sort((a, b) => ((pr[a.priority] ?? 1) - (pr[b.priority] ?? 1)) || tkSortTasks(a, b));
-  const high = tasks.filter(t => t.priority === 'high').length;
-  const summary = `<div class="tk-plan-sum">📅 予定 ${evs.length}件${evs.filter(e => e.start).length ? `（${evs.filter(e => e.start).sort((a, b) => a.start < b.start ? -1 : 1).map(e => e.start + (e.end ? '〜' + e.end : '')).join('、')}）` : ''}　✅ タスク ${tasks.length}件${high ? `（優先度高 ${high}件）` : ''}</div>`;
-  let body = summary + '<div class="tk-list">';
-  if (!evs.length && !tasks.length) body += '<div class="tk-empty">明日の予定・タスクはまだありません</div>';
-  body += allDayEv.map(tkEvRowHtml).join('');
-  // 要望により「時間が決まっているもの」などの見出しは出さず、時間順の予定・タスク → 時間の決まっていないタスクの順に並べるだけにした
-  body += timed.map(x => x.html).join('');
-  body += untimed.map(t => tkItemHtml(t)).join('');
-  return body + '</div>';
-}
-// 明後日以降：日付ごとに見出しを付けて並べる
-function tkUpcomingBody(tasks) {
-  const byDay = {};
-  tasks.forEach(t => { (byDay[t.due] = byDay[t.due] || []).push(t); });
-  return Object.keys(byDay).sort().map(d => `<div class="tk-plan-lbl" style="margin-top:8px">${tkEnDate(d)}<span style="font-weight:400;color:var(--text-muted)">　${byDay[d].length}</span></div><div class="tk-list">${byDay[d].sort(tkSortTasks).map(t => tkItemHtml(t)).join('')}</div>`).join('');
-}
-function tkSection(title, items, danger, emptyText) {
-  if (!items.length && !emptyText) return '';
-  return `<div class="tk-sec ${danger ? 'danger' : ''}">${title}<span class="n">${items.length}</span></div>
-    <div class="tk-list">${items.length ? items.map(t => tkItemHtml(t)).join('') : `<div class="tk-empty">${emptyText}</div>`}</div>`;
-}
-function tkTasksHtml() {
-  const me = tkMe();
-  const today = tkToday();
-  const all = tkTaskList().sort(tkSortTasks);
-  const toolbar = `
-    <div class="tk-toolbar">
-      <button class="tk-chip ${TK.filter==='mine'?'active':''}" onclick="tkSetFilter('mine')">自分</button>
-      <button class="tk-chip ${TK.filter==='all'?'active':''}" onclick="tkSetFilter('all')">全員</button>
-      <button class="tk-chip ${TK.filter==='people'?'active':''}" onclick="tkSetFilter('people')">👥 担当者別</button>
-      <button class="tk-add-btn" onclick="tkOpenTaskModal()">＋ タスク</button>
-    </div>`;
-  if (TK.filter === 'people') return toolbar + tkPeopleHtml(all);
-  // 「自分」の一覧では担当者名は省く（全部自分なので）。一緒にやる人として関わるものだけ「👥協力」と出す
-  TK._hideAssignee = TK.filter === 'mine';
-  try { return toolbar + tkTasksListHtml(all, me, today); } finally { TK._hideAssignee = false; }
-}
-function tkTasksListHtml(all, me, today) {
-
-  const open = all.filter(t => t.status !== 'done');
-  const scope = TK.filter === 'mine' ? open.filter(t => tkInvolved(t, me)) : open;
-  const overdue = scope.filter(tkIsOverdue);
-  const doing = scope.filter(t => !tkIsOverdue(t) && t.status === 'doing');
-  const rest = scope.filter(t => !tkIsOverdue(t) && t.status !== 'doing');
-  const todayList = rest.filter(t => tkIsDueToday(t, today));
-  const later = rest.filter(t => t.due && t.due > today && !tkIsDueToday(t, today));
-  const noDue = rest.filter(t => !t.due);
-  const unassigned = TK.filter === 'mine' ? open.filter(t => !t.assignee) : [];
-  const weekAgo = Date.now() - 7 * 86400000;
-  const doneList = all.filter(t => t.status === 'done' && (t.doneAt || 0) >= weekAgo)
-    .filter(t => TK.filter !== 'mine' || tkInvolved(t, me) || t.doneBy === me)
-    .sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
-
-  let html = '';
-  if (!scope.length && !unassigned.length) html += `<div class="tk-list"><div class="tk-empty">${TK.filter==='mine' ? 'あなたが関わるタスクはありません 🎉' : '未完了のタスクはありません 🎉'}</div></div>`;
-  // 要望「今日やるタスクを見やすく。期限切れはタップで開く形に。これからは明日のやることが分かるように。見出しは英語に」への対応
-  const tomorrow = tkAddDays(today, 1);
-  const tomorrowList = later.filter(t => t.due === tomorrow || (t.startDate && t.startDate <= tomorrow && t.due >= tomorrow));
-  const upcoming = later.filter(t => !tomorrowList.includes(t));
-  const doneToday = doneList.filter(t => t.doneAt && tkYmd(new Date(t.doneAt)) === today).length;
-  html += tkSectionC('overdue', '⚠️ Overdue', overdue, { danger: true, defaultClosed: true, extra: overdue.length ? '<span class="tk-sec-hint">タップで表示</span>' : '' });
-  html += tkSectionC('doing', '▶ In progress', doing);
-  html += tkSectionC('today', `📌 Today<span class="tk-sec-date">${tkEnDate(today)}</span>`, todayList, { always: true, emptyText: '今日が期限のタスクはありません', extra: doneToday ? `<span class="tk-sec-done">✓ ${doneToday} done</span>` : '' });
-  html += tkSectionC('tomorrow', `🌅 Tomorrow<span class="tk-sec-date">${tkEnDate(tomorrow)}</span>`, tomorrowList, { always: true, bodyHtml: tkTomorrowBody(tomorrowList, tomorrow, me) });
-  html += tkSectionC('upcoming', '🗓 Upcoming', upcoming, { defaultClosed: true, bodyHtml: tkUpcomingBody(upcoming) });
-  html += tkSectionC('nodue', '📝 No due date', noDue, { defaultClosed: true });
-  if (unassigned.length) html += tkSectionC('unassigned', '🙋 Unassigned<span class="tk-sec-date">誰かお願いします</span>', unassigned);
-  html += tkSectionC('done', '✅ Completed<span class="tk-sec-date">last 7 days</span>', doneList, { always: true, defaultClosed: true, emptyText: 'まだありません' });
-  return html;
-}
-function tkPeopleHtml(all) {
-  const open = all.filter(t => t.status !== 'done');
-  const emails = Object.values(TK.members || {}).map(m => m.email).filter(Boolean);
-  open.forEach(t => [t.assignee, ...tkHelpers(t)].forEach(e => { if (e && !emails.includes(e)) emails.push(e); }));
-  const me = tkMe();
-  emails.sort((a, b) => (a === me ? -1 : b === me ? 1 : tkName(a).localeCompare(tkName(b), 'ja')));
-  const card = (label, list, isMe, email) => {
-    const od = list.filter(tkIsOverdue).length;
-    const doing = list.filter(t => t.status === 'doing');
-    const rows = [...doing, ...list.filter(t => t.status !== 'doing')].slice(0, 8).map(t => `
-      <div class="tk-person-row" onclick="tkOpenTaskView('${t.id}')">
-        <span>${t.status === 'doing' ? '▶' : tkIsOverdue(t) ? '⚠️' : '・'}</span>
-        <span class="t">${tkEsc(t.title)}${email && t.assignee !== email ? ' <span style="color:var(--text-muted);font-size:11px">（👥 協力）</span>' : ''}</span>
-        <span style="font-size:11px;color:${tkIsOverdue(t) ? 'var(--danger)' : 'var(--text-muted)'};flex-shrink:0">${t.due ? tkShortDate(t.due) : ''}</span>
-      </div>`).join('');
-    return `<div class="tk-person">
-      <div class="tk-person-h">
-        <div class="tk-person-name tk-link" onclick="tkOpenPersonModal('${email ? tkEsc(email) : ''}')">${tkEsc(label)}${isMe ? '（自分）' : ''} <span style="font-size:11px;color:var(--text-muted);font-weight:600">›</span></div>
-        <div class="tk-person-stats"><span>残り${list.length}件</span>${od ? `<span style="color:var(--danger);font-weight:700">期限切れ${od}</span>` : ''}</div>
-      </div>
-      <div style="font-size:12px;color:${doing.length ? '#0f766e' : 'var(--text-muted)'};font-weight:600;margin-bottom:4px">${doing.length ? '▶ 今：' + tkEsc(doing.map(t => t.title).join('、')) : '今は作業中のタスクなし'}</div>
-      ${rows || '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">担当のタスクはありません</div>'}
-      ${list.length > 8 ? `<div class="tk-link" style="font-size:12px;color:var(--gold-dark);font-weight:700;padding-top:6px" onclick="tkOpenPersonModal('${email ? tkEsc(email) : ''}')">ほか${list.length - 8}件 → すべて見る</div>` : ''}
-    </div>`;
-  };
-  let html = '<div class="tk-people">';
-  emails.forEach(e => { html += card(tkName(e), open.filter(t => tkInvolved(t, e)).sort(tkSortTasks), e === me, e); });
-  const un = open.filter(t => !t.assignee).sort(tkSortTasks);
-  if (un.length) html += card('🙋 担当者未定', un, false);
-  html += '</div>';
-  return html;
-}
-
-// 一覧のタスクをタップしたら中身を開く／閉じる（編集画面は「✏️ 編集」ボタンからだけ開く）
-function tkToggleExpand(id) {
-  if (TK.expanded[id]) delete TK.expanded[id]; else TK.expanded[id] = true;
-  tkRefreshAll();
-}
-// HOME・担当者別・カレンダーなどからタスクをタップしたときの「中身を見る」画面
-function tkOpenTaskView(id) {
-  const t = TK.tasks[id];
-  if (!t) return;
-  const item = { ...t, id };
-  TK.expanded[id] = true;
-  tkShowModal(`<div id="tk-view" data-id="${id}">${tkViewHtml(item)}</div>`);
-}
-function tkViewHtml(t) {
-  return `<h3 style="margin-bottom:10px">タスクの内容</h3>
-    <div class="tk-list">${tkItemHtml(t)}</div>
-    <div class="tk-btns"><button class="tk-btn-cancel" onclick="tkCloseView('${t.id}')">閉じる</button></div>`;
-}
-function tkCloseView(id) { delete TK.expanded[id]; tkCloseModal(); tkRefreshAll(); }
-
-// 担当者別で名前（または「ほか〇件」）を押したとき：その人のタスクをすべて期間ごとに表示する。
-// email が空なら「担当者未定」のタスク
-function tkOpenPersonModal(email) {
-  tkShowModal(`<div id="tk-person-view" data-email="${tkEsc(email || '')}">${tkPersonViewHtml(email || '')}</div>`);
-}
-function tkPersonViewHtml(email) {
-  // その人の一覧なので、担当者名は行に出さない
-  TK._hideAssignee = !!email;
-  try { return tkPersonViewInner(email); } finally { TK._hideAssignee = false; }
-}
-function tkPersonViewInner(email) {
-  const today = tkToday();
-  const all = tkTaskList().sort(tkSortTasks);
-  const open = all.filter(t => t.status !== 'done' && (email ? tkInvolved(t, email) : !t.assignee));
-  const overdue = open.filter(tkIsOverdue);
-  const doing = open.filter(t => !tkIsOverdue(t) && t.status === 'doing');
-  const rest = open.filter(t => !tkIsOverdue(t) && t.status !== 'doing');
-  const weekAgo = Date.now() - 7 * 86400000;
-  const doneList = email ? all.filter(t => t.status === 'done' && (t.doneAt || 0) >= weekAgo && (tkInvolved(t, email) || t.doneBy === email))
-    .sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0)) : [];
-  const title = email ? `${tkName(email)}${email === tkMe() ? '（自分）' : ''}さんのタスク` : '🙋 担当者未定のタスク';
-  let html = `<h3 style="margin-bottom:4px">${tkEsc(title)}</h3>
-    <div style="font-size:12px;color:var(--text-sub);margin-bottom:6px">残り${open.length}件${overdue.length ? `・<b style="color:var(--danger)">期限切れ${overdue.length}件</b>` : ''}</div>`;
-  if (!open.length) html += '<div class="tk-list"><div class="tk-empty">未完了のタスクはありません</div></div>';
-  html += tkSection('⚠️ Overdue', overdue, true);
-  html += tkSection('▶ In progress', doing);
-  html += tkSection(`📌 Today<span class="tk-sec-date">${tkEnDate(today)}</span>`, rest.filter(t => tkIsDueToday(t, today)));
-  html += tkSection('🗓 Upcoming', rest.filter(t => t.due && t.due > today && !tkIsDueToday(t, today)));
-  html += tkSection('📝 No due date', rest.filter(t => !t.due));
-  if (doneList.length) html += tkSection('✅ Completed<span class="tk-sec-date">last 7 days</span>', doneList);
-  html += `<div class="tk-btns"><button class="tk-btn-cancel" onclick="tkCloseModal()">閉じる</button></div>`;
-  return html;
-}
-
-// ── タスクの操作 ──
-async function tkToggleDone(id, opts) {
-  const t = TK.tasks[id];
-  if (!t) return;
-  const me = tkMe();
-  const prev = { ...t };
-  if (t.status === 'done') {
-    const patch = { status: 'todo', doneBy: null, doneAt: null, updatedAt: Date.now(), updatedBy: me };
-    Object.assign(t, patch); delete t.doneBy; delete t.doneAt;
-    tkRefreshAll();
-    await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; });
-    return;
-  }
-  if (t.status === 'doing' && t.doingBy && t.doingBy !== me) {
-    const ok = await showConfirm(`${tkName(t.doingBy)}さんが作業中のタスクです。完了にしてよろしいですか？`);
-    if (!ok) return;
-  }
-  const remain = tkChecklist(t).filter(c => !c.done).length;
-  if (remain && !opts?.skipChecklistConfirm) {
-    const ok = await showConfirm(`チェックリストにまだ終わっていない項目が${remain}件あります。タスクを完了にしてよろしいですか？`);
-    if (!ok) return;
-  }
-  // 最新の状態を確認して、すでに誰かが完了にしていたら二重に処理しない
-  try {
-    const latest = await tkReq('tasks/' + id);
-    if (latest && latest.status === 'done') {
-      TK.tasks[id] = latest;
-      showToast(`${tkName(latest.doneBy)}さんがすでに完了しています`);
-      tkRefreshAll();
-      return;
-    }
-  } catch (e) {}
-  const patch = { status: 'done', doneBy: me, doneAt: Date.now(), updatedAt: Date.now(), updatedBy: me };
-  Object.assign(t, patch);
-  // 繰り返しタスクは、完了したら次回分を自動で作る
-  let nextRec = null, nextId = null;
-  if (t.repeat && t.repeat !== 'none' && !t.nextId) {
-    nextId = tkNewId();
-    nextRec = {
-      title: t.title, detail: t.detail || '', assignee: t.assignee || '', priority: t.priority || 'normal',
-      helpers: tkHelpers(t).length ? tkHelpers(t) : null,
-      startDate: null,
-      checklist: tkChecklist(t).length ? Object.fromEntries(tkChecklist(t).map((c, i) => [tkNewId() + i, { text: c.text, order: i }])) : null,
-      due: tkNextDue(t.due || tkToday(), t.repeat), dueTime: t.dueTime || '', repeat: t.repeat,
-      status: 'todo', createdBy: t.createdBy || me, createdAt: Date.now(), updatedAt: Date.now(), updatedBy: me,
-      autoRepeat: true // 自動で作った次回分（「新しいタスク」の通知は送らない）
-    };
-    if (t.startDate && t.due && t.startDate < t.due) {
-      // 開始日〜期限日の幅を保ったまま次回に移す
-      const span = Math.round((tkParse(t.due) - tkParse(t.startDate)) / 86400000);
-      nextRec.startDate = tkAddDays(nextRec.due, -span);
-    }
-    patch.nextId = nextId; t.nextId = nextId;
-    Object.keys(nextRec).forEach(k => { if (nextRec[k] === null) delete nextRec[k]; });
-    TK.tasks[nextId] = nextRec;
-  }
-  tkRefreshAll();
-  showToast(nextRec ? `完了しました。次回（${tkShortDate(nextRec.due)}）の分を作成しました` : '完了しました');
-  const ok = await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; if (nextId) delete TK.tasks[nextId]; });
-  if (ok && nextRec) await tkSave('tasks/' + nextId, 'PUT', nextRec, () => { delete TK.tasks[nextId]; });
-}
-// チェックリストの1項目を付けたり外したりする（その項目だけを書き換えるので、同時に別の人が
-// ほかの項目をチェックしても上書きし合わない）
-async function tkToggleCheck(id, cid) {
-  const t = TK.tasks[id];
-  const c = t && t.checklist && t.checklist[cid];
-  if (!c) return;
-  const me = tkMe();
-  const prev = { ...c };
-  const on = !c.done;
-  const patch = {
-    ['checklist/' + cid + '/done']: on ? true : null,
-    ['checklist/' + cid + '/doneBy']: on ? me : null,
-    ['checklist/' + cid + '/doneAt']: on ? Date.now() : null,
-    updatedAt: Date.now(), updatedBy: me,
-  };
-  if (on) Object.assign(c, { done: true, doneBy: me, doneAt: Date.now() });
-  else { delete c.done; delete c.doneBy; delete c.doneAt; }
-  tkRefreshAll();
-  const ok = await tkSave('tasks/' + id, 'PATCH', patch, () => { t.checklist[cid] = prev; });
-  if (ok && on && t.status !== 'done' && tkChecklist(t).every(x => x.done)) {
-    const fin = await showConfirm('チェックリストの項目がすべて終わりました。このタスクを完了にしますか？');
-    if (fin) await tkToggleDone(id, { skipChecklistConfirm: true });
-  }
-}
-function tkNextDue(due, repeat) {
-  const d = tkParse(due);
-  const today = tkParse(tkToday());
-  const step = () => {
-    if (repeat === 'daily') d.setDate(d.getDate() + 1);
-    else if (repeat === 'weekday') { do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6); }
-    else if (repeat === 'weekly') d.setDate(d.getDate() + 7);
-    else if (repeat === 'monthly') {
-      const day = tkParse(due).getDate();
-      d.setDate(1); d.setMonth(d.getMonth() + 1);
-      const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-      d.setDate(Math.min(day, last));
-    } else d.setDate(d.getDate() + 1);
-  };
-  step();
-  // 期限を過ぎてから完了した場合は、今日より後の直近の回にする
-  let guard = 0;
-  while (d <= today && guard++ < 400) step();
-  return tkYmd(d);
-}
-async function tkToggleDoing(id) {
-  const t = TK.tasks[id];
-  if (!t || t.status === 'done') return;
-  const me = tkMe();
-  const prev = { ...t };
-  let patch;
-  if (t.status === 'doing') {
-    if (t.doingBy && t.doingBy !== me) {
-      const ok = await showConfirm(`${tkName(t.doingBy)}さんが作業中です。作業中を解除しますか？`);
-      if (!ok) return;
-    }
-    patch = { status: 'todo', doingBy: null, doingAt: null, updatedAt: Date.now(), updatedBy: me };
-  } else {
-    patch = { status: 'doing', doingBy: me, doingAt: Date.now(), updatedAt: Date.now(), updatedBy: me };
-    if (!t.assignee) patch.assignee = me; // 担当未定のタスクに着手したら自分の担当にする
-  }
-  Object.assign(t, patch);
-  if (patch.doingBy === null) { delete t.doingBy; delete t.doingAt; }
-  tkRefreshAll();
-  await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; });
-}
-
-// ── メンバー選択肢 ──
-function tkMemberEmails() {
-  const me = tkMe();
-  const list = Object.values(TK.members || {}).map(m => m.email).filter(Boolean);
-  if (me && !list.includes(me)) list.push(me);
-  return list.sort((a, b) => (a === me ? -1 : b === me ? 1 : tkName(a).localeCompare(tkName(b), 'ja')));
-}
-function tkMemberOptions(selected, isNew) {
-  const me = tkMe();
-  return `<option value="">未定（誰かお願い）</option>` +
-    (isNew ? `<option value="__each__">全員（一人ずつ同じタスクを作る）</option>` : '') + tkMemberEmails().map(e =>
-    `<option value="${tkEsc(e)}" ${e === selected ? 'selected' : ''}>${tkEsc(tkName(e))}${e === me ? '（自分）' : ''}</option>`).join('');
-}
-
-// ── モーダル ──
-function tkShowModal(html) {
-  document.getElementById('tk-modal-box').innerHTML = html;
-  document.getElementById('tk-modal').style.display = 'flex';
-}
-function tkCloseModal() { document.getElementById('tk-modal').style.display = 'none'; }
-
-function tkOpenTaskModal(id, presetDue) {
-  const t = id ? TK.tasks[id] : null;
-  if (id && !t) return;
-  const me = tkMe();
-  const v = t || { title: '', detail: '', assignee: me, due: presetDue || tkToday(), dueTime: '', priority: 'normal', repeat: 'none', status: 'todo' };
-  const opt = (obj, sel) => Object.entries(obj).map(([k, l]) => `<option value="${k}" ${k === (sel || '') ? 'selected' : ''}>${l}</option>`).join('');
-  let info = '';
-  if (t) {
-    info = `<div class="tk-info">作成：${tkEsc(tkName(t.createdBy))}（${tkStamp(t.createdAt)}）` +
-      (t.updatedAt && t.updatedAt !== t.createdAt ? `<br>最終更新：${tkEsc(tkName(t.updatedBy))}（${tkStamp(t.updatedAt)}）` : '') +
-      (t.status === 'done' && t.doneBy ? `<br>完了：${tkEsc(tkName(t.doneBy))}（${tkStamp(t.doneAt)}）` : '') + '</div>';
-  }
-  tkShowModal(`
-    <h3>${t ? 'タスクの編集' : 'タスクを追加'}</h3>
-    <div class="tk-f"><label>やること</label><input type="text" id="tkf-title" value="${tkEsc(v.title)}" placeholder="例：〇〇社へ見積書を送る"></div>
-    <div class="tk-f"><label>メモ（詳しい内容・注意点）</label><textarea id="tkf-detail" placeholder="任意">${tkEsc(v.detail || '')}</textarea></div>
-    <div class="tk-f"><label>担当者（まとめ役）</label><select id="tkf-assignee" onchange="tkOnAssigneeChange()">${tkMemberOptions(v.assignee || '', !t)}</select></div>
-    <div class="tk-f" id="tkf-helpers-box"><label>一緒にやる人（任意・何人でも）</label><div class="tk-mem-list">${tkMemberEmails().map(em => `<label><input type="checkbox" class="tkf-helper" value="${tkEsc(em)}" ${tkHelpers(v).includes(em) ? 'checked' : ''}>${tkEsc(tkName(em))}</label>`).join('')}</div></div>
-    <div class="tk-f"><label>チェックリスト（作業を小分けにする・任意）</label>
-      <div id="tkf-cl">${tkChecklist(v).map(c => tkClEditRow(c.cid, c.text, c.done ? tkName(c.doneBy) : '')).join('')}</div>
-      <button type="button" class="tk-chip" style="margin-top:6px" onclick="tkClAddRow()">＋ 項目を追加</button>
-    </div>
-    <div class="tk-row2">
-      <div class="tk-f"><label>開始日（任意）</label><input type="date" id="tkf-start" value="${tkEsc(v.startDate || '')}"></div>
-      <div class="tk-f"><label>期限日</label><input type="date" id="tkf-due" value="${tkEsc(v.due || '')}"></div>
-    </div>
-    <div class="tk-f" style="margin-top:-6px;font-size:11px;color:var(--text-muted)">「水〜木のどこかでやればいい」ときは、開始日を水曜・期限日を木曜にします。開始日を空けると期限日だけになります。</div>
-    <div class="tk-row2">
-      <div class="tk-f"><label>期限の時刻（任意）</label>${tkTimeInputHtml('tkf-time', v.dueTime, 'なし', null, 'tk-wslot-task', true)}</div>
-      <div class="tk-f"></div>
-    </div>
-    <div class="tk-wheel-slot" id="tk-wslot-task" style="display:none"></div>
-    <div class="tk-row2">
-      <div class="tk-f"><label>優先度</label><select id="tkf-prio">${opt(TK_PRIO, v.priority || 'normal')}</select></div>
-      <div class="tk-f"><label>繰り返し</label><select id="tkf-repeat">${opt(TK_REPEAT, v.repeat || 'none')}</select></div>
-    </div>
-    ${t ? `<div class="tk-f"><label>状態</label><select id="tkf-status">${opt(TK_STATUS, v.status || 'todo')}</select></div>` : ''}
-    <div class="tk-btns">
-      ${t ? `<button class="tk-btn-del" onclick="tkDeleteTask('${id}')">削除</button>` : ''}
-      <button class="tk-btn-cancel" onclick="tkCloseModal()">キャンセル</button>
-      <button class="tk-btn-save" onclick="tkSaveTask(${t ? `'${id}'` : 'null'})">保存</button>
-    </div>
-    ${info}
-  `);
-  if (!t) setTimeout(() => document.getElementById('tkf-title')?.focus(), 50);
-}
-function tkClEditRow(cid, text, doneName) {
-  return `<div class="tk-cl-edit" data-cid="${tkEsc(cid)}">
-    <input type="text" value="${tkEsc(text || '')}" placeholder="例：A棚の数を数える">
-    ${doneName ? `<span class="by">✓${tkEsc(doneName)}</span>` : ''}
-    <button type="button" onclick="this.parentElement.remove()" aria-label="削除">×</button>
-  </div>`;
-}
-function tkClAddRow() {
-  const box = document.getElementById('tkf-cl');
-  if (!box) return;
-  box.insertAdjacentHTML('beforeend', tkClEditRow('n' + tkNewId(), '', ''));
-  box.lastElementChild.querySelector('input')?.focus();
-}
-function tkOnAssigneeChange() {
-  const v = document.getElementById('tkf-assignee')?.value;
-  const box = document.getElementById('tkf-helpers-box');
-  if (box) box.style.display = v === '__each__' ? 'none' : '';
-}
-async function tkSaveTask(id) {
-  const title = document.getElementById('tkf-title').value.trim();
-  if (!title) { showToast('やることを入力してください'); return; }
-  const me = tkMe();
-  const now = Date.now();
-  const rec = {
-    title,
-    detail: document.getElementById('tkf-detail').value.trim(),
-    assignee: document.getElementById('tkf-assignee').value,
-    due: document.getElementById('tkf-due').value,
-    dueTime: tkNormTime(document.getElementById('tkf-time').value),
-    startDate: document.getElementById('tkf-start').value || null,
-    priority: document.getElementById('tkf-prio').value,
-    repeat: document.getElementById('tkf-repeat').value,
-    updatedAt: now, updatedBy: me,
-  };
-  if (rec.startDate && (!rec.due || rec.startDate >= rec.due)) rec.startDate = null; // 期限日以降の開始日は使わない
-  const each = rec.assignee === '__each__';
-  const helpers = each ? [] : [...document.querySelectorAll('.tkf-helper:checked')].map(c => c.value).filter(e => e !== rec.assignee);
-  rec.helpers = helpers.length ? helpers : null;
-  const clRows = [...document.querySelectorAll('#tkf-cl .tk-cl-edit')].map((row, i) => ({
-    cid: row.dataset.cid, text: row.querySelector('input').value.trim(), order: i
-  })).filter(r => r.text);
-  const newStatus = document.getElementById('tkf-status')?.value || null;
-  tkCloseModal();
-  if (id) {
-    const t = TK.tasks[id];
-    if (!t) return;
-    const prev = { ...t };
-    // 「完了」への変更はチェックボタンと同じ処理（二重完了の確認・繰り返しの次回作成）に任せる
-    const toDone = newStatus === 'done' && t.status !== 'done';
-    if (!toDone) tkApplyStatusChange(id, newStatus, rec);
-    // チェックリストは項目ごとに書き換える（チェック済みの状態は消さない）
-    const patch = { ...rec };
-    const oldCl = { ...(t.checklist || {}) };
-    const keep = new Set();
-    const newCl = {};
-    clRows.forEach(r => {
-      if (oldCl[r.cid]) {
-        keep.add(r.cid);
-        patch['checklist/' + r.cid + '/text'] = r.text;
-        patch['checklist/' + r.cid + '/order'] = r.order;
-        newCl[r.cid] = { ...oldCl[r.cid], text: r.text, order: r.order };
-      } else {
-        const nc = tkNewId() + r.order;
-        patch['checklist/' + nc] = { text: r.text, order: r.order };
-        newCl[nc] = { text: r.text, order: r.order };
-      }
-    });
-    Object.keys(oldCl).forEach(cid => { if (!keep.has(cid)) patch['checklist/' + cid] = null; });
-    Object.assign(t, rec);
-    if (Object.keys(newCl).length) t.checklist = newCl; else delete t.checklist;
-    Object.keys(t).forEach(k => { if (t[k] === null) delete t[k]; });
-    tkRefreshAll();
-    const ok = await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; });
-    if (ok && toDone) await tkToggleDone(id);
-  } else {
-    const checklist = clRows.length ? Object.fromEntries(clRows.map(r => [tkNewId() + r.order, { text: r.text, order: r.order }])) : null;
-    const base = { ...rec, status: 'todo', createdBy: me, createdAt: now };
-    if (checklist) base.checklist = checklist;
-    Object.keys(base).forEach(k => { if (base[k] === null) delete base[k]; });
-    if (each) {
-      // 「全員（一人ずつ）」：同じタスクを一人1件ずつ作る（それぞれ自分の分を完了にする）
-      const groupId = 'g' + tkNewId();
-      const list = tkMemberEmails();
-      const jobs = list.map((em, i) => {
-        const nid = tkNewId() + i;
-        const r = { ...base, assignee: em, groupId };
-        if (r.checklist) r.checklist = JSON.parse(JSON.stringify(r.checklist));
-        TK.tasks[nid] = r;
-        return [nid, r];
-      });
-      tkRefreshAll();
-      showToast(`全員（${list.length}人）にタスクを追加しました`);
-      for (const [nid, r] of jobs) await tkSave('tasks/' + nid, 'PUT', r, () => { delete TK.tasks[nid]; });
-    } else {
-      const nid = tkNewId();
-      TK.tasks[nid] = base;
-      tkRefreshAll();
-      showToast(base.assignee && base.assignee !== me ? `${tkName(base.assignee)}さんにタスクを追加しました` : 'タスクを追加しました');
-      await tkSave('tasks/' + nid, 'PUT', base, () => { delete TK.tasks[nid]; });
-    }
-  }
-}
-function tkApplyStatusChange(id, newStatus, rec) {
-  const t = TK.tasks[id];
-  if (!t || !newStatus || newStatus === t.status) return;
-  const me = tkMe();
-  rec.status = newStatus;
-  if (newStatus === 'done') { rec.doneBy = me; rec.doneAt = Date.now(); rec.doingBy = null; rec.doingAt = null; }
-  else if (newStatus === 'doing') { rec.doingBy = me; rec.doingAt = Date.now(); rec.doneBy = null; rec.doneAt = null; }
-  else { rec.doingBy = null; rec.doingAt = null; rec.doneBy = null; rec.doneAt = null; }
-}
-async function tkDeleteTask(id) {
-  const t = TK.tasks[id];
-  if (!t) return;
-  const ok = await showConfirm(`「${t.title}」を削除しますか？（全員の画面から消えます）`);
-  if (!ok) return;
-  tkCloseModal();
-  const prev = t;
-  delete TK.tasks[id];
-  tkRefreshAll();
-  showToast('削除しました');
-  await tkSave('tasks/' + id, 'DELETE', undefined, () => { TK.tasks[id] = prev; });
-}
-// ── 予定（カレンダー） ──
-function tkEventList() {
-  return Object.entries(TK.events || {}).filter(([, e]) => e && e.title && e.date).map(([id, e]) => ({ ...e, id }));
-}
-function tkEventsOn(day) {
-  return tkEventList().filter(e => e.date === day || (e.endDate && e.date <= day && e.endDate >= day))
-    .sort((a, b) => (a.start || '') < (b.start || '') ? -1 : (a.start || '') > (b.start || '') ? 1 : 0);
-}
-function tkTasksOn(day) {
-  return tkTaskList().filter(t => t.due === day || (t.startDate && t.due && t.startDate <= day && t.due >= day)).sort(tkSortTasks);
-}
-function tkEvTime(e) {
-  if (!e.start) return '終日';
-  return e.start + (e.end ? '〜' + e.end : '');
-}
-function tkEvMembers(e) {
-  if (!e.members || e.members === 'all' || (Array.isArray(e.members) && !e.members.length)) return '全員';
-  return (Array.isArray(e.members) ? e.members : Object.values(e.members)).map(tkName).join('・');
-}
-function tkEvRowHtml(e) {
-  const meta = [tkEvMembers(e), e.place ? '📍' + e.place : ''].filter(Boolean).join('　');
-  return `<div class="tk-ev" onclick="tkOpenEventView('${e.id}')">
-    <div class="tm">${tkEsc(tkEvTime(e))}</div>
-    <div class="bd"><div class="t">${tkEsc(e.title)}</div><div class="m">${tkEsc(meta)}</div></div>
-  </div>`;
-}
-function tkCalMove(n) {
-  const d = new Date(TK.calCursor || new Date());
-  if (TK.calView === 'month') { d.setDate(1); d.setMonth(d.getMonth() + n); }
-  else d.setDate(d.getDate() + 7 * n);
-  TK.calCursor = d;
-  renderTasksScreen(true);
-}
-function tkCalToday() { TK.calCursor = new Date(); TK.selDay = tkToday(); renderTasksScreen(true); }
-function tkCalSetView(v) { TK.calView = v; renderTasksScreen(true); }
-function tkSelectDay(day) { TK.selDay = day; renderTasksScreen(true); }
-function tkDayDetailHtml(day) {
-  const evs = tkEventsOn(day);
-  const tks = tkTasksOn(day);
-  return `<div class="tk-day-h"><span>${tkShortDate(day)} の予定・タスク</span>
-      <span style="display:flex;gap:6px"><button class="tk-chip" onclick="tkOpenEventModal(null,'${day}')">＋ 予定</button><button class="tk-chip" onclick="tkOpenTaskModal(null,'${day}')">＋ タスク</button></span></div>
-    <div class="tk-list">${evs.map(tkEvRowHtml).join('')}${tks.map(t => tkItemHtml(t)).join('')}${!evs.length && !tks.length ? '<div class="tk-empty">この日の予定・タスクはありません</div>' : ''}</div>`;
-}
-function tkCalHtml() {
-  const today = tkToday();
-  if (!TK.calCursor) TK.calCursor = new Date();
-  if (!TK.selDay) TK.selDay = today;
-  const cur = new Date(TK.calCursor);
-  const top = `
-    <div class="tk-toolbar">
-      <button class="tk-chip ${TK.calView==='month'?'active':''}" onclick="tkCalSetView('month')">月</button>
-      <button class="tk-chip ${TK.calView==='week'?'active':''}" onclick="tkCalSetView('week')">週</button>
-      <button class="tk-chip" onclick="tkCalToday()">今日</button>
-      <button class="tk-add-btn" onclick="tkOpenEventModal(null, '${TK.selDay}')">＋ 予定</button>
-    </div>`;
-  if (TK.calView === 'week') {
-    const start = new Date(cur); start.setDate(start.getDate() - start.getDay());
-    const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(d.getDate() + i); return tkYmd(d); });
-    const ttl = `${tkShortDate(days[0])} 〜 ${tkShortDate(days[6])}`;
-    let html = top + `<div class="tk-cal-head"><button class="tk-nav-btn" onclick="tkCalMove(-1)">‹</button><div class="ttl">${ttl}</div><button class="tk-nav-btn" onclick="tkCalMove(1)">›</button></div>`;
-    days.forEach(day => {
-      const evs = tkEventsOn(day), tks = tkTasksOn(day);
-      html += `<div class="tk-week-day ${day === today ? 'today' : ''}">
-        <div class="h"><span>${tkShortDate(day)}${day === today ? '（今日）' : ''}</span>
-          <span style="display:flex;gap:4px"><button class="tk-chip" style="padding:3px 9px" onclick="tkOpenEventModal(null,'${day}')">＋予定</button><button class="tk-chip" style="padding:3px 9px" onclick="tkOpenTaskModal(null,'${day}')">＋タスク</button></span></div>
-        <div class="tk-list">${evs.map(tkEvRowHtml).join('')}${tks.map(t => tkItemHtml(t, true)).join('')}${!evs.length && !tks.length ? '<div class="tk-empty" style="padding:10px">予定なし</div>' : ''}</div>
-      </div>`;
-    });
-    return html;
-  }
-  // 月表示
-  const y = cur.getFullYear(), m = cur.getMonth();
-  const first = new Date(y, m, 1);
-  const start = new Date(first); start.setDate(1 - first.getDay());
-  const weeks = Math.ceil((first.getDay() + new Date(y, m + 1, 0).getDate()) / 7);
-  let cells = TK_WD.map((w, i) => `<div class="tk-wd ${i===0?'sun':i===6?'sat':''}">${w}</div>`).join('');
-  for (let i = 0; i < weeks * 7; i++) {
-    const d = new Date(start); d.setDate(start.getDate() + i);
-    const day = tkYmd(d);
-    const evs = tkEventsOn(day);
-    const tks = tkTasksOn(day).filter(t => t.status !== 'done');
-    const labels = [
-      ...evs.map(e => `<div class="tk-cl ev">${e.start ? tkEsc(e.start) + ' ' : ''}${tkEsc(e.title)}</div>`),
-      ...tks.map(t => `<div class="tk-cl tk ${tkIsOverdue(t) ? 'od' : ''}">□${tkEsc(t.title)}</div>`)
-    ];
-    const shown = labels.slice(0, 3).join('') + (labels.length > 3 ? `<div class="tk-cl more">+${labels.length - 3}</div>` : '');
-    const cls = [d.getMonth() !== m ? 'other' : '', day === today ? 'today' : '', day === TK.selDay ? 'sel' : '', d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : ''].join(' ');
-    cells += `<div class="tk-cell ${cls}" onclick="tkSelectDay('${day}')"><span class="d">${d.getDate()}</span>${shown}</div>`;
-  }
-  return top + `<div class="tk-cal-head"><button class="tk-nav-btn" onclick="tkCalMove(-1)">‹</button><div class="ttl">${y}年${m + 1}月</div><button class="tk-nav-btn" onclick="tkCalMove(1)">›</button></div>
-    <div class="tk-grid">${cells}</div>` + `<div class="tk-day-inline">${tkDayDetailHtml(TK.selDay)}</div>`;
-}
-
-// ── 時刻の入力（数字だけで入力できる欄） ──
-// 要望「開始と終了の時間が入力しにくい。数字を入れるだけで入力できるように、続けて入力できるように」
-// への対応。type="time"（時・分を別々にタップして選ぶ欄）をやめ、数字を打つだけの欄にした。
-//   930 → 09:30、0930 → 09:30、14 → 14:00、1430 → 14:30、9:30 → 09:30
-// 開始の欄で4桁（または3桁で先頭が3〜9）まで打つと自動で整えて終了の欄へ移り、終了が空なら開始の1時間後を入れる。
-function tkNormTime(v) {
-  v = String(v || '').trim().replace(/[：]/g, ':').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
-  if (!v) return '';
-  let h, m;
-  if (v.includes(':')) { const [a, b] = v.split(':'); h = parseInt(a, 10); m = parseInt(b || '0', 10); }
-  else {
-    const d = v.replace(/\D/g, '');
-    if (!d) return '';
-    if (d.length <= 2) { h = parseInt(d, 10); m = 0; }
-    else if (d.length === 3) { h = parseInt(d.slice(0, 1), 10); m = parseInt(d.slice(1), 10); }
-    else { h = parseInt(d.slice(0, 2), 10); m = parseInt(d.slice(2, 4), 10); }
-  }
-  if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return '';
-  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-}
-// 要望「TimeTreeのように、時間と分をくるくる回して選べるようにしたい」への対応。時刻の欄を押すと、
-// 欄の下に「時」「分（5分刻み）」の2列のホイールが開く。パソコンでは数字を打って入力することもできる。
-const TK_WHEEL_ITEM = 40;
-function tkIsCoarse() { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }
-function tkTimeInputHtml(id, value, placeholder, nextId, slotId, clearable) {
-  const coarse = tkIsCoarse();
-  return `<div class="tk-time-wrap"><input type="text" id="${id}" class="tk-time-in" autocomplete="off" maxlength="5" value="${tkEsc(value || '')}" placeholder="${tkEsc(placeholder || '')}"
-    data-slot="${slotId || ''}" data-next="${nextId || ''}" ${coarse ? 'readonly inputmode="none"' : 'inputmode="numeric"'}
-    onclick="tkOpenWheel('${id}')" oninput="tkTimeTyping(this, ${nextId ? `'${nextId}'` : 'null'})" onblur="tkTimeBlur(this)">${clearable ? `<button type="button" class="tk-time-clear" onclick="tkClearTime('${id}')" aria-label="時刻なし">✕</button>` : ''}</div>`;
-}
-const tkMinOf = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
-const tkTimeOf = mins => { mins = Math.max(0, Math.min(23 * 60 + 55, mins)); return String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0'); };
-// 時刻を入れる（開始の欄なら、終了も同じ長さのまま一緒にずらす。終了が空なら1時間後）
-function tkSetTime(inp, t) {
-  const old = tkNormTime(inp.value);
-  inp.value = t;
-  inp.classList.remove('bad');
-  const nextId = inp.dataset.next;
-  if (!nextId) return;
-  const end = document.getElementById(nextId);
-  if (!end) return;
-  const oldEnd = tkNormTime(end.value);
-  let dur = 60;
-  if (old && oldEnd && tkMinOf(oldEnd) > tkMinOf(old)) dur = tkMinOf(oldEnd) - tkMinOf(old);
-  end.value = tkTimeOf(tkMinOf(t) + dur);
-  end.classList.remove('bad');
-}
-function tkClearTime(id) {
-  const inp = document.getElementById(id);
-  if (inp) { inp.value = ''; inp.classList.remove('bad'); }
-  tkCloseWheels();
-}
-function tkCloseWheels() {
-  document.querySelectorAll('.tk-wheel-slot').forEach(sl => { sl.style.display = 'none'; sl.innerHTML = ''; sl.dataset.for = ''; });
-  document.querySelectorAll('.tk-time-in.active').forEach(x => x.classList.remove('active'));
-}
-function tkOpenWheel(id) {
-  const inp = document.getElementById(id);
-  const slot = inp && document.getElementById(inp.dataset.slot);
-  if (!slot) return;
-  if (slot.dataset.for === id && slot.style.display !== 'none') { tkCloseWheels(); return; }
-  tkCloseWheels();
-  inp.classList.add('active');
-  let t = tkNormTime(inp.value);
-  if (!t) {
-    // 空の欄を押したとき：終了なら開始の1時間後、それ以外は次のちょうどの時刻
-    const startForEnd = Array.from(document.querySelectorAll('.tk-time-in')).find(x => x.dataset.next === id);
-    t = startForEnd && tkNormTime(startForEnd.value) ? tkTimeOf(tkMinOf(tkNormTime(startForEnd.value)) + 60) : tkTimeOf(((new Date().getHours() + 1) % 24) * 60);
-    tkSetTime(inp, t);
-  }
-  const [h, m] = t.split(':').map(Number);
-  const col = (kind, vals) => `<div class="tk-wcol" data-kind="${kind}"><div class="tk-wpad"></div>${vals.map(v => `<div class="tk-witem">${String(v).padStart(2, '0')}</div>`).join('')}<div class="tk-wpad"></div></div>`;
-  slot.dataset.for = id;
-  slot.style.display = 'block';
-  slot.innerHTML = `<div class="tk-wheel">
-      <div class="tk-wband"></div>
-      ${col('h', Array.from({ length: 24 }, (_, i) => i))}
-      <div class="tk-wsep">:</div>
-      ${col('m', Array.from({ length: 12 }, (_, i) => i * 5))}
-    </div>
-    <div class="tk-wheel-foot"><button type="button" onclick="tkCloseWheels()">決定</button></div>`;
-  const colH = slot.querySelector('.tk-wcol[data-kind="h"]');
-  const colM = slot.querySelector('.tk-wcol[data-kind="m"]');
-  colH.scrollTop = h * TK_WHEEL_ITEM;
-  colM.scrollTop = Math.min(11, Math.round(m / 5)) * TK_WHEEL_ITEM;
-  const mark = c => { const i = Math.round(c.scrollTop / TK_WHEEL_ITEM); c.querySelectorAll('.tk-witem').forEach((el, k) => el.classList.toggle('sel', k === i)); return i; };
-  mark(colH); mark(colM);
-  let ready = false;
-  setTimeout(() => { ready = true; }, 200);
-  const onScroll = c => {
-    mark(c);
-    if (!ready) return;
-    clearTimeout(c._t);
-    c._t = setTimeout(() => {
-      const hh = Math.max(0, Math.min(23, Math.round(colH.scrollTop / TK_WHEEL_ITEM)));
-      const mm = Math.max(0, Math.min(11, Math.round(colM.scrollTop / TK_WHEEL_ITEM))) * 5;
-      tkSetTime(inp, String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0'));
-    }, 90);
-  };
-  colH.addEventListener('scroll', () => onScroll(colH), { passive: true });
-  colM.addEventListener('scroll', () => onScroll(colM), { passive: true });
-  // 数字の部分を押したときも、その数字の位置まで回す
-  [colH, colM].forEach(c => c.querySelectorAll('.tk-witem').forEach((el, k) => el.addEventListener('click', () => c.scrollTo({ top: k * TK_WHEEL_ITEM, behavior: 'smooth' }))));
-}
-function tkToggleAllDay(on) {
-  const area = document.getElementById('tkf-time-area');
-  if (area) area.style.display = on ? 'none' : 'block';
-  tkCloseWheels();
-  if (!on) {
-    const st = document.getElementById('tkf-start');
-    if (st && !tkNormTime(st.value)) tkSetTime(st, tkTimeOf(((new Date().getHours() + 1) % 24) * 60));
-  }
-}
-// ホイールの外を押したら閉じる
-document.addEventListener('click', e => {
-  if (!e.target.closest) return;
-  if (e.target.closest('.tk-time-wrap') || e.target.closest('.tk-wheel-slot')) return;
-  if (document.querySelector('.tk-wheel-slot[style*="block"]')) tkCloseWheels();
-}, true);
-function tkTimeTyping(el, nextId) {
-  const raw = el.value;
-  if (raw.includes(':')) return;
-  const d = raw.replace(/\D/g, '');
-  if (d !== raw) el.value = d;
-  const done = d.length >= 4 || (d.length === 3 && parseInt(d[0], 10) >= 3);
-  if (done) {
-    const t = tkNormTime(d);
-    el.classList.toggle('bad', !t);
-    if (!t) return;
-    el.value = '';
-    tkSetTime(el, t);
-    if (nextId) {
-      const next = document.getElementById(nextId);
-      if (next) { next.focus(); next.select(); }
-    }
-  } else el.classList.remove('bad');
-}
-function tkTimeBlur(el) {
-  if (!el.value.trim()) { el.classList.remove('bad'); return; }
-  const t = tkNormTime(el.value);
-  el.classList.toggle('bad', !t);
-  if (t) el.value = t;
-}
-
-// ── 予定の内容を見る画面（タップしただけでは編集画面を開かない） ──
-// 要望「カレンダーの予定をタップすると編集が開いてしまい、間違えて削除・入力してしまうかもしれない。
-// タップしたときはメモなどの内容を確認したい」への対応。編集は、この画面の「✏️ 編集」からだけ開く。
-function tkOpenEventView(id) {
-  const e = TK.events[id];
-  if (!e) return;
-  const when = `${tkShortDate(e.date)}${e.endDate ? ' 〜 ' + tkShortDate(e.endDate) : ''}　${e.start ? e.start + (e.end ? '〜' + e.end : '') : '終日'}`;
-  const row = (icon, label, val) => val ? `<div class="tk-evv-row"><span class="k">${icon} ${label}</span><span class="v">${val}</span></div>` : '';
-  tkShowModal(`
-    <h3 style="margin-bottom:4px">${tkEsc(e.title)}</h3>
-    <div style="font-size:13px;color:#0f766e;font-weight:700;margin-bottom:12px">${tkEsc(when)}</div>
-    <div class="tk-evv">
-      ${row('📍', '場所', tkEsc(e.place || ''))}
-      ${row('👥', '参加者', tkEsc(tkEvMembers(e)))}
-      ${row('📝', 'メモ', e.memo ? tkEsc(e.memo).replace(/\n/g, '<br>') : '<span style="color:var(--text-muted)">なし</span>')}
-    </div>
-    <div class="tk-info">登録：${tkEsc(tkName(e.createdBy))}（${tkStamp(e.createdAt)}）${e.updatedAt && e.updatedAt !== e.createdAt ? `<br>最終更新：${tkEsc(tkName(e.updatedBy))}（${tkStamp(e.updatedAt)}）` : ''}</div>
-    <div class="tk-btns">
-      <button class="tk-btn-cancel" onclick="tkCloseModal()">閉じる</button>
-      <button class="tk-btn-cancel" style="flex:0 0 auto;padding:13px 16px" onclick="tkOpenEventModal('${id}')">✏️ 編集</button>
-    </div>
-  `);
-}
-
-function tkOpenEventModal(id, presetDate) {
-  const e = id ? TK.events[id] : null;
-  if (id && !e) return;
-  const v = e || { title: '', date: presetDate || tkToday(), start: '', end: '', place: '', memo: '', members: 'all' };
-  const sel = v.members === 'all' || !v.members ? [] : (Array.isArray(v.members) ? v.members : Object.values(v.members));
-  const isAll = !sel.length;
-  const mems = tkMemberEmails().map(em => `<label><input type="checkbox" class="tkf-mem" value="${tkEsc(em)}" ${sel.includes(em) ? 'checked' : ''} onchange="document.getElementById('tkf-allmem').checked=!document.querySelector('.tkf-mem:checked')">${tkEsc(tkName(em))}</label>`).join('');
-  // 新しい予定は、次のちょうどの時刻〜1時間後を初期値にする（終日にしたいときはスイッチで切り替え）
-  const evAllDay = e ? !e.start : false;
-  const nextHour = (new Date().getHours() + 1) % 24;
-  const evStart = e ? (e.start || '') : String(nextHour).padStart(2, '0') + ':00';
-  const evEnd = e ? (e.end || '') : String(Math.min(23, nextHour + 1)).padStart(2, '0') + ':00';
-  const info = e ? `<div class="tk-info">登録：${tkEsc(tkName(e.createdBy))}（${tkStamp(e.createdAt)}）${e.updatedAt && e.updatedAt !== e.createdAt ? `<br>最終更新：${tkEsc(tkName(e.updatedBy))}（${tkStamp(e.updatedAt)}）` : ''}</div>` : '';
-  tkShowModal(`
-    <h3>${e ? '予定の編集' : '予定を追加'}</h3>
-    <div class="tk-f"><label>予定</label><input type="text" id="tkf-title" value="${tkEsc(v.title)}" placeholder="例：〇〇社 来社・打ち合わせ"></div>
-    <div class="tk-row2">
-      <div class="tk-f"><label>日付</label><input type="date" id="tkf-date" value="${tkEsc(v.date)}"></div>
-      <div class="tk-f"><label>終了日（複数日の場合）</label><input type="date" id="tkf-enddate" value="${tkEsc(v.endDate || '')}"></div>
-    </div>
-    <div class="tk-f"><label class="tk-switch"><input type="checkbox" id="tkf-allday" ${evAllDay ? 'checked' : ''} onchange="tkToggleAllDay(this.checked)"><span class="sw"></span>終日</label></div>
-    <div id="tkf-time-area" style="display:${evAllDay ? 'none' : 'block'}">
-      <div class="tk-row2">
-        <div class="tk-f"><label>開始</label>${tkTimeInputHtml('tkf-start', evStart, '', 'tkf-end', 'tk-wslot-ev')}</div>
-        <div class="tk-f"><label>終了</label>${tkTimeInputHtml('tkf-end', evEnd, '', null, 'tk-wslot-ev')}</div>
-      </div>
-      <div class="tk-wheel-slot" id="tk-wslot-ev" style="display:none"></div>
-      <div class="tk-f" style="margin-top:-4px;font-size:11px;color:var(--text-muted)">時刻を押すと、くるくる回して選べます（5分刻み）。開始を動かすと終了も同じ長さのまま動きます。</div>
-    </div>
-    <div class="tk-f"><label>場所</label><input type="text" id="tkf-place" value="${tkEsc(v.place || '')}" placeholder="任意"></div>
-    <div class="tk-f"><label>参加者</label><div class="tk-mem-list">
-      <label><input type="checkbox" id="tkf-allmem" ${isAll ? 'checked' : ''} onchange="if(this.checked)document.querySelectorAll('.tkf-mem').forEach(c=>c.checked=false)">全員</label>${mems}
-    </div></div>
-    <div class="tk-f"><label>メモ</label><textarea id="tkf-memo" placeholder="持ち物・準備など（任意）">${tkEsc(v.memo || '')}</textarea></div>
-    <div class="tk-btns">
-      ${e ? `<button class="tk-btn-del" onclick="tkDeleteEvent('${id}')">削除</button>` : ''}
-      <button class="tk-btn-cancel" onclick="tkCloseModal()">キャンセル</button>
-      <button class="tk-btn-save" onclick="tkSaveEvent(${e ? `'${id}'` : 'null'})">保存</button>
-    </div>
-    ${info}
-  `);
-  if (!e) setTimeout(() => document.getElementById('tkf-title')?.focus(), 50);
-}
-async function tkSaveEvent(id) {
-  const title = document.getElementById('tkf-title').value.trim();
-  const date = document.getElementById('tkf-date').value;
-  if (!title) { showToast('予定の内容を入力してください'); return; }
-  if (!date) { showToast('日付を選んでください'); return; }
-  if (!document.getElementById('tkf-allday')?.checked) for (const id of ['tkf-start', 'tkf-end']) {
-    const raw = document.getElementById(id).value.trim();
-    if (raw && !tkNormTime(raw)) { showToast('時刻の形式が正しくありません（例：930、1400）'); document.getElementById(id).focus(); return; }
-  }
-  let endDate = document.getElementById('tkf-enddate').value;
-  if (endDate && endDate <= date) endDate = '';
-  const members = [...document.querySelectorAll('.tkf-mem:checked')].map(c => c.value);
-  const me = tkMe();
-  const now = Date.now();
-  const rec = {
-    title, date, endDate,
-    start: document.getElementById('tkf-allday')?.checked ? '' : tkNormTime(document.getElementById('tkf-start').value),
-    end: document.getElementById('tkf-allday')?.checked ? '' : tkNormTime(document.getElementById('tkf-end').value),
-    place: document.getElementById('tkf-place').value.trim(),
-    memo: document.getElementById('tkf-memo').value.trim(),
-    members: members.length ? members : 'all',
-    updatedAt: now, updatedBy: me,
-  };
-  tkCloseModal();
-  TK.selDay = date;
-  if (id) {
-    const prev = { ...TK.events[id] };
-    Object.assign(TK.events[id], rec);
-    tkRefreshAll();
-    await tkSave('events/' + id, 'PATCH', rec, () => { TK.events[id] = prev; });
-  } else {
-    const nid = tkNewId();
-    Object.assign(rec, { createdBy: me, createdAt: now });
-    TK.events[nid] = rec;
-    tkRefreshAll();
-    showToast('予定を追加しました');
-    await tkSave('events/' + nid, 'PUT', rec, () => { delete TK.events[nid]; });
-  }
-}
-async function tkDeleteEvent(id) {
-  const e = TK.events[id];
-  if (!e) return;
-  const ok = await showConfirm(`予定「${e.title}」を削除しますか？（全員の画面から消えます）`);
-  if (!ok) return;
-  tkCloseModal();
-  const prev = e;
-  delete TK.events[id];
-  tkRefreshAll();
-  showToast('削除しました');
-  await tkSave('events/' + id, 'DELETE', undefined, () => { TK.events[id] = prev; });
-}
-
-// ── 表示名（メンバー） ──
-function tkOpenMembersModal() {
-  const me = tkMe();
-  const admin = typeof isAdmin === 'function' && isAdmin();
-  const rows = Object.entries(TK.members || {}).sort((a, b) => (a[1].email === me ? -1 : b[1].email === me ? 1 : 0)).map(([k, m]) => {
-    const editable = admin || m.email === me;
-    return `<div class="tk-f"><label>${tkEsc(m.email)}${m.email === me ? '（自分）' : ''}</label>
-      <input type="text" class="tkf-name" data-key="${tkEsc(k)}" value="${tkEsc(m.name || '')}" ${editable ? '' : 'disabled'}></div>`;
-  }).join('');
-  tkShowModal(`
-    <h3>表示名の設定</h3>
-    <div style="font-size:12px;color:var(--text-sub);margin-bottom:12px;line-height:1.6">タスクの担当者や予定の参加者として表示される名前です。アプリにログインしたことのある人が自動で並びます。${admin ? '' : '（自分の名前だけ変更できます）'}</div>
-    ${rows || '<div class="tk-empty">メンバーがまだいません</div>'}
-    <div class="tk-btns">
-      <button class="tk-btn-cancel" onclick="tkCloseModal()">キャンセル</button>
-      <button class="tk-btn-save" onclick="tkSaveMembers()">保存</button>
-    </div>
-  `);
-}
-async function tkSaveMembers() {
-  const inputs = [...document.querySelectorAll('.tkf-name:not([disabled])')];
-  tkCloseModal();
-  for (const inp of inputs) {
-    const k = inp.dataset.key, name = inp.value.trim();
-    if (!TK.members[k] || !name || TK.members[k].name === name) continue;
-    TK.members[k].name = name;
-    await tkSave('members/' + k + '/name', 'PUT', name);
-  }
-  tkRefreshAll();
-  showToast('表示名を保存しました');
-}
-
-// ── 通知の案内（タスク・予定の通知を受け取るには、端末ごとに一度「許可」が必要） ──
-function tkNotifyBannerHtml() {
-  const ua = navigator.userAgent || '';
-  const isIOS = /iPhone|iPad|iPod/.test(ua);
-  const standalone = window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-  if (!('Notification' in window)) {
-    if (isIOS && !standalone) return `<div class="tk-notify">📱 iPhoneで通知を受け取るには、Safariの共有ボタン →「ホーム画面に追加」で追加したアイコンからアプリを開いてください</div>`;
-    return '';
-  }
-  if (Notification.permission === 'default') {
-    return `<div class="tk-notify"><span>🔔 タスクを頼まれた・予定が入ったときに、アプリを閉じていても通知でお知らせします</span><button onclick="tkEnableNotify()">通知を受け取る</button></div>`;
-  }
-  if (Notification.permission === 'denied') {
-    return `<div class="tk-notify" style="background:#f5f5f5;border-color:var(--border);color:var(--text-sub)">🔕 この端末では通知がオフになっています（ブラウザや端末の設定からオンにできます）</div>`;
-  }
-  return '';
-}
-async function tkEnableNotify() {
-  if (typeof requestConsignNotifyPermission === 'function') await requestConsignNotifyPermission();
-  else if ('Notification' in window) await Notification.requestPermission();
-  tkRefreshAll();
-}
-
-// ── HOMEの「今日やること」 ──
-async function renderHomeTodayCard(noFetch) {
-  const box = document.getElementById('home-today-card');
-  if (!box) return;
-  if (!TK.loaded) {
-    box.innerHTML = '<div class="card"><div class="card-title">今日やること</div><div class="tk-empty">読み込み中…</div></div>';
-    await tkLoad();
-  } else if (!noFetch) {
-    tkLoad(true).then(() => renderHomeTodayCard(true));
-  }
-  const me = tkMe();
-  const today = tkToday();
-  const evs = tkEventsOn(today).filter(e => {
-    if (!e.members || e.members === 'all') return true;
-    const list = Array.isArray(e.members) ? e.members : Object.values(e.members);
-    return !list.length || list.includes(me);
-  });
-  const open = tkTaskList().filter(t => t.status !== 'done');
-  const mine = open.filter(t => tkInvolved(t, me));
-  const myOverdue = mine.filter(tkIsOverdue).sort(tkSortTasks);
-  const myToday = mine.filter(t => !tkIsOverdue(t) && (tkIsDueToday(t, today) || t.status === 'doing')).sort(tkSortTasks);
-  const teamOverdue = open.filter(t => tkIsOverdue(t) && t.assignee !== me).length;
-  const unassigned = open.filter(t => !t.assignee).length;
-  const row = t => `<div class="tk-today-row">
-      <button class="tk-check" onclick="tkToggleDone('${t.id}')" aria-label="完了">✓</button>
-      <span class="t" onclick="tkOpenTaskView('${t.id}')">${t.status === 'doing' ? '▶ ' : ''}${tkEsc(t.title)}</span>
-      <span style="font-size:11px;color:${tkIsOverdue(t) ? 'var(--danger)' : 'var(--text-muted)'};flex-shrink:0">${t.dueTime || (t.due && t.due !== today ? tkShortDate(t.due) : '')}</span>
-    </div>`;
-  // 管理者のHOMEには既存の「🔔 通知を有効にする」案内があるので、二重に出さない
-  const banner = document.getElementById('home-notify-prompt') ? '' : tkNotifyBannerHtml();
-  let html = '<div class="card"><div class="card-title">今日やること</div>' + banner;
-  html += `<div class="tk-today-sec"><div class="h">📅 今日の予定</div>${evs.length ? evs.map(e => `<div class="tk-today-row"><span class="tm">${tkEsc(e.start || '終日')}</span><span class="t" onclick="tkOpenEventView('${e.id}')">${tkEsc(e.title)}${e.place ? ' <span style="color:var(--text-muted);font-size:11px">📍' + tkEsc(e.place) + '</span>' : ''}</span></div>`).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">予定はありません</div>'}</div>`;
-  if (myOverdue.length) html += `<div class="tk-today-sec"><div class="h danger">⚠️ 期限切れ（${myOverdue.length}件）</div>${myOverdue.map(row).join('')}</div>`;
-  html += `<div class="tk-today-sec"><div class="h">✅ 今日のタスク</div>${myToday.length ? myToday.map(row).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">今日が期限のタスクはありません</div>'}</div>`;
-  if (teamOverdue || unassigned) {
-    html += `<div class="tk-today-team" onclick="TK.filter='people';openTasksScreen('tasks')">👥 ${[teamOverdue ? `ほかの人の期限切れ ${teamOverdue}件` : '', unassigned ? `担当者未定 ${unassigned}件` : ''].filter(Boolean).join('／')} → 確認する</div>`;
-  }
-  html += `<div class="tk-today-foot">
-      <button onclick="TK.filter='mine';openTasksScreen('tasks')">✅ タスク一覧</button>
-      <button onclick="openTasksScreen('cal')">📅 カレンダー</button>
-      <button onclick="tkOpenTaskModal()">＋ タスク追加</button>
-    </div></div>`;
-  box.innerHTML = html;
-  tkUpdateBadges();
-}
-
-// ── 件数バッジ（自分の期限切れ＋今日期限の未完了） ──
-function tkUpdateBadges() {
-  const me = tkMe();
-  const today = tkToday();
-  const n = TK.loaded ? tkTaskList().filter(t => t.status !== 'done' && tkInvolved(t, me) && t.due && (t.due <= today || tkIsDueToday(t, today))).length : 0;
-  const set = el => { if (!el) return; el.textContent = n > 99 ? '99+' : String(n); el.style.display = n ? 'flex' : 'none'; };
-  set(document.getElementById('home-tk-badge'));
-  const sb = document.querySelector('#side-nav .side-nav-item[data-mode="tasks"] .side-nav-badge');
-  if (sb) { sb.textContent = n ? String(n) : ''; sb.style.display = n ? '' : 'none'; }
-}
-
-// ── パソコン幅の左メニューに「タスク・予定」を追加（全員に表示） ──
-(function tkPatchSideNav() {
-  const ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="8 15 11 18 16 13"/></svg>';
-  const add = () => {
-    const side = document.getElementById('side-nav');
-    if (!side || side.querySelector('[data-mode="tasks"]')) return;
-    const home = side.querySelector('.side-nav-item[data-mode="home"]');
-    if (!home) return;
-    home.insertAdjacentHTML('afterend', `<button type="button" class="side-nav-item" data-mode="tasks" onclick="openTasksScreen()">${ICON}<span>タスク・予定</span><span class="side-nav-badge" style="display:none"></span></button>`);
-    tkUpdateBadges();
-  };
-  if (typeof buildSideNav === 'function') {
-    const orig = buildSideNav;
-    window.buildSideNav = buildSideNav = function () { const r = orig.apply(this, arguments); add(); return r; };
-  }
-  if (typeof syncSideNav === 'function') {
-    const origSync = syncSideNav;
-    window.syncSideNav = syncSideNav = function () {
-      const r = origSync.apply(this, arguments);
-      const item = document.querySelector('#side-nav .side-nav-item[data-mode="tasks"]');
-      if (item) {
-        const onTasks = (typeof currentMode === 'undefined' || currentMode === 'biz') && !!document.getElementById('screen-tasks')?.classList.contains('active');
-        item.classList.toggle('active', onTasks);
-      }
-      return r;
-    };
-  }
-  add();
-  document.addEventListener('DOMContentLoaded', () => setTimeout(add, 0));
-  window.addEventListener('load', () => setTimeout(add, 0));
 })();
 </script>
 
