@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-29o">
+<meta name="app-build" content="2026-09-30a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -586,6 +586,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
    消したい場合は印刷ダイアログの「詳細設定」内にある「ヘッダーとフッター」のチェックを
    外していただく必要がある。 */
 </style>
+<style>@media (hover:none) and (pointer:coarse){.ds-pc-print-btn{display:none!important}}</style>
 </head>
 <body>
 
@@ -2498,6 +2499,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <button id="ds-preview-edit-btn" onclick="previewEditDeliverySlip()" aria-label="編集する" title="編集する" style="display:none;background:none;border:none;padding:8px;margin:-8px;cursor:pointer;align-items:center;justify-content:center;color:var(--text)">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
         </button>
+        <!-- パソコン（Mac Safari等）では共有シートに「印刷」が無いため、印刷専用ボタンを出す（スマホでは非表示） -->
+        <button class="ds-pc-print-btn" onclick="printDeliverySlipFromPreview()" aria-label="印刷" title="印刷" style="background:none;border:none;padding:8px;margin:-8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text)"><svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg></button>
         <button onclick="shareDeliverySlipPdfDirect()" aria-label="共有" title="共有" style="background:none;border:none;padding:8px;margin:-8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text)">
           <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
         </button>
@@ -2554,9 +2557,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   <div style="background:var(--white);border-radius:16px;padding:16px;width:100%;max-width:900px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.2)">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-shrink:0">
       <div style="font-size:15px;font-weight:700;color:var(--text)">預り明細プレビュー</div>
+      <div style="display:flex;align-items:center;gap:18px">
+      <button class="ds-pc-print-btn" onclick="printConsignListFromPreview()" aria-label="印刷" title="印刷" style="background:none;border:none;padding:6px;margin:-6px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text)"><svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg></button>
       <button onclick="shareConsignListPdfDirect()" aria-label="預り明細を共有" title="共有" style="background:none;border:none;padding:6px;margin:-6px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text)">
         <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
       </button>
+      </div>
     </div>
     <div id="ds-consign-preview-scale-wrap" class="ds-preview-scale-wrap" style="flex:0 1 auto;min-height:0;max-height:70vh;overflow-y:auto">
       <div id="ds-consign-preview-page" class="ds-preview-page"></div>
@@ -7045,6 +7051,21 @@ function printFromDeliverySlipPreview() {
 // そのファイルを直接渡す。PDF作成やファイル共有に対応していない環境（パソコンのブラウザなど）や、
 // 何らかの理由で失敗した場合は、これまで通り確実に動くprintFromDeliverySlipPreview（ブラウザの
 // 印刷機能）に自動的に切り替える。
+// パソコンで印刷：プレビューに表示中の内容をそのまま印刷ダイアログへ
+function printDeliverySlipFromPreview() {
+  if (!_dsPreviewSlipId) return;
+  warnIfDeliverySlipLoadChecksIncomplete();
+  const data = buildDeliverySlipDataFromSlipId(_dsPreviewSlipId);
+  const pageEl = document.getElementById('ds-preview-page');
+  if (!data || !pageEl || !pageEl.innerHTML) { showToast('印刷対象が見つかりません'); return; }
+  printRenderedDeliverySlip(pageEl.innerHTML, data.client, data.date);
+}
+function printConsignListFromPreview() {
+  if (!_dsConsignPreviewClient) return;
+  const pageEl = document.getElementById('ds-consign-preview-page');
+  if (!pageEl || !pageEl.innerHTML) { showToast('印刷対象が見つかりません'); return; }
+  printRenderedConsignList(pageEl.innerHTML, _dsConsignPreviewClient);
+}
 async function shareDeliverySlipPdfDirect() {
   if (!_dsPreviewSlipId) return;
   warnIfDeliverySlipLoadChecksIncomplete();
