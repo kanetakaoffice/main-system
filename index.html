@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-30a">
+<meta name="app-build" content="2026-09-30b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -2520,6 +2520,15 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
         </button>
       </div>
+    </div>
+    <!-- 要望：「印刷したい時に金額が表示されないものも欲しい」への対応。
+         金額なしにすると単価欄と合計金額が消え、そのまま印刷・共有・PDFにも反映される -->
+    <div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;flex-shrink:0;flex-wrap:wrap">
+      <div class="tab-switch" style="margin:0;flex:0 0 220px">
+        <button type="button" id="ds-price-on-btn" class="tab-switch-btn active" onclick="setDsHidePrice(false)">¥ 金額あり</button>
+        <button type="button" id="ds-price-off-btn" class="tab-switch-btn" onclick="setDsHidePrice(true)">金額なし</button>
+      </div>
+      <div id="ds-price-off-note" style="display:none;font-size:11px;color:var(--text-muted)">単価・合計金額を消した状態で印刷・共有されます</div>
     </div>
     <div id="ds-preview-scale-wrap" class="ds-preview-scale-wrap" style="flex:0 1 auto;min-height:0;max-height:70vh;overflow-y:auto">
       <div id="ds-preview-page" class="ds-preview-page"></div>
@@ -5579,7 +5588,9 @@ const DS_STYLE = `
       .ds-price { flex:0.9; text-align:center; padding-left:8px; }
       .ds-row.ds-qty-total { border-bottom:none; border-top:1.5px solid #999; margin-top:6px; margin-bottom:0; padding-top:8px; font-size:11.5px; font-weight:700; }
       .ds-row.ds-qty-total .ds-model { text-align:right; }
-      .ds-row.ds-qty-total .ds-qty { text-align:center; }`;
+      .ds-row.ds-qty-total .ds-qty { text-align:center; }
+      .ds-noprice .ds-model { flex:3; }
+      .ds-noprice .ds-qty { flex:0.8; }`;
 
 // 単価は商談しながら決めるため、納品書には金額・小計・消費税・合計金額は表示しない（型番・数量・単価のみ）。
 // ただし合計数量は品数の確認に必要なため、明細の下に表示する。
@@ -5632,9 +5643,10 @@ function dsSlipBodyHtml(client, date, subject, slipNo) {
 // root は、dsSlipBodyHtmlの内容を差し込んだコンテナ（Documentそのもの、またはその内側の要素）を渡す。
 // 印刷プレビューのモーダルなど、同じページ内に複数の納品書描画が同時に存在しうる場面でも
 // id（#ds-final・#ds-measure）や.ds-wrapの取り違えが起きないよう、root配下だけを検索する。
-function renderDeliverySlipColumns(root, items) {
+function renderDeliverySlipColumns(root, items, opts) {
+  const hidePrice = !!(opts && opts.hidePrice);
   const doc = root.ownerDocument || root; // rootがDocumentの場合はownerDocumentがないので自分自身を使う
-  const headerHtml = '<div class="ds-row ds-headrow ds-measurable"><span class="ds-model">型番</span><span class="ds-qty">数量</span><span class="ds-price">単価</span></div>';
+  const headerHtml = '<div class="ds-row ds-headrow ds-measurable"><span class="ds-model">型番</span><span class="ds-qty">数量</span>' + (hidePrice ? '' : '<span class="ds-price">単価</span>') + '</div>';
   // 商品数が多いときに見やすいよう、1行おきに背景色を交互にする（列ごとに1行目から数え直す）
   const rowHtml = function(it, idx) {
     // 委託の印が付いた行は、単価がまだ確定していないため単価欄に金額の代わりに
@@ -5643,7 +5655,7 @@ function renderDeliverySlipColumns(root, items) {
     // 傷・つぶれの詳細（テキスト）が入力されている行だけ、注記として下に表示する（写真は納品書には出さない）
     const noteHtml = it.damageDetail ? '<div class="ds-note">※' + it.damageDetail + '</div>' : '';
     const altClass = (idx % 2 === 1) ? ' ds-row-alt' : '';
-    return '<div class="ds-row-wrap ds-measurable' + altClass + '"><div class="ds-row"><span class="ds-model">' + (it.model||'') + '</span><span class="ds-qty">' + it.qty + '</span><span class="ds-price">' + priceDisp + '</span></div>' + noteHtml + '</div>';
+    return '<div class="ds-row-wrap ds-measurable' + altClass + '"><div class="ds-row"><span class="ds-model">' + (it.model||'') + '</span><span class="ds-qty">' + it.qty + '</span>' + (hidePrice ? '' : '<span class="ds-price">' + priceDisp + '</span>') + '</div>' + noteHtml + '</div>';
   };
   const finalEl = root.querySelector('#ds-final');
   const measureEl = root.querySelector('#ds-measure');
@@ -5688,7 +5700,7 @@ function renderDeliverySlipColumns(root, items) {
   if (col2.length) colsHtml += '<div class="ds-col">' + headerHtml + col2.map(rowHtml).join('') + '</div>';
   const totalQty = items.reduce(function(s, it) { return s + (it.qty || 0); }, 0);
   const totalAmount = items.reduce(function(s, it) { return s + ((it.unitPrice || 0) * (it.qty || 0)); }, 0);
-  finalEl.innerHTML = '<div class="ds-cols-wrap">' + colsHtml + '</div>';
+  finalEl.innerHTML = '<div class="ds-cols-wrap' + (hidePrice ? ' ds-noprice' : '') + '">' + colsHtml + '</div>';
 
   // 型番・数量・単価の間の縦線は、実機の共有・PDF化（html2canvas）で最後まで伸びない・
   // 見出し行やゼブラ縞の背景に隠れるなど不具合の再現・解消が難航したため、ユーザーの要望により
@@ -5703,7 +5715,7 @@ function renderDeliverySlipColumns(root, items) {
   // いたが、「2段に分けるのをやめたい」との要望により、1行にまとめて表示するよう変更した。
   const lastCol = cols[cols.length - 1];
   if (lastCol) {
-    lastCol.insertAdjacentHTML('beforeend', '<div class="ds-row ds-qty-total"><span class="ds-model">合計</span><span class="ds-qty">' + totalQty + '個</span><span class="ds-price">¥' + totalAmount.toLocaleString('ja-JP') + '</span></div>');
+    lastCol.insertAdjacentHTML('beforeend', '<div class="ds-row ds-qty-total"><span class="ds-model">合計</span><span class="ds-qty">' + totalQty + '個</span>' + (hidePrice ? '' : '<span class="ds-price">¥' + totalAmount.toLocaleString('ja-JP') + '</span>') + '</div>');
   }
 }
 
@@ -6071,9 +6083,32 @@ function unlockBodyScrollForPreview() {
   }
 }
 
+// 金額なし表示：うっかり金額なしのまま取引先へ送ることが無いよう、別の納品書を開くたびに「金額あり」へ戻す
+let _dsHidePrice = false;
+function updateDsPriceToggleUi() {
+  const on = document.getElementById('ds-price-on-btn'), off = document.getElementById('ds-price-off-btn');
+  const note = document.getElementById('ds-price-off-note');
+  if (on) on.classList.toggle('active', !_dsHidePrice);
+  if (off) off.classList.toggle('active', _dsHidePrice);
+  if (note) note.style.display = _dsHidePrice ? 'block' : 'none';
+}
+function setDsHidePrice(v) {
+  _dsHidePrice = !!v;
+  updateDsPriceToggleUi();
+  // 本文だけ描き直す（showDeliverySlipPreviewを呼び直すと背面スクロールのロックが二重になるため）
+  const data = _dsPreviewSlipId ? buildDeliverySlipDataFromSlipId(_dsPreviewSlipId) : null;
+  const pageEl = document.getElementById('ds-preview-page');
+  if (!data || !pageEl) return;
+  pageEl.style.transform = 'none';
+  pageEl.innerHTML = dsSlipBodyHtml(data.client, data.date, data.subject, data.slipNo);
+  renderDeliverySlipColumns(pageEl, data.items, { hidePrice: _dsHidePrice });
+  fitDeliverySlipPreviewScale();
+}
 function showDeliverySlipPreview(slipId) {
   const data = buildDeliverySlipDataFromSlipId(slipId);
   if (!data) { showToast('対象の納品書が見つかりません'); return; }
+  _dsHidePrice = false;
+  updateDsPriceToggleUi();
   _dsPreviewSlipId = slipId;
   const firstMove = (stockMoves || []).find(m => m.slipId === slipId && m.type === 'out');
   _dsPreviewChannel = firstMove ? (firstMove.channel || '') : '';
@@ -6093,7 +6128,7 @@ function showDeliverySlipPreview(slipId) {
     // 縦線の位置・高さの計算が二重に縮小されて狂ってしまう。必ず等倍に戻してから測定・描画する。
     pageEl.style.transform = 'none';
     pageEl.innerHTML = dsSlipBodyHtml(data.client, data.date, data.subject, data.slipNo);
-    renderDeliverySlipColumns(pageEl, data.items);
+    renderDeliverySlipColumns(pageEl, data.items, { hidePrice: _dsHidePrice });
   }
   fitDeliverySlipPreviewScale();
   // 要望：「納品書に記入した型番の商品がちゃんと積まれているかのチェックができる項目が欲しい」
