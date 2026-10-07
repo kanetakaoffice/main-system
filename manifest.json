@@ -3,6 +3,7 @@
   "short_name": "KANETAKA",
   "description": "株式会社KANETAKA 業務管理システム",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#1a1a1a",
   "theme_color": "#1a1a1a",
