@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-09-30c">
+<meta name="app-build" content="2026-10-11b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -18878,6 +18878,8 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
 .tk-r-due { font-size:12px; color:var(--text-muted); white-space:nowrap; }
 .tk-r-due.od { color:var(--danger); font-weight:700; }
 .tk-r-due.soft { color:#2563eb; }
+.tk-r-due.left { color:#c2410c; font-weight:700; }
+.tk-tag.left { background:#fff7ed; border-color:#fed7aa; color:#c2410c; }
 .tk-tag.soft { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
 .tk-sec.soft { color:#1d4ed8; }
 .tk-sec.soft .n { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
@@ -19001,6 +19003,7 @@ function tkIsDueToday(t, today) {
   today = today || tkToday();
   if (!t.due) return false;
   if (t.due === today) return true;
+  if (today === tkToday() && tkIsRepeatLeftover(t)) return true;
   return !!(t.startDate && t.startDate <= today && t.due >= today);
 }
 // 期限の種類：dueType==='soft' は「目安（いつでもOK）」。過ぎても期限切れ（赤）にはせず Someday に回す
@@ -19012,10 +19015,15 @@ function tkSoftLateDays(t) {
   return Math.round((tkParse(today) - tkParse(t.due)) / 86400000);
 }
 // Someday に入れるもの：期限なし、または目安の日を過ぎたもの
-function tkIsSomeday(t) { return t && t.status !== 'done' && (!t.due || tkSoftLateDays(t) > 0); }
+function tkIsSomeday(t) { return t && t.status !== 'done' && !tkIsRepeatLeftover(t) && (!t.due || tkSoftLateDays(t) > 0); }
+// 繰り返しタスクの、前日以前の未完了分（期限切れにせず Today に出す）
+function tkIsRepeatLeftover(t) {
+  return !!(t && t.seriesId && t.status !== 'done' && t.due && t.due < tkToday());
+}
 function tkIsOverdue(t) {
   if (!t || t.status === 'done' || !t.due) return false;
   if (tkIsSoft(t)) return false;
+  if (tkIsRepeatLeftover(t)) return false;
   const today = tkToday();
   if (t.due < today) return true;
   if (t.due === today && t.dueTime) {
@@ -19043,6 +19051,7 @@ async function tkLoad(force) {
       ]);
       TK.tasks = tasks || {}; TK.events = events || {}; TK.members = members || {};
       TK.loaded = true;
+      setTimeout(() => { tkEnsureRepeatInstances(); }, 0);
     } catch (e) {
       console.error('タスク・予定の読み込みエラー', e);
     } finally {
@@ -19213,7 +19222,7 @@ function tkChecklist(t) {
     .map(([cid, c]) => ({ ...c, cid })).sort((a, b) => (a.order || 0) - (b.order || 0));
 }
 function tkTaskList() {
-  return Object.entries(TK.tasks || {}).filter(([, t]) => t && t.title).map(([id, t]) => ({ ...t, id }));
+  return Object.entries(TK.tasks || {}).filter(([, t]) => t && t.title && !t.isSeries).map(([id, t]) => ({ ...t, id }));
 }
 function tkSortTasks(a, b) {
   const pr = { high: 0, normal: 1, low: 2 };
@@ -19232,8 +19241,10 @@ function tkItemHtml(t, compact) {
     ? '<span class="tk-tag none">担当未定</span>'
     : `<span class="tk-tag ${t.assignee === me ? 'me' : ''}">${tkEsc(tkName(t.assignee))}</span>`;
   const soft = tkIsSoft(t) && t.due;
-  const lateDays = tkSoftLateDays(t);
-  const dueTag = `<span class="tk-tag ${od ? 'od' : soft ? 'soft' : ''}">${od ? '⚠️ ' : ''}${soft ? '🔵 目安 ' : ''}${tkEsc(tkDueLabel(t))}${lateDays ? `（${lateDays}日経過）` : ''}</span>`;
+  const leftover = tkIsRepeatLeftover(t);
+  const lateDays = leftover ? 0 : tkSoftLateDays(t);
+  const dueTag = leftover ? `<span class="tk-tag left">🔁 ${tkEsc(tkShortDate(t.due))}分・未完了</span>`
+    : `<span class="tk-tag ${od ? 'od' : soft ? 'soft' : ''}">${od ? '⚠️ ' : ''}${soft ? '🔵 目安 ' : ''}${tkEsc(tkDueLabel(t))}${lateDays ? `（${lateDays}日経過）` : ''}</span>`;
   const prioTag = t.priority === 'high' ? '<span class="tk-tag high">優先度：高</span>' : '';
   const statusTag = doing ? '<span class="tk-tag doing">作業中</span>' : '';
   const rep = t.repeat && t.repeat !== 'none' ? `<span class="tk-tag">🔁 ${tkEsc(TK_REPEAT[t.repeat] || '')}</span>` : '';
@@ -19285,6 +19296,7 @@ function tkItemHtml(t, compact) {
       : `<span class="tk-r-who ${t.assignee === me ? 'me' : ''}">${tkEsc(tkName(t.assignee))}${helpers.length ? ' 他' + helpers.length : ''}</span>`)
     : (iAmHelper ? '<span class="tk-r-who">👥協力</span>' : '');
   const dueShort = done && t.doneAt ? `✅ ${tkStamp(t.doneAt)}`
+    : leftover ? `${tkShortDate(t.due)}分・未完了`
     : lateDays ? `目安${tkShortDate(t.due)}・${lateDays}日経過`
     : (od ? '⚠️ ' : '') + (soft ? '目安 ' : '') + tkDueLabel(t).replace(/まで$/, '');
   return `<div class="tk-item slim ${cls} ${open ? 'open' : ''}">
@@ -19293,7 +19305,7 @@ function tkItemHtml(t, compact) {
       <div class="tk-line">
         <span class="tk-title">${doing ? '<span class="tk-doing-mark">▶</span>' : ''}${tkEsc(t.title)}</span>
         ${icons}
-        <span class="tk-r">${whoShort}<span class="tk-r-due ${od ? 'od' : soft ? 'soft' : ''}">${tkEsc(dueShort)}</span><span class="tk-caret">${open ? '▲' : '▼'}</span></span>
+        <span class="tk-r">${whoShort}<span class="tk-r-due ${od ? 'od' : leftover ? 'left' : soft ? 'soft' : ''}">${tkEsc(dueShort)}</span><span class="tk-caret">${open ? '▲' : '▼'}</span></span>
       </div>
       ${detailHtml}
     </div>
@@ -19551,7 +19563,7 @@ async function tkToggleDone(id, opts) {
   Object.assign(t, patch);
   // 繰り返しタスクは、完了したら次回分を自動で作る
   let nextRec = null, nextId = null;
-  if (t.repeat && t.repeat !== 'none' && !t.nextId) {
+  if (t.repeat && t.repeat !== 'none' && !t.nextId && !t.seriesId) {
     nextId = tkNewId();
     nextRec = {
       title: t.title, detail: t.detail || '', assignee: t.assignee || '', priority: t.priority || 'normal',
@@ -19616,10 +19628,134 @@ function tkNextDue(due, repeat) {
     } else d.setDate(d.getDate() + 1);
   };
   step();
-  // 期限を過ぎてから完了した場合は、今日より後の直近の回にする
+  // 期限を過ぎてから完了した場合は、今日以降の直近の回にする
+  // （以前は「今日より後」にしていたため、土曜分を日曜に完了すると日曜分が飛ばされて月曜分になっていた）
   let guard = 0;
-  while (d <= today && guard++ < 400) step();
+  while (d < today && guard++ < 400) step();
   return tkYmd(d);
+}
+// ── 繰り返しタスク：設定した日ごとに自動で表示する ──
+// 繰り返しの「設定」そのものは /tasks の中に isSeries:true の記録として保存し（一覧には出さない）、
+// その設定から、昨日〜明日の分のタスクを「シリーズID_日付」のIDで作る。前回分を完了したかどうかに
+// 関係なく、その日になれば表示される。同じIDで作るため、複数の端末が同時に作っても重複しない。
+function tkInstId(sid, ymd) { return sid + '_' + String(ymd).replace(/-/g, ''); }
+function tkRepeatMatches(sr, ymd) {
+  if (!sr || !sr.anchor || ymd < sr.anchor) return false;
+  const d = tkParse(ymd), a = tkParse(sr.anchor);
+  const wd = d.getDay();
+  if (sr.repeat === 'daily') return true;
+  if (sr.repeat === 'weekday') return wd >= 1 && wd <= 5;
+  if (sr.repeat === 'weekly') return Math.round((d - a) / 86400000) % 7 === 0;
+  if (sr.repeat === 'monthly') {
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    return d.getDate() === Math.min(a.getDate(), last);
+  }
+  return false;
+}
+function tkSeriesFromTask(t, anchor, me) {
+  const span = t.startDate && t.due && t.startDate < t.due ? Math.round((tkParse(t.due) - tkParse(t.startDate)) / 86400000) : 0;
+  const rec = {
+    isSeries: true, autoRepeat: true, active: true,
+    title: t.title, detail: t.detail || '', assignee: t.assignee || '', priority: t.priority || 'normal',
+    helpers: tkHelpers(t).length ? tkHelpers(t) : null,
+    dueTime: t.dueTime || '', dueType: tkIsSoft(t) ? 'soft' : null,
+    repeat: t.repeat, anchor, span: span || null,
+    checklistTexts: tkChecklist(t).length ? tkChecklist(t).map(c => c.text) : null,
+    seriesGroup: t.seriesGroup || null,
+    createdBy: t.createdBy || me, createdAt: Date.now(), updatedAt: Date.now(), updatedBy: me,
+  };
+  Object.keys(rec).forEach(k => { if (rec[k] === null) delete rec[k]; });
+  return rec;
+}
+function tkInstanceFromSeries(sid, sr, ymd) {
+  const cl = sr.checklistTexts ? (Array.isArray(sr.checklistTexts) ? sr.checklistTexts : Object.values(sr.checklistTexts)) : [];
+  const rec = {
+    title: sr.title, detail: sr.detail || '', assignee: sr.assignee || '', priority: sr.priority || 'normal',
+    helpers: sr.helpers || null, dueTime: sr.dueTime || '', dueType: sr.dueType || null,
+    due: ymd, startDate: sr.span ? tkAddDays(ymd, -sr.span) : null,
+    checklist: cl.length ? Object.fromEntries(cl.map((text, i) => ['c' + i, { text, order: i }])) : null,
+    repeat: sr.repeat, seriesId: sid, groupId: sr.seriesGroup ? sr.seriesGroup + '_' + ymd : null,
+    status: 'todo', createdBy: sr.createdBy || '', createdAt: Date.now(),
+    autoRepeat: true // 自動で作った分（「新しいタスク」の通知は送らない）
+  };
+  Object.keys(rec).forEach(k => { if (rec[k] === null || rec[k] === '') { if (k !== 'detail' && k !== 'assignee' && k !== 'dueTime') delete rec[k]; } });
+  return rec;
+}
+let _tkEnsuring = false;
+async function tkEnsureRepeatInstances() {
+  if (!TK.loaded || _tkEnsuring || !tkMe()) return;
+  _tkEnsuring = true;
+  try {
+    const me = tkMe();
+    const writes = [];
+    // 以前の方式（完了したら次回分を作る）で作られた未完了の繰り返しタスクを、新しい方式に移す
+    Object.entries(TK.tasks || {}).forEach(([id, t]) => {
+      if (!t || !t.title || t.isSeries || t.seriesId || t.status === 'done' || !t.repeat || t.repeat === 'none') return;
+      const sid = 's' + id;
+      if (!TK.tasks[sid]) {
+        const sr = tkSeriesFromTask({ ...t, seriesGroup: t.groupId || null }, t.due || tkToday(), me);
+        TK.tasks[sid] = sr;
+        writes.push(['tasks/' + sid, 'PUT', sr]);
+      }
+      t.seriesId = sid;
+      writes.push(['tasks/' + id, 'PATCH', { seriesId: sid }]);
+    });
+    const today = tkToday();
+    const dates = [tkAddDays(today, -1), today, tkAddDays(today, 1)];
+    const have = new Set(Object.values(TK.tasks || {}).filter(t => t && t.seriesId).map(t => t.seriesId + '|' + t.due));
+    Object.entries(TK.tasks || {}).forEach(([sid, sr]) => {
+      if (!sr || !sr.isSeries || sr.active === false) return;
+      dates.forEach(ymd => {
+        if (!tkRepeatMatches(sr, ymd)) return;
+        if (sr.skip && sr.skip[ymd.replace(/-/g, '')]) return;
+        if (have.has(sid + '|' + ymd)) return;
+        const id = tkInstId(sid, ymd);
+        const rec = tkInstanceFromSeries(sid, sr, ymd);
+        TK.tasks[id] = rec; have.add(sid + '|' + ymd);
+        writes.push(['tasks/' + id, 'PUT', rec]);
+      });
+    });
+    if (!writes.length) return;
+    tkRefreshAll();
+    for (const [path, method, body] of writes) {
+      try { await tkReq(path, method, body); } catch (e) { console.error('繰り返しタスクの作成エラー', e); }
+    }
+  } finally { _tkEnsuring = false; }
+}
+// 繰り返しの回を編集したとき：設定（シリーズ）と、すでに作られている今後の分にも反映する
+async function tkApplyToSeries(id, t, rec, clRows) {
+  const sid = t.seriesId;
+  const sr = TK.tasks[sid];
+  if (!sr) return;
+  const me = tkMe();
+  const future = Object.entries(TK.tasks).filter(([fid, x]) => x && x.seriesId === sid && fid !== id && x.status !== 'done' && x.due > (rec.due || t.due));
+  if (!rec.repeat || rec.repeat === 'none') {
+    // 繰り返しをやめた：設定を止めて、今後の未完了分を消す
+    TK.tasks[sid] = { ...sr, active: false };
+    future.forEach(([fid]) => delete TK.tasks[fid]);
+    tkRefreshAll();
+    await tkSave('tasks/' + sid, 'PATCH', { active: false, updatedAt: Date.now(), updatedBy: me });
+    for (const [fid] of future) await tkSave('tasks/' + fid, 'DELETE');
+    showToast('繰り返しを止めました');
+    return;
+  }
+  const fields = {
+    title: rec.title, detail: rec.detail, assignee: rec.assignee, priority: rec.priority,
+    helpers: rec.helpers || null, dueTime: rec.dueTime || '', dueType: rec.dueType || null,
+  };
+  const spatch = { ...fields, repeat: rec.repeat, checklistTexts: clRows.length ? clRows.map(r => r.text) : null, updatedAt: Date.now(), updatedBy: me };
+  if (rec.repeat !== sr.repeat) spatch.anchor = rec.due || t.due || tkToday(); // 繰り返し方を変えたら、この回を起点にする
+  TK.tasks[sid] = { ...sr, ...spatch };
+  Object.keys(TK.tasks[sid]).forEach(k => { if (TK.tasks[sid][k] === null) delete TK.tasks[sid][k]; });
+  await tkSave('tasks/' + sid, 'PATCH', spatch);
+  for (const [fid, x] of future) {
+    if (spatch.anchor && !tkRepeatMatches(TK.tasks[sid], x.due)) { delete TK.tasks[fid]; await tkSave('tasks/' + fid, 'DELETE'); continue; }
+    Object.assign(x, fields, { repeat: rec.repeat });
+    Object.keys(x).forEach(k => { if (x[k] === null) delete x[k]; });
+    await tkSave('tasks/' + fid, 'PATCH', { ...fields, repeat: rec.repeat });
+  }
+  tkRefreshAll();
+  tkEnsureRepeatInstances();
 }
 async function tkToggleDoing(id) {
   const t = TK.tasks[id];
@@ -19707,6 +19843,8 @@ function tkOpenTaskModal(id, presetDue) {
       <div class="tk-f"><label>優先度</label><select id="tkf-prio">${opt(TK_PRIO, v.priority || 'normal')}</select></div>
       <div class="tk-f"><label>繰り返し</label><select id="tkf-repeat">${opt(TK_REPEAT, v.repeat || 'none')}</select></div>
     </div>
+    ${t && t.seriesId ? `<div class="tk-f" style="margin-top:-6px;font-size:11px;color:var(--text-muted)">🔁 繰り返しタスクです。やること・担当者・時刻などの変更は今後の分にも反映されます。「なし」にすると繰り返しを止めます。</div>`
+      : `<div class="tk-f" style="margin-top:-6px;font-size:11px;color:var(--text-muted)">繰り返しを選ぶと、前回分を完了したかどうかに関係なく、その日になると自動で表示されます。</div>`}
     ${t ? `<div class="tk-f"><label>状態</label><select id="tkf-status">${opt(TK_STATUS, v.status || 'todo')}</select></div>` : ''}
     <div class="tk-btns">
       ${t ? `<button class="tk-btn-del" onclick="tkDeleteTask('${id}')">削除</button>` : ''}
@@ -19791,13 +19929,36 @@ async function tkSaveTask(id) {
     Object.keys(t).forEach(k => { if (t[k] === null) delete t[k]; });
     tkRefreshAll();
     const ok = await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; });
+    if (ok && t.seriesId) await tkApplyToSeries(id, t, rec, clRows);
+    else if (ok && rec.repeat && rec.repeat !== 'none' && !t.seriesId && t.status !== 'done') tkEnsureRepeatInstances(); // 繰り返しを後から付けた
     if (ok && toDone) await tkToggleDone(id);
   } else {
     const checklist = clRows.length ? Object.fromEntries(clRows.map(r => [tkNewId() + r.order, { text: r.text, order: r.order }])) : null;
     const base = { ...rec, status: 'todo', createdBy: me, createdAt: now };
     if (checklist) base.checklist = checklist;
     Object.keys(base).forEach(k => { if (base[k] === null) delete base[k]; });
-    if (each) {
+    if (base.repeat && base.repeat !== 'none') {
+      // 繰り返しタスク：設定（シリーズ）を作り、1回目を作る。2回目以降は日付が来たら自動で表示される
+      if (!base.due) base.due = tkToday();
+      const groupId = each ? 'g' + tkNewId() : null;
+      const people = each ? tkMemberEmails() : [base.assignee];
+      const jobs = [];
+      people.forEach((em, i) => {
+        const sid = 's' + tkNewId() + i;
+        const src = { ...base, assignee: em, seriesGroup: groupId };
+        const sr = tkSeriesFromTask(src, base.due, me);
+        const inst = { ...base, assignee: em, seriesId: sid };
+        if (groupId) inst.groupId = groupId + '_' + base.due;
+        if (inst.checklist) inst.checklist = JSON.parse(JSON.stringify(inst.checklist));
+        const iid = tkInstId(sid, base.due);
+        TK.tasks[sid] = sr; TK.tasks[iid] = inst;
+        jobs.push([sid, sr], [iid, inst]);
+      });
+      tkRefreshAll();
+      showToast(each ? `全員（${people.length}人）に繰り返しタスクを追加しました` : '繰り返しタスクを追加しました');
+      for (const [nid, r] of jobs) await tkSave('tasks/' + nid, 'PUT', r, () => { delete TK.tasks[nid]; });
+      tkEnsureRepeatInstances();
+    } else if (each) {
       // 「全員（一人ずつ）」：同じタスクを一人1件ずつ作る（それぞれ自分の分を完了にする）
       const groupId = 'g' + tkNewId();
       const list = tkMemberEmails();
@@ -19832,6 +19993,16 @@ function tkApplyStatusChange(id, newStatus, rec) {
 async function tkDeleteTask(id) {
   const t = TK.tasks[id];
   if (!t) return;
+  if (t.seriesId && TK.tasks[t.seriesId]) {
+    tkShowModal(`<h3 style="margin-bottom:6px">繰り返しタスクの削除</h3>
+      <div style="font-size:13px;color:var(--text-sub);margin-bottom:14px">「${tkEsc(t.title)}」（${tkEsc(tkShortDate(t.due))}の分）</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="tk-btn-cancel" style="width:100%" onclick="tkDeleteSeriesInstance('${id}', false)">この回だけ削除</button>
+        <button class="tk-btn-del" style="width:100%" onclick="tkDeleteSeriesInstance('${id}', true)">繰り返しをやめる（今後の分も削除）</button>
+        <button class="tk-btn-cancel" style="width:100%" onclick="tkCloseModal()">キャンセル</button>
+      </div>`);
+    return;
+  }
   const ok = await showConfirm(`「${t.title}」を削除しますか？（全員の画面から消えます）`);
   if (!ok) return;
   tkCloseModal();
@@ -19840,6 +20011,26 @@ async function tkDeleteTask(id) {
   tkRefreshAll();
   showToast('削除しました');
   await tkSave('tasks/' + id, 'DELETE', undefined, () => { TK.tasks[id] = prev; });
+}
+async function tkDeleteSeriesInstance(id, stopAll) {
+  const t = TK.tasks[id];
+  if (!t) return;
+  const sid = t.seriesId, sr = TK.tasks[sid];
+  const me = tkMe();
+  tkCloseModal();
+  const key = String(t.due || '').replace(/-/g, '');
+  const targets = [id];
+  if (stopAll) {
+    Object.entries(TK.tasks).forEach(([fid, x]) => { if (x && x.seriesId === sid && fid !== id && x.status !== 'done' && x.due >= (t.due || '')) targets.push(fid); });
+    if (sr) TK.tasks[sid] = { ...sr, active: false };
+  } else if (sr) {
+    TK.tasks[sid] = { ...sr, skip: { ...(sr.skip || {}), [key]: true } };
+  }
+  targets.forEach(fid => delete TK.tasks[fid]);
+  tkRefreshAll();
+  showToast(stopAll ? '繰り返しをやめました' : 'この回を削除しました');
+  if (sr) await tkSave('tasks/' + sid, 'PATCH', stopAll ? { active: false, updatedAt: Date.now(), updatedBy: me } : { ['skip/' + key]: true });
+  for (const fid of targets) await tkSave('tasks/' + fid, 'DELETE');
 }
 // ── 予定（カレンダー） ──
 function tkEventList() {
