@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-10-11c">
+<meta name="app-build" content="2026-10-11d">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -18791,6 +18791,15 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
 .tk-offmark.off { background:#f59e0b; color:#fff; }
 .tk-offmark.am, .tk-offmark.pm { background:#fde68a; color:#92400e; }
 .tk-offmark.co { background:#fecaca; color:#991b1b; }
+.tk-offcell.picked { outline:2px solid #f59e0b; outline-offset:-2px; }
+.tk-offpick { margin-top:8px; padding:10px; border:1.5px solid #fde68a; background:#fffbeb; border-radius:12px; }
+.tk-offpick .h { font-size:13px; font-weight:700; color:#92400e; margin-bottom:8px; }
+.tk-offpick .h .now { font-weight:600; font-size:12px; margin-left:4px; }
+.tk-offpick .row { display:flex; gap:6px; }
+.tk-offpick-btn { flex:1; padding:10px 4px; font-size:13px; font-weight:700; font-family:inherit; border-radius:10px; border:1.5px solid #fcd34d; background:#fff; color:#92400e; cursor:pointer; }
+.tk-offpick-btn.cur { background:#f59e0b; border-color:#f59e0b; color:#fff; }
+.tk-offpick-btn.clear { border-color:var(--border); color:var(--text-sub); }
+.tk-offpick-btn:disabled { opacity:.4; cursor:default; }
 .tk-offothers { font-size:9px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
 @media (min-width:900px) { .tk-cell { min-height:92px; } .tk-cl { font-size:11px; } }
 .tk-day-h { display:flex; align-items:center; justify-content:space-between; margin:14px 2px 6px; font-size:13px; font-weight:700; }
@@ -20106,7 +20115,7 @@ function tkOffModalHtml() {
     const co = who ? tkCompanyOff(day) : null;
     const others = tkPersonOffs(day).filter(x => x.email !== who);
     const mark = o ? `<span class="tk-offmark ${o.kind || 'off'}">${who ? (o.kind === 'am' ? '午前休' : o.kind === 'pm' ? '午後休' : '休') : '休業'}</span>` : (co ? '<span class="tk-offmark co">会社休</span>' : '');
-    cells += `<div class="tk-cell tk-offcell ${inMonth ? '' : 'other'} ${day === today ? 'today' : ''} ${d.getDay()===0?'sun':d.getDay()===6?'sat':''} ${o ? 'on' : ''}" ${inMonth ? `onclick="tkOffCycle('${day}')"` : ''}>
+    cells += `<div class="tk-cell tk-offcell ${inMonth ? '' : 'other'} ${day === today ? 'today' : ''} ${st.pick === day ? 'picked' : ''} ${d.getDay()===0?'sun':d.getDay()===6?'sat':''} ${o ? 'on' : ''}" ${inMonth ? `onclick="tkOffPick('${day}')"` : ''}>
       <span class="d">${d.getDate()}</span>${mark}${others.length && inMonth ? `<div class="tk-offothers">${others.map(x => tkEsc(tkName(x.email))).join('・')}</div>` : ''}</div>`;
   }
   const cnt = Object.values(TK.offs || {}).filter(o => o && (o.email || '') === who && o.date && o.date.startsWith(`${y}-${String(m + 1).padStart(2, '0')}`)).length;
@@ -20115,8 +20124,39 @@ function tkOffModalHtml() {
     ${who === '' ? `<div class="tk-f"><label>メモ（任意・例：年末年始、お盆）</label><input type="text" id="tkoff-note" value="${tkEsc(st.note || '')}" oninput="TK.offEdit.note=this.value" placeholder="新しく付ける休業日に入ります"></div>` : ''}
     <div class="tk-cal-head" style="margin-bottom:6px"><button class="tk-nav-btn" onclick="tkOffMove(-1)">‹</button><div class="ttl">${y}年${m + 1}月<span style="font-size:11px;color:var(--text-muted);font-weight:600">　${cnt}日</span></div><button class="tk-nav-btn" onclick="tkOffMove(1)">›</button></div>
     <div class="tk-grid tk-offgrid">${cells}</div>
-    <div style="font-size:11px;color:var(--text-muted);margin:8px 2px 0;line-height:1.6">日付をタップするたびに「休み → 午前休 → 午後休 → なし」と切り替わり、すぐに全員の画面に反映されます。<br>曜日（日〜土）をタップすると、この月のその曜日をまとめて休みにできます（もう一度で解除）。<br>小さい文字は、同じ日に休みのほかの人です。</div>
+    ${tkOffPickerHtml()}
+    <div style="font-size:11px;color:var(--text-muted);margin:8px 2px 0;line-height:1.6">日付をタップすると「休み／午前休／午後休／取り消す」を選べます。選ぶとすぐに全員の画面に反映されます。<br>曜日（日〜土）をタップすると、この月のその曜日をまとめて休みにできます（もう一度で解除）。<br>小さい文字は、同じ日に休みのほかの人です。</div>
     <div class="tk-btns"><button class="tk-btn-save" onclick="tkCloseModal();tkRefreshAll()">完了</button></div>`;
+}
+// 日付を押したときの選択欄（カレンダーのすぐ下に出す）
+function tkOffPick(day) {
+  const st = TK.offEdit;
+  st.pick = st.pick === day ? null : day;
+  tkOffRerender();
+  if (st.pick) setTimeout(() => document.getElementById('tk-off-picker')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 30);
+}
+function tkOffPickerHtml() {
+  const st = TK.offEdit;
+  const day = st.pick;
+  if (!day || tkParse(day).getMonth() !== st.m || tkParse(day).getFullYear() !== st.y) return '';
+  const who = st.email;
+  const o = (TK.offs || {})[tkOffId(day, who)];
+  const cur = o ? (o.kind || 'off') : '';
+  const btn = (kind, label) => `<button type="button" class="tk-offpick-btn ${kind ? kind : 'clear'} ${cur === kind && kind ? 'cur' : ''}" ${!kind && !cur ? 'disabled' : ''} onclick="tkOffChoose('${day}', ${kind ? `'${kind}'` : 'null'})">${label}</button>`;
+  const btns = who
+    ? btn('off', '休み') + btn('am', '午前休') + btn('pm', '午後休') + btn('', '取り消す')
+    : btn('off', '休業日にする') + btn('', '取り消す');
+  return `<div id="tk-off-picker" class="tk-offpick">
+    <div class="h">${tkEsc(tkShortDate(day))}　${who ? tkEsc(tkName(who)) + 'さん' : '🏢 会社のお休み'}${cur ? `<span class="now">（今：${who ? TK_OFF_KIND[cur] : '休業日'}）</span>` : ''}</div>
+    <div class="row">${btns}</div>
+  </div>`;
+}
+async function tkOffChoose(day, kind) {
+  const p = tkOffSet(day, kind);
+  TK.offEdit.pick = null;
+  tkOffRerender();
+  await p;
+  tkOffRerender();
 }
 function tkOffRerender() { const v = document.getElementById('tk-off-view'); if (v) v.innerHTML = tkOffModalHtml(); }
 function tkOffMove(n) { const st = TK.offEdit; const d = new Date(st.y, st.m + n, 1); st.y = d.getFullYear(); st.m = d.getMonth(); tkOffRerender(); }
