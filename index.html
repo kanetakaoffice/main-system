@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-10-11b">
+<meta name="app-build" content="2026-10-11c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -18777,6 +18777,21 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
 .tk-cl.tk { background:#f0f0f0; color:#4a4a4a; }
 .tk-cl.tk.od { background:#fee2e2; color:#b91c1c; }
 .tk-cl.more { color:var(--text-muted); }
+.tk-cl.off { background:#fef3c7; color:#92400e; font-weight:700; }
+.tk-cl.offco { background:#fecaca; color:#991b1b; font-weight:700; }
+.tk-cell.holiday { background:#fff1f2; }
+.tk-cell.holiday .d { color:#dc2626; }
+.tk-cell.holiday.sel { background:#ffe4e6; }
+.tk-offbar { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:12px; padding:7px 10px; margin:0 0 6px; background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:10px; cursor:default; }
+.tk-offbar.co { background:#fff1f2; border-color:#fecdd3; color:#9f1239; }
+.tk-week-day.co .h { color:#dc2626; }
+.tk-offgrid .tk-offcell { min-height:52px; text-align:left; }
+.tk-offcell.on { background:#fffbeb; }
+.tk-offmark { display:block; margin-top:2px; font-size:10.5px; font-weight:700; border-radius:4px; padding:1px 3px; text-align:center; }
+.tk-offmark.off { background:#f59e0b; color:#fff; }
+.tk-offmark.am, .tk-offmark.pm { background:#fde68a; color:#92400e; }
+.tk-offmark.co { background:#fecaca; color:#991b1b; }
+.tk-offothers { font-size:9px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
 @media (min-width:900px) { .tk-cell { min-height:92px; } .tk-cl { font-size:11px; } }
 .tk-day-h { display:flex; align-items:center; justify-content:space-between; margin:14px 2px 6px; font-size:13px; font-weight:700; }
 .tk-ev { display:flex; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); cursor:pointer; }
@@ -19046,10 +19061,10 @@ async function tkLoad(force) {
   if (TK.loading && !force) return TK.loading;
   TK.loading = (async () => {
     try {
-      const [tasks, events, members] = await Promise.all([
-        tkReq('tasks'), tkReq('events'), tkReq('members')
+      const [tasks, events, members, offs] = await Promise.all([
+        tkReq('tasks'), tkReq('events'), tkReq('members'), tkReq('dayoffs').catch(() => null)
       ]);
-      TK.tasks = tasks || {}; TK.events = events || {}; TK.members = members || {};
+      TK.tasks = tasks || {}; TK.events = events || {}; TK.members = members || {}; TK.offs = offs || {};
       TK.loaded = true;
       setTimeout(() => { tkEnsureRepeatInstances(); }, 0);
     } catch (e) {
@@ -19372,7 +19387,7 @@ function tkTomorrowBody(tasks, day, me) {
   const untimed = tasks.filter(t => !t.dueTime).sort((a, b) => ((pr[a.priority] ?? 1) - (pr[b.priority] ?? 1)) || tkSortTasks(a, b));
   const high = tasks.filter(t => t.priority === 'high').length;
   const summary = `<div class="tk-plan-sum">📅 予定 ${evs.length}件${evs.filter(e => e.start).length ? `（${evs.filter(e => e.start).sort((a, b) => a.start < b.start ? -1 : 1).map(e => e.start + (e.end ? '〜' + e.end : '')).join('、')}）` : ''}　✅ タスク ${tasks.length}件${high ? `（優先度高 ${high}件）` : ''}</div>`;
-  let body = summary + '<div class="tk-list">';
+  let body = summary + tkOffBarHtml(day, false) + '<div class="tk-list">';
   if (!evs.length && !tasks.length) body += '<div class="tk-empty">明日の予定・タスクはまだありません</div>';
   body += allDayEv.map(tkEvRowHtml).join('');
   // 要望により「時間が決まっているもの」などの見出しは出さず、時間順の予定・タスク → 時間の決まっていないタスクの順に並べるだけにした
@@ -20040,6 +20055,105 @@ function tkEventsOn(day) {
   return tkEventList().filter(e => e.date === day || (e.endDate && e.date <= day && e.endDate >= day))
     .sort((a, b) => (a.start || '') < (b.start || '') ? -1 : (a.start || '') > (b.start || '') ? 1 : 0);
 }
+// ── お休み（シフト・会社の休業日） ──
+// /dayoffs/{YYYYMMDD_人} に1日1件で保存する。email が空のものは「会社の休み（全員）」。
+// kind：off＝休み／am＝午前休／pm＝午後休
+const TK_OFF_KIND = { off: '休み', am: '午前休', pm: '午後休' };
+function tkOffId(day, email) { return String(day).replace(/-/g, '') + '_' + (email ? tkKey(email) : 'all'); }
+function tkOffsOn(day) {
+  return Object.values(TK.offs || {}).filter(o => o && o.date === day)
+    .sort((a, b) => (a.email ? 1 : 0) - (b.email ? 1 : 0) || tkName(a.email).localeCompare(tkName(b.email), 'ja'));
+}
+function tkCompanyOff(day) { return tkOffsOn(day).find(o => !o.email) || null; }
+function tkPersonOffs(day) { return tkOffsOn(day).filter(o => o.email); }
+function tkIsOff(email, day) { return !!(tkCompanyOff(day) || tkPersonOffs(day).find(o => o.email === email && o.kind === 'off')); }
+function tkOffShort(o) { return tkName(o.email) + (o.kind && o.kind !== 'off' ? '（' + TK_OFF_KIND[o.kind] + '）' : ''); }
+// 日ごとの「お休み」帯（日の詳細・週表示・明日の欄で使う）
+function tkOffBarHtml(day, withBtn) {
+  const co = tkCompanyOff(day), ps = tkPersonOffs(day);
+  if (!co && !ps.length && !withBtn) return '';
+  const parts = [];
+  if (co) parts.push(`<b>🏢 会社のお休み${co.note ? '（' + tkEsc(co.note) + '）' : ''}</b>`);
+  if (ps.length) parts.push('🌴 お休み：' + ps.map(o => tkEsc(tkOffShort(o))).join('、'));
+  if (!parts.length) parts.push('<span style="color:var(--text-muted)">🌴 お休みの人はいません</span>');
+  return `<div class="tk-offbar ${co ? 'co' : ''}"><span>${parts.join('　')}</span>${withBtn ? `<button class="tk-chip" style="padding:3px 9px" onclick="event.stopPropagation();tkOpenOffModal(undefined,'${day}')">✏️ 休み</button>` : ''}</div>`;
+}
+// 休みの入力：人を選び、カレンダーの日付をタップして 休み → 午前休 → 午後休 → なし の順に切り替える
+function tkOpenOffModal(email, day) {
+  const d = tkParse(day || TK.selDay || tkToday());
+  TK.offEdit = { email: email === undefined ? tkMe() : email, y: d.getFullYear(), m: d.getMonth() };
+  tkShowModal(`<div id="tk-off-view">${tkOffModalHtml()}</div>`);
+}
+function tkOffModalHtml() {
+  const st = TK.offEdit;
+  const y = st.y, m = st.m;
+  const first = new Date(y, m, 1);
+  const start = new Date(first); start.setDate(1 - first.getDay());
+  const weeks = Math.ceil((first.getDay() + new Date(y, m + 1, 0).getDate()) / 7);
+  const today = tkToday();
+  const who = st.email;
+  const people = tkMemberEmails();
+  const sel = `<select id="tkoff-who" onchange="TK.offEdit.email=this.value;tkOffRerender()">
+      ${people.map(e => `<option value="${tkEsc(e)}" ${e === who ? 'selected' : ''}>${tkEsc(tkName(e))}${e === tkMe() ? '（自分）' : ''}</option>`).join('')}
+      <option value="" ${who === '' ? 'selected' : ''}>🏢 会社のお休み（全員）</option>
+    </select>`;
+  let cells = TK_WD.map((w, i) => `<div class="tk-wd ${i===0?'sun':i===6?'sat':''}" style="cursor:pointer" onclick="tkOffToggleWeekday(${i})" title="この月の${w}曜日をまとめて切り替え">${w}</div>`).join('');
+  for (let i = 0; i < weeks * 7; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const day = tkYmd(d);
+    const inMonth = d.getMonth() === m;
+    const o = (TK.offs || {})[tkOffId(day, who)];
+    const co = who ? tkCompanyOff(day) : null;
+    const others = tkPersonOffs(day).filter(x => x.email !== who);
+    const mark = o ? `<span class="tk-offmark ${o.kind || 'off'}">${who ? (o.kind === 'am' ? '午前休' : o.kind === 'pm' ? '午後休' : '休') : '休業'}</span>` : (co ? '<span class="tk-offmark co">会社休</span>' : '');
+    cells += `<div class="tk-cell tk-offcell ${inMonth ? '' : 'other'} ${day === today ? 'today' : ''} ${d.getDay()===0?'sun':d.getDay()===6?'sat':''} ${o ? 'on' : ''}" ${inMonth ? `onclick="tkOffCycle('${day}')"` : ''}>
+      <span class="d">${d.getDate()}</span>${mark}${others.length && inMonth ? `<div class="tk-offothers">${others.map(x => tkEsc(tkName(x.email))).join('・')}</div>` : ''}</div>`;
+  }
+  const cnt = Object.values(TK.offs || {}).filter(o => o && (o.email || '') === who && o.date && o.date.startsWith(`${y}-${String(m + 1).padStart(2, '0')}`)).length;
+  return `<h3 style="margin-bottom:8px">🌴 お休みの入力</h3>
+    <div class="tk-f"><label>だれのお休み？</label>${sel}</div>
+    ${who === '' ? `<div class="tk-f"><label>メモ（任意・例：年末年始、お盆）</label><input type="text" id="tkoff-note" value="${tkEsc(st.note || '')}" oninput="TK.offEdit.note=this.value" placeholder="新しく付ける休業日に入ります"></div>` : ''}
+    <div class="tk-cal-head" style="margin-bottom:6px"><button class="tk-nav-btn" onclick="tkOffMove(-1)">‹</button><div class="ttl">${y}年${m + 1}月<span style="font-size:11px;color:var(--text-muted);font-weight:600">　${cnt}日</span></div><button class="tk-nav-btn" onclick="tkOffMove(1)">›</button></div>
+    <div class="tk-grid tk-offgrid">${cells}</div>
+    <div style="font-size:11px;color:var(--text-muted);margin:8px 2px 0;line-height:1.6">日付をタップするたびに「休み → 午前休 → 午後休 → なし」と切り替わり、すぐに全員の画面に反映されます。<br>曜日（日〜土）をタップすると、この月のその曜日をまとめて休みにできます（もう一度で解除）。<br>小さい文字は、同じ日に休みのほかの人です。</div>
+    <div class="tk-btns"><button class="tk-btn-save" onclick="tkCloseModal();tkRefreshAll()">完了</button></div>`;
+}
+function tkOffRerender() { const v = document.getElementById('tk-off-view'); if (v) v.innerHTML = tkOffModalHtml(); }
+function tkOffMove(n) { const st = TK.offEdit; const d = new Date(st.y, st.m + n, 1); st.y = d.getFullYear(); st.m = d.getMonth(); tkOffRerender(); }
+async function tkOffSet(day, kind) {
+  const who = TK.offEdit.email;
+  const id = tkOffId(day, who);
+  if (!TK.offs) TK.offs = {};
+  const prev = TK.offs[id];
+  if (!kind) {
+    delete TK.offs[id];
+    return tkSave('dayoffs/' + id, 'DELETE', undefined, () => { if (prev) TK.offs[id] = prev; });
+  }
+  const rec = { date: day, email: who || '', kind, createdBy: tkMe(), createdAt: Date.now() };
+  if (!who && (TK.offEdit.note || prev?.note)) rec.note = prev?.note || TK.offEdit.note;
+  TK.offs[id] = rec;
+  return tkSave('dayoffs/' + id, 'PUT', rec, () => { if (prev) TK.offs[id] = prev; else delete TK.offs[id]; });
+}
+async function tkOffCycle(day) {
+  const who = TK.offEdit.email;
+  const o = (TK.offs || {})[tkOffId(day, who)];
+  // 会社のお休みは「休業」と「なし」だけ
+  const next = !o ? 'off' : (!who ? null : o.kind === 'off' ? 'am' : o.kind === 'am' ? 'pm' : null);
+  const p = tkOffSet(day, next);
+  tkOffRerender();
+  await p;
+  tkOffRerender();
+}
+async function tkOffToggleWeekday(wd) {
+  const st = TK.offEdit;
+  const days = [];
+  for (let d = new Date(st.y, st.m, 1); d.getMonth() === st.m; d.setDate(d.getDate() + 1)) if (d.getDay() === wd) days.push(tkYmd(d));
+  const allOn = days.every(day => (TK.offs || {})[tkOffId(day, st.email)]);
+  const jobs = days.map(day => tkOffSet(day, allOn ? null : ((TK.offs || {})[tkOffId(day, st.email)]?.kind || 'off')));
+  tkOffRerender();
+  await Promise.all(jobs);
+  tkOffRerender();
+}
 function tkTasksOn(day) {
   return tkTaskList().filter(t => t.due === day || (t.startDate && t.due && t.startDate <= day && t.due >= day)).sort(tkSortTasks);
 }
@@ -20073,6 +20187,7 @@ function tkDayDetailHtml(day) {
   const tks = tkTasksOn(day);
   return `<div class="tk-day-h"><span>${tkShortDate(day)} の予定・タスク</span>
       <span style="display:flex;gap:6px"><button class="tk-chip" onclick="tkOpenEventModal(null,'${day}')">＋ 予定</button><button class="tk-chip" onclick="tkOpenTaskModal(null,'${day}')">＋ タスク</button></span></div>
+    ${tkOffBarHtml(day, true)}
     <div class="tk-list">${evs.map(tkEvRowHtml).join('')}${tks.map(t => tkItemHtml(t)).join('')}${!evs.length && !tks.length ? '<div class="tk-empty">この日の予定・タスクはありません</div>' : ''}</div>`;
 }
 function tkCalHtml() {
@@ -20085,6 +20200,7 @@ function tkCalHtml() {
       <button class="tk-chip ${TK.calView==='month'?'active':''}" onclick="tkCalSetView('month')">月</button>
       <button class="tk-chip ${TK.calView==='week'?'active':''}" onclick="tkCalSetView('week')">週</button>
       <button class="tk-chip" onclick="tkCalToday()">今日</button>
+      <button class="tk-chip" onclick="tkOpenOffModal(undefined, '${TK.selDay}')">🌴 休みを入力</button>
       <button class="tk-add-btn" onclick="tkOpenEventModal(null, '${TK.selDay}')">＋ 予定</button>
     </div>`;
   if (TK.calView === 'week') {
@@ -20094,9 +20210,10 @@ function tkCalHtml() {
     let html = top + `<div class="tk-cal-head"><button class="tk-nav-btn" onclick="tkCalMove(-1)">‹</button><div class="ttl">${ttl}</div><button class="tk-nav-btn" onclick="tkCalMove(1)">›</button></div>`;
     days.forEach(day => {
       const evs = tkEventsOn(day), tks = tkTasksOn(day);
-      html += `<div class="tk-week-day ${day === today ? 'today' : ''}">
+      html += `<div class="tk-week-day ${day === today ? 'today' : ''} ${tkCompanyOff(day) ? 'co' : ''}">
         <div class="h"><span>${tkShortDate(day)}${day === today ? '（今日）' : ''}</span>
           <span style="display:flex;gap:4px"><button class="tk-chip" style="padding:3px 9px" onclick="tkOpenEventModal(null,'${day}')">＋予定</button><button class="tk-chip" style="padding:3px 9px" onclick="tkOpenTaskModal(null,'${day}')">＋タスク</button></span></div>
+        ${tkOffBarHtml(day, false)}
         <div class="tk-list">${evs.map(tkEvRowHtml).join('')}${tks.map(t => tkItemHtml(t, true)).join('')}${!evs.length && !tks.length ? '<div class="tk-empty" style="padding:10px">予定なし</div>' : ''}</div>
       </div>`;
     });
@@ -20113,12 +20230,15 @@ function tkCalHtml() {
     const day = tkYmd(d);
     const evs = tkEventsOn(day);
     const tks = tkTasksOn(day).filter(t => t.status !== 'done');
+    const co = tkCompanyOff(day), ps = tkPersonOffs(day);
+    const offLabel = co ? `<div class="tk-cl offco">🏢${tkEsc(co.note || '休業日')}</div>` : '';
+    const psLabel = ps.length ? `<div class="tk-cl off">休 ${ps.map(o => tkEsc(tkName(o.email)) + (o.kind === 'am' ? '(前)' : o.kind === 'pm' ? '(後)' : '')).join('・')}</div>` : '';
     const labels = [
       ...evs.map(e => `<div class="tk-cl ev">${e.start ? tkEsc(e.start) + ' ' : ''}${tkEsc(e.title)}</div>`),
       ...tks.map(t => `<div class="tk-cl tk ${tkIsOverdue(t) ? 'od' : ''}">□${tkEsc(t.title)}</div>`)
     ];
-    const shown = labels.slice(0, 3).join('') + (labels.length > 3 ? `<div class="tk-cl more">+${labels.length - 3}</div>` : '');
-    const cls = [d.getMonth() !== m ? 'other' : '', day === today ? 'today' : '', day === TK.selDay ? 'sel' : '', d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : ''].join(' ');
+    const shown = offLabel + psLabel + labels.slice(0, 3).join('') + (labels.length > 3 ? `<div class="tk-cl more">+${labels.length - 3}</div>` : '');
+    const cls = [co ? 'holiday' : '', d.getMonth() !== m ? 'other' : '', day === today ? 'today' : '', day === TK.selDay ? 'sel' : '', d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : ''].join(' ');
     cells += `<div class="tk-cell ${cls}" onclick="tkSelectDay('${day}')"><span class="d">${d.getDate()}</span>${shown}</div>`;
   }
   return top + `<div class="tk-cal-head"><button class="tk-nav-btn" onclick="tkCalMove(-1)">‹</button><div class="ttl">${y}年${m + 1}月</div><button class="tk-nav-btn" onclick="tkCalMove(1)">›</button></div>
@@ -20474,6 +20594,10 @@ async function renderHomeTodayCard(noFetch) {
   // 管理者のHOMEには既存の「🔔 通知を有効にする」案内があるので、二重に出さない
   const banner = document.getElementById('home-notify-prompt') ? '' : tkNotifyBannerHtml();
   let html = '<div class="card"><div class="card-title">今日やること</div>' + banner;
+  {
+    const co = tkCompanyOff(today), ps = tkPersonOffs(today);
+    if (co || ps.length) html += `<div class="tk-offbar ${co ? 'co' : ''}" style="margin-bottom:8px" onclick="openTasksScreen('cal')">${co ? `<b>🏢 今日は会社のお休み${co.note ? '（' + tkEsc(co.note) + '）' : ''}</b>　` : ''}${ps.length ? '🌴 今日のお休み：' + ps.map(o => tkEsc(tkOffShort(o))).join('、') : ''}</div>`;
+  }
   html += `<div class="tk-today-sec"><div class="h">📅 今日の予定</div>${evs.length ? evs.map(e => `<div class="tk-today-row"><span class="tm">${tkEsc(e.start || '終日')}</span><span class="t" onclick="tkOpenEventView('${e.id}')">${tkEsc(e.title)}${e.place ? ' <span style="color:var(--text-muted);font-size:11px">📍' + tkEsc(e.place) + '</span>' : ''}</span></div>`).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">予定はありません</div>'}</div>`;
   if (myOverdue.length) html += `<div class="tk-today-sec"><div class="h danger">⚠️ 期限切れ（${myOverdue.length}件）</div>${myOverdue.map(row).join('')}</div>`;
   html += `<div class="tk-today-sec"><div class="h">✅ 今日のタスク</div>${myToday.length ? myToday.map(row).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">今日が期限のタスクはありません</div>'}</div>`;
