@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-10-21a">
+<meta name="app-build" content="2026-10-22a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -20784,6 +20784,10 @@ function tkUpdateBadges() {
 // 保存先：/commute/settings（単価）、/commute/routes/{人}（ルート）、/commute/days/{人}/{年月}/{日}、
 // /commute/months/{人}/{年月}（申請状態）。距離は片道で登録し、帰りも同じ道を通る前提で往復＝片道×2。
 const CM_DEFAULT_RATE = 17;
+// 要望「ルート設定・単価設定は、誤操作で変わったり消えたりしないよう1人だけが触れるようにしたい」への対応。
+// ルートの登録・変更と単価の変更は、このメールアドレスの人だけができる（ほかの管理者は見るだけ）。
+const CM_SETUP_OWNER = 'hinanzel27@icloud.com';
+function cmCanSetup() { return String(tkMe() || '').toLowerCase() === CM_SETUP_OWNER; }
 const CM_DEFAULT_ROUTES = [
   { name: '港区事務所', legs: [{ from: '自宅', to: '港区事務所', km: 21.1 }] },
   { name: '清洲事務所（直行）', legs: [{ from: '自宅', to: '清洲事務所', km: 32 }] },
@@ -20869,7 +20873,9 @@ function renderCommute() {
   html += `<div class="cm-top">
     ${admin ? `<select onchange="cmSetPerson(this.value)">${tkMemberEmails().map(e => `<option value="${tkEsc(e)}" ${e === CM.email ? 'selected' : ''}>${tkEsc(tkName(e))}${e === me ? '（自分）' : ''}</option>`).join('')}</select>` : `<b style="font-size:15px">${tkEsc(tkName(me))}さん</b>`}
     <span style="flex:1"></span>
-    ${admin ? `<button class="cm-btn" onclick="cmOpenRoutes()">🛣 ルート設定</button><button class="cm-btn" onclick="cmOpenRate()">⚙ 単価 ${cmR1(Number(CM.settings.rate) || CM_DEFAULT_RATE)}円/km</button>` : ''}
+    ${admin ? (cmCanSetup()
+      ? `<button class="cm-btn" onclick="cmOpenRoutes()">🛣 ルート設定</button><button class="cm-btn" onclick="cmOpenRate()">⚙ 単価 ${cmR1(Number(CM.settings.rate) || CM_DEFAULT_RATE)}円/km</button>`
+      : `<button class="cm-btn" onclick="cmViewRoutes()">🛣 ルートを見る</button><span style="font-size:12px;color:var(--text-sub)">単価 ${cmR1(Number(CM.settings.rate) || CM_DEFAULT_RATE)}円/km</span>`) : ''}
   </div>`;
   if (admin) {
     const pend = [];
@@ -20923,7 +20929,7 @@ function renderCommute() {
       const day = ym + '-' + dd;
       return `<div class="row"><span class="d">${cmFmtDay(day)}</span><span class="r">${tkEsc(v.name || '')}${v.route ? `<div style="font-size:11px;color:var(--text-muted)">${tkEsc(v.route)}</div>` : ''}${v.note ? `<div style="font-size:11px;color:var(--text-muted)">📝${tkEsc(v.note)}</div>` : ''}</span><span class="k">${cmR1(v.km)}km</span><span class="y">¥${Math.round(v.km * tot.rate).toLocaleString('ja-JP')}</span></div>`;
     }).join('')}</div>` : '';
-  const noRoutes = !routes.length ? `<div class="cm-status returned" style="background:#fff7ed;border-color:#fed7aa;color:#9a3412"><div>${admin ? 'この人の通勤ルートがまだ登録されていません。「🛣 ルート設定」から登録してください。' : '通勤ルートがまだ登録されていません。管理者に登録を依頼してください（「その他」で距離を入力することはできます）。'}</div>${admin ? '<div class="btns"><button class="cm-btn primary" onclick="cmOpenRoutes()">ルートを登録</button></div>' : ''}</div>` : '';
+  const noRoutes = !routes.length ? `<div class="cm-status returned" style="background:#fff7ed;border-color:#fed7aa;color:#9a3412"><div>${cmCanSetup() ? 'この人の通勤ルートがまだ登録されていません。「🛣 ルート設定」から登録してください。' : `通勤ルートがまだ登録されていません。ルートの登録は${tkEsc(tkName(CM_SETUP_OWNER))}さんだけができるので、登録を依頼してください（「その他」で行き先と距離を入力することはできます）。`}</div>${cmCanSetup() ? '<div class="btns"><button class="cm-btn primary" onclick="cmOpenRoutes()">ルートを登録</button></div>' : ''}</div>` : '';
   html += noRoutes + statusBar + `<div class="cm-wide"><div>${cal}</div><div>${sum}${list}</div></div>`;
   root.innerHTML = html;
   document.querySelectorAll('.cm-home-btn').forEach(b => { b.style.display = admin ? 'none' : ''; });
@@ -21023,12 +21029,14 @@ async function cmUnapprove() {
 
 // 単価の設定（管理者）
 function cmOpenRate() {
+  if (!cmCanSetup()) { showToast('単価を変更できるのは担当者だけです'); return; }
   tkShowModal(`<h3>1kmあたりの単価</h3>
     <div class="tk-f"><label>単価（円/km）</label><input type="text" inputmode="decimal" id="cm-rate-in" value="${cmR1(Number(CM.settings.rate) || CM_DEFAULT_RATE)}"></div>
     <div class="cm-note">変更すると、まだ承認していない月の金額に反映されます（承認済みの月は承認したときの単価のままです）。</div>
     <div class="tk-btns"><button class="tk-btn-cancel" onclick="tkCloseModal()">キャンセル</button><button class="tk-btn-save" onclick="cmSaveRate()">保存</button></div>`);
 }
 async function cmSaveRate() {
+  if (!cmCanSetup()) return;
   const v = Number(String(document.getElementById('cm-rate-in').value).replace(/[^\d.]/g, ''));
   if (!(v > 0)) { showToast('単価を入力してください'); return; }
   tkCloseModal();
@@ -21041,6 +21049,7 @@ async function cmSaveRate() {
 
 // ルートの設定（管理者）：人ごとに、片道の区間（自宅→代表宅、代表宅→清洲事務所…）を登録する
 function cmOpenRoutes() {
+  if (!cmCanSetup()) { cmViewRoutes(); return; }
   let list = cmRouteList();
   if (!list.length) list = CM_DEFAULT_ROUTES.map((r, i) => ({ ...JSON.parse(JSON.stringify(r)), id: 'r' + (i + 1), order: i }));
   CM._edRoutes = list;
@@ -21070,7 +21079,12 @@ function cmRouteDel(i) { cmReadRouteEd(); CM._edRoutes.splice(i, 1); cmRenderRou
 function cmLegAdd(i) { cmReadRouteEd(); const r = CM._edRoutes[i]; const legs = cmLegs(r); r.legs = [...legs, { from: legs.length ? legs[legs.length - 1].to : '自宅', to: '', km: 0 }]; cmRenderRouteEd(); }
 function cmLegDel(i, j) { cmReadRouteEd(); const r = CM._edRoutes[i]; r.legs = cmLegs(r).filter((_, k) => k !== j); cmRenderRouteEd(); }
 async function cmSaveRoutes() {
+  if (!cmCanSetup()) return;
   cmReadRouteEd();
+  // 消してしまったルートがある場合は、保存する前に確認する
+  const before = cmRouteList().map(r => r.name);
+  const gone = before.filter(n => !CM._edRoutes.some(r => r.name === n));
+  if (gone.length && !await showConfirm(`次のルートが削除されます。よろしいですか？\n・${gone.join('\n・')}\n（すでに入力した日の距離はそのまま残ります）`)) return;
   const list = CM._edRoutes.filter(r => r.name && cmOneWay(r) > 0);
   if (CM._edRoutes.some(r => !r.name || !(cmOneWay(r) > 0))) {
     if (!await showConfirm('ルート名か距離が空のルートは保存されません。よろしいですか？')) return;
@@ -21084,6 +21098,16 @@ async function cmSaveRoutes() {
   if (ok) showToast('ルートを保存しました');
 }
 
+// ルートを見るだけ（担当者以外の管理者）
+function cmViewRoutes() {
+  const list = cmRouteList();
+  tkShowModal(`<h3>🛣 ${tkEsc(tkName(CM.email))}さんの通勤ルート</h3>
+    ${list.length ? list.map(r => `<div class="cm-route-ed"><b>${tkEsc(r.name)}</b>
+      <div style="font-size:12.5px;color:var(--text-sub);margin-top:4px">${cmLegs(r).map(l => `${tkEsc(l.from)} → ${tkEsc(l.to)}　${l.km}km`).join('<br>')}</div>
+      <div style="font-size:12px;margin-top:4px">片道 ${cmOneWay(r)}km／往復 ${cmR1(cmOneWay(r) * 2)}km</div></div>`).join('') : '<div class="tk-empty">まだ登録されていません</div>'}
+    <div class="cm-note">ルートと単価の登録・変更は、${tkEsc(tkName(CM_SETUP_OWNER))}さんだけができます。変更が必要なときは${tkEsc(tkName(CM_SETUP_OWNER))}さんに依頼してください。</div>
+    <div class="tk-btns"><button class="tk-btn-save" onclick="tkCloseModal()">閉じる</button></div>`);
+}
 // 出力：通勤実績表（兼 申請書）
 function cmReportRows() {
   const tot = cmTotals();
