@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-10-22c">
+<meta name="app-build" content="2026-10-22g">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -20775,6 +20775,11 @@ function tkUpdateBadges() {
 .cm-grid .tk-cell.has { background:#f0fdfa; }
 .cm-pick { margin-top:8px; padding:10px; border:1.5px solid #99f6e4; background:#f0fdfa; border-radius:12px; }
 .cm-pick .h { font-size:13px; font-weight:700; color:#115e59; margin-bottom:8px; }
+.cm-trip { display:inline-flex; background:#fff; border:1.5px solid #5eead4; border-radius:10px; padding:2px; margin-bottom:8px; gap:2px; }
+.cm-trip button { padding:6px 14px; font-size:13px; font-weight:700; border:none; background:none; border-radius:8px; color:#115e59; cursor:pointer; font-family:inherit; }
+.cm-trip button.on { background:#0f766e; color:#fff; }
+.cm-side { font-size:12px; font-weight:700; color:#115e59; margin:8px 0 4px; }
+.cm-ow { display:inline-block; font-size:10.5px; font-weight:700; padding:0 6px; border-radius:8px; background:#ede9fe; color:#6d28d9; vertical-align:1px; }
 .cm-pick .opts { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:6px; }
 .cm-pick .opts button { padding:10px 8px; font-size:13px; font-weight:700; border-radius:10px; border:1.5px solid #5eead4; background:#fff; color:#115e59; cursor:pointer; text-align:left; font-family:inherit; }
 .cm-pick .opts button.cur { background:#0f766e; border-color:#0f766e; color:#fff; }
@@ -20785,6 +20790,11 @@ function tkUpdateBadges() {
 .cm-list { background:var(--white); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; margin-top:12px; }
 .cm-list .row { display:flex; gap:8px; padding:8px 12px; border-bottom:1px solid #f0f0f0; font-size:12.5px; align-items:baseline; }
 .cm-list .row:last-child { border-bottom:none; }
+.cm-list .row.pend { background:#fffbeb; }
+.cm-list .row.pend { flex-wrap:wrap; }
+.cm-fix { display:flex; gap:6px; margin:4px 0 2px 80px; flex-wrap:wrap; width:calc(100% - 80px); }
+.cm-fix input { width:100px; padding:7px 8px; font-size:14px; border:1.5px solid #fcd34d; border-radius:8px; font-family:inherit; }
+.cm-fix a.cm-btn { text-decoration:none; }
 .cm-list .row .d { width:72px; flex-shrink:0; font-weight:700; }
 .cm-list .row .r { flex:1; min-width:0; }
 .cm-list .row .k { width:64px; text-align:right; flex-shrink:0; }
@@ -20875,15 +20885,18 @@ async function cmLoad() {
 function cmMove(n) { const d = new Date(CM.y, CM.m + n, 1); CM.y = d.getFullYear(); CM.m = d.getMonth(); CM.pick = null; cmLoad(); }
 function cmSetPerson(email) { if (!cmCanSetup()) return; CM.email = email; CM.pick = null; cmLoad(); }
 
+// 「その他」で距離が分からないまま登録した日（needKm）は、管理担当が片道の距離を入れるまで「距離未確認」
+function cmIsPending(v) { return !!(v && v.needKm && !(Number(v.km) > 0)); }
 function cmTotals() {
-  const list = Object.entries(CM.days || {}).filter(([, v]) => v && Number(v.km) > 0).sort(([a], [b]) => a.localeCompare(b));
-  const km = cmR1(list.reduce((s, [, v]) => s + Number(v.km), 0));
+  const list = Object.entries(CM.days || {}).filter(([, v]) => v && (Number(v.km) > 0 || cmIsPending(v))).sort(([a], [b]) => a.localeCompare(b));
+  const pending = list.filter(([, v]) => cmIsPending(v)).length;
+  const km = cmR1(list.reduce((s, [, v]) => s + (Number(v.km) || 0), 0));
   const rate = cmRate();
   const amount = Math.round(km * rate);
   const base = cmRouteList()[0];
   const oneWay = base ? cmOneWay(base) : 0;
   const limit = cmTaxFree(oneWay);
-  return { list, days: list.length, km, rate, amount, oneWay, limit, over: limit && amount > limit ? amount - limit : 0 };
+  return { list, pending, days: list.length, km, rate, amount, oneWay, limit, over: limit && amount > limit ? amount - limit : 0 };
 }
 
 function renderCommute() {
@@ -20941,7 +20954,7 @@ function renderCommute() {
     const clash = inMonth && v && (co || (po && po.kind !== 'am' && po.kind !== 'pm'));
     cells += `<div class="tk-cell ${inMonth ? '' : 'other'} ${day === today ? 'today' : ''} ${d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : ''} ${v ? 'has' : ''} ${offCls} ${clash ? 'clash' : ''} ${CM.pick === day ? 'picked' : ''}" ${inMonth ? `onclick="cmPick('${day}')"` : ''} ${clash ? 'title="休みの日に通勤が入力されています"' : ''}>
       <span class="d">${d.getDate()}</span>
-      ${v ? `<span class="cm-cell-r">${tkEsc(v.short || v.name || '')}</span><span class="cm-cell-k">${cmR1(v.km)}km</span>` : ''}
+      ${v ? `<span class="cm-cell-r">${tkEsc(v.short || v.name || '')}</span><span class="cm-cell-k">${cmIsPending(v) ? '<b style="color:#b45309">距離確認中</b>' : (cmTripOf(v) === 'oneway' ? '<b style="color:#7c3aed">片道</b> ' : cmTripOf(v) === 'diff' ? '<b style="color:#7c3aed">↪</b> ' : '') + cmR1(v.km) + 'km'}</span>` : ''}
       ${inMonth && offLbl ? `<span class="cm-cell-off ${offCls}">${clash ? '⚠' : ''}${offLbl}</span>` : ''}</div>`;
   }
   const cal = `<div class="tk-cal-head" style="margin-bottom:6px"><button class="tk-nav-btn" onclick="cmMove(-1)">‹</button><div class="ttl">${CM.y}年${CM.m + 1}月</div><button class="tk-nav-btn" onclick="cmMove(1)">›</button></div>
@@ -20954,13 +20967,17 @@ function renderCommute() {
       <div><div class="l">単価</div><div class="v">${cmR1(tot.rate)}円</div></div>
       <div><div class="l">支給額</div><div class="v">¥${tot.amount.toLocaleString('ja-JP')}</div></div>
     </div>
+    ${tot.pending ? `<div class="cm-note over"><b>⚠ 距離確認中の日が${tot.pending}日あります。</b>${cmCanSetup() ? '下の一覧で片道の距離を入れて確定してください（確定するまで承認できません）。' : '担当者が距離を入力すると金額に反映されます。'}</div>` : ''}
     ${tot.limit ? `<div class="cm-note ${tot.over ? 'over' : ''}">参考：非課税の上限は月${tot.limit.toLocaleString('ja-JP')}円（基本ルートの片道${tot.oneWay}km）${tot.over ? `　<b>⚠ 上限超過 ¥${tot.over.toLocaleString('ja-JP')}（課税対象になる可能性があります）</b>` : ''}<br>日によって距離が変わる場合の判定方法は、税理士さんにご確認ください。</div>` : ''}
     <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="cm-btn" onclick="cmPrint()">🖨 通勤実績表（印刷・PDF）</button><button class="cm-btn" onclick="cmExcel()">▦ Excel</button></div>`;
   const list = tot.list.length ? `<div class="cm-list">${tot.list.map(([dd, v]) => {
       const day = ym + '-' + dd;
-      return `<div class="row"><span class="d">${cmFmtDay(day)}</span><span class="r">${tkEsc(v.name || '')}${v.route ? `<div style="font-size:11px;color:var(--text-muted)">${tkEsc(v.route)}</div>` : ''}${v.note ? `<div style="font-size:11px;color:var(--text-muted)">📝${tkEsc(v.note)}</div>` : ''}</span><span class="k">${cmR1(v.km)}km</span><span class="y">¥${Math.round(v.km * tot.rate).toLocaleString('ja-JP')}</span></div>`;
+      const pend = cmIsPending(v);
+      const fix = pend && cmCanSetup() && CM.month.status !== 'approved'
+        ? `<div class="cm-fix"><input type="number" step="0.1" inputmode="decimal" id="cm-fix-${dd}" placeholder="片道km"><button class="cm-btn primary" onclick="cmSetOtherKm('${dd}')">距離を確定</button>${v.addr ? `<a class="cm-btn" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(v.addr)}">🗺 地図</a>` : ''}</div>` : '';
+      return `<div class="row ${pend ? 'pend' : ''}"><span class="d">${cmFmtDay(day)}</span><span class="r">${tkEsc(v.name || '')}${cmTripOf(v) === 'oneway' ? ' <span class="cm-ow">片道</span>' : cmTripOf(v) === 'diff' ? ' <span class="cm-ow">行き帰り別</span>' : ''}${v.addr ? `<div style="font-size:11px;color:var(--text-muted)">📍${tkEsc(v.addr)}</div>` : ''}${v.route ? `<div style="font-size:11px;color:var(--text-muted)">${tkEsc(v.route)}</div>` : ''}${v.note ? `<div style="font-size:11px;color:var(--text-muted)">📝${tkEsc(v.note)}</div>` : ''}</span>${pend ? '<span class="k" style="width:134px;color:#b45309;font-weight:700">距離確認中</span>' : `<span class="k">${cmR1(v.km)}km</span><span class="y">¥${Math.round(v.km * tot.rate).toLocaleString('ja-JP')}</span>`}${fix}</div>`;
     }).join('')}</div>` : '';
-  const noRoutes = !routes.length ? `<div class="cm-status returned" style="background:#fff7ed;border-color:#fed7aa;color:#9a3412"><div>${cmCanSetup() ? 'この人の通勤ルートがまだ登録されていません。「🛣 ルート設定」から登録してください。' : `通勤ルートがまだ登録されていません。ルートの登録は${tkEsc(tkName(CM_SETUP_OWNER))}さんだけができるので、登録を依頼してください（「その他」で行き先と距離を入力することはできます）。`}</div>${cmCanSetup() ? '<div class="btns"><button class="cm-btn primary" onclick="cmOpenRoutes()">ルートを登録</button></div>' : ''}</div>` : '';
+  const noRoutes = !routes.length ? `<div class="cm-status returned" style="background:#fff7ed;border-color:#fed7aa;color:#9a3412"><div>${cmCanSetup() ? 'この人の通勤ルートがまだ登録されていません。「🛣 ルート設定」から登録してください。' : `通勤ルートがまだ登録されていません。ルートの登録は${tkEsc(tkName(CM_SETUP_OWNER))}さんだけができるので、登録を依頼してください（それまでは「その他」で行き先と住所を入力して登録できます）。`}</div>${cmCanSetup() ? '<div class="btns"><button class="cm-btn primary" onclick="cmOpenRoutes()">ルートを登録</button></div>' : ''}</div>` : '';
   html += noRoutes + statusBar + `<div class="cm-wide"><div>${cal}</div><div>${sum}${list}</div></div>`;
   root.innerHTML = html;
   document.querySelectorAll('.cm-home-btn').forEach(b => { b.style.display = admin ? 'none' : ''; });
@@ -20974,27 +20991,41 @@ function cmOverviewHtml() {
   let sumAmt = 0;
   const rows = CM.overview.map(p => {
     const mon = ((CM.allMonths || {})[tkKey(p.email)] || {})[ym] || {};
-    const vals = Object.values(p.days || {}).filter(v => v && Number(v.km) > 0);
-    const km = cmR1(vals.reduce((a, v) => a + Number(v.km), 0));
+    const vals = Object.values(p.days || {}).filter(v => v && (Number(v.km) > 0 || cmIsPending(v)));
+    const pendN = vals.filter(cmIsPending).length;
+    const km = cmR1(vals.reduce((a, v) => a + (Number(v.km) || 0), 0));
     const rate = Number(mon.rate) || rateNow;
     const amt = Math.round(km * rate);
     const st = mon.status || (vals.length ? 'draft' : '');
     sumAmt += amt;
-    return { email: p.email, n: vals.length, km, amt, st };
+    return { email: p.email, n: vals.length, km, amt, st, pendN };
   }).filter(r => r.n || r.st);
   if (!rows.length) return `<div class="cm-ov"><div class="h">👥 ${CM.m + 1}月の全員の状況</div><div class="cm-note" style="margin:6px 0 0">この月の入力はまだありません</div></div>`;
   return `<div class="cm-ov"><div class="h">👥 ${CM.m + 1}月の全員の状況<span>合計 ¥${sumAmt.toLocaleString('ja-JP')}</span></div>
     ${rows.map(r => `<div class="row ${r.email === CM.email ? 'cur' : ''}" onclick="cmSetPerson('${tkEsc(r.email)}')">
-      <span class="nm">${tkEsc(tkName(r.email))}</span><span class="stb ${r.st}">${label[r.st] || '—'}</span>
+      <span class="nm">${tkEsc(tkName(r.email))}</span><span class="stb ${r.st}">${label[r.st] || '—'}</span>${r.pendN ? `<span class="stb returned">距離未確認${r.pendN}</span>` : ''}
       <span class="n">${r.n}日</span><span class="n">${r.km}km</span><span class="n b">¥${r.amt.toLocaleString('ja-JP')}</span></div>`).join('')}
   </div>`;
 }
 function cmJump(email, ym) { if (!cmCanSetup()) return; CM.email = email; CM.y = Number(ym.slice(0, 4)); CM.m = Number(ym.slice(5)) - 1; CM.pick = null; cmLoad(); }
 
 // 日付を押したときのルート選択欄
+// 要望「その日によって往復になるか片道になるかが変わるので選べるように」：
+// 日付を選んだときに「往復／片道」を切り替えられる（片道＝登録した片道の距離だけ）
+const CM_TRIP = { round: '往復', oneway: '片道', diff: '行きと帰りが違う' };
+function cmTripOf(v) { return v && (v.trip === 'oneway' || v.trip === 'diff') ? v.trip : 'round'; }
+function cmRoutePath(r) { const legs = cmLegs(r); return legs.length ? [legs[0].from, ...legs.map(l => l.to)] : []; }
+function cmRouteShort(r) { const legs = cmLegs(r); return (r.short || (legs.length ? legs.map(l => String(l.to || '').replace(/事務所$/, '')).join('→') : r.name)).slice(0, 10); }
+function cmMul(trip) { return trip === 'oneway' ? 1 : 2; }
 function cmPick(day) {
   if (!cmCanEdit()) { showToast('申請中・承認済みの月は変更できません'); return; }
   CM.pick = CM.pick === day ? null : day;
+  if (CM.pick) {
+    const cur = CM.days[day.slice(8)];
+    CM.tripMode = cmTripOf(cur);
+    CM.diffGo = cur && cur.trip === 'diff' ? cur.routeId : null;
+    CM.diffBack = cur && cur.trip === 'diff' ? cur.backRouteId : null;
+  }
   renderCommute();
   if (CM.pick) setTimeout(() => document.getElementById('cm-picker')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 30);
 }
@@ -21003,41 +21034,112 @@ function cmPickerHtml(routes) {
   if (!day) return '';
   const dd = day.slice(8);
   const cur = CM.days[dd];
+  const mode = CM.tripMode || 'round';
+  const tripBar = `<div class="cm-trip"><button class="${mode === 'round' ? 'on' : ''}" onclick="cmSetTrip('${day}','round')">⇄ 往復</button><button class="${mode === 'oneway' ? 'on' : ''}" onclick="cmSetTrip('${day}','oneway')">→ 片道</button><button class="${mode === 'diff' ? 'on' : ''}" onclick="cmSetTrip('${day}','diff')">↪ 行きと帰りが違う</button></div>`;
+  const head = `<div class="h">${cmFmtDay(day)} の通勤${cur ? `<span style="font-weight:600;font-size:12px">（今：${tkEsc(cur.name)} ${cmIsPending(cur) ? '距離確認中' : cmR1(cur.km) + 'km'}）</span>` : ''}</div>`;
+  if (mode === 'diff') {
+    const btns = (side) => routes.map(r => {
+      const sel = side === 'go' ? CM.diffGo === r.id : CM.diffBack === r.id;
+      const path = cmRoutePath(r);
+      const label = side === 'go' ? path.join(' → ') : path.slice().reverse().join(' → ');
+      return `<button class="${sel ? 'cur' : ''}" onclick="cmDiffPick('${day}','${side}','${r.id}')">${tkEsc(r.name)}<small>${tkEsc(label)}　${cmOneWay(r)}km</small></button>`;
+    }).join('');
+    const go = CM.diffGo && CM.routes[CM.diffGo], back = CM.diffBack && CM.routes[CM.diffBack];
+    return `<div id="cm-picker" class="cm-pick">${head}${tripBar}
+      <div class="cm-side">🚗 行き</div><div class="opts">${btns('go')}</div>
+      <div class="cm-side">🏠 帰り</div><div class="opts">${btns('back')}</div>
+      <div style="font-size:12px;margin-top:8px;color:#115e59">${go && back ? `合計 ${cmR1(cmOneWay(go) + cmOneWay(back))}km（行き ${cmOneWay(go)}km ＋ 帰り ${cmOneWay(back)}km）` : '行きと帰りのルートをそれぞれ選ぶと登録されます'}</div>
+      ${cur ? `<div class="opts" style="margin-top:8px"><button class="clear" onclick="cmChoose('${day}',null)">取り消す</button></div>` : ''}
+    </div>`;
+  }
   const opts = routes.map(r => {
     const ow = cmOneWay(r);
-    return `<button class="${cur && cur.routeId === r.id ? 'cur' : ''}" onclick="cmChoose('${day}','${r.id}')">${tkEsc(r.name)}<small>往復 ${cmR1(ow * 2)}km</small></button>`;
+    return `<button class="${cur && cur.routeId === r.id ? 'cur' : ''}" onclick="cmChoose('${day}','${r.id}')">${tkEsc(r.name)}<small>${CM_TRIP[mode]} ${cmR1(ow * cmMul(mode))}km</small></button>`;
   }).join('');
   return `<div id="cm-picker" class="cm-pick">
-    <div class="h">${cmFmtDay(day)} の通勤${cur ? `<span style="font-weight:600;font-size:12px">（今：${tkEsc(cur.name)} ${cmR1(cur.km)}km）</span>` : ''}</div>
+    ${head}${tripBar}
     <div class="opts">${opts}<button class="clear" ${cur ? '' : 'disabled style="opacity:.4"'} onclick="cmChoose('${day}',null)">取り消す</button></div>
-    <div class="other"><input type="text" id="cm-other-name" placeholder="その他の行き先（例：〇〇倉庫）" value="${cur && cur.routeId === 'other' ? tkEsc(cur.name) : ''}">
-      <input type="number" id="cm-other-km" inputmode="decimal" step="0.1" min="0" placeholder="往復km" value="${cur && cur.routeId === 'other' ? cmR1(cur.km) : ''}" style="max-width:110px">
+    <div style="font-size:12px;font-weight:700;color:#115e59;margin-top:10px">その他の行き先</div>
+    <div class="other"><input type="text" id="cm-other-name" placeholder="行き先（例：〇〇倉庫）" value="${cur && cur.routeId === 'other' ? tkEsc(cur.name) : ''}">
+      <input type="number" id="cm-other-km" inputmode="decimal" step="0.1" min="0" placeholder="片道km（任意）" value="${cur && cur.routeId === 'other' && cur.oneWay ? cmR1(cur.oneWay) : ''}" style="max-width:150px"></div>
+    <div class="other"><input type="text" id="cm-other-addr" placeholder="住所（分かる範囲で）" value="${cur && cur.routeId === 'other' ? tkEsc(cur.addr || '') : ''}">
       <button class="cm-btn" onclick="cmChooseOther('${day}')">その他で登録</button></div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">距離が分からないときは、行き先と住所だけで登録できます。担当者が距離を調べて入力します。</div>
   </div>`;
 }
-async function cmSaveDay(day, rec) {
+async function cmSaveDay(day, rec, keepOpen) {
   const dd = day.slice(8), key = tkKey(CM.email), ym = cmYm();
   const prev = CM.days[dd];
   if (rec) CM.days[dd] = rec; else delete CM.days[dd];
-  CM.pick = null;
+  if (!keepOpen) CM.pick = null;
   renderCommute();
   await tkSave(`commute/days/${key}/${ym}/${dd}`, rec ? 'PUT' : 'DELETE', rec || undefined, () => { if (prev) CM.days[dd] = prev; else delete CM.days[dd]; renderCommute(); });
 }
-function cmChoose(day, routeId) {
+// 往復／片道の切り替え。すでにその日に入力がある場合は、その内容のまま距離を計算し直す
+function cmSetTrip(day, mode) {
+  CM.tripMode = mode;
+  const dd = day.slice(8);
+  const cur = CM.days[dd];
+  if (mode === 'diff') {
+    // 行きは今のルートを引き継ぎ、帰りを選んでもらう
+    CM.diffGo = cur && cur.routeId && CM.routes[cur.routeId] ? cur.routeId : null;
+    CM.diffBack = cur && cur.trip === 'diff' ? cur.backRouteId : null;
+    renderCommute(); return;
+  }
+  if (!cur || cmTripOf(cur) === mode) { renderCommute(); return; }
+  if (cur.routeId && cur.routeId !== 'other' && CM.routes[cur.routeId]) { cmChoose(day, cur.routeId, true); return; }
+  const rec = { ...cur, trip: mode };
+  if (cur.oneWay) { rec.km = cmR1(cur.oneWay * cmMul(mode)); rec.route = mode === 'oneway' ? `自宅 → ${cur.name}` : `自宅 → ${cur.name} → 自宅`; }
+  cmSaveDay(day, rec, true);
+}
+// 「行きと帰りが違う」：行きと帰りのルートを両方選んだら登録する（距離＝行きの片道＋帰りの片道）
+function cmDiffPick(day, side, routeId) {
+  if (side === 'go') CM.diffGo = routeId; else CM.diffBack = routeId;
+  const go = CM.routes[CM.diffGo], back = CM.routes[CM.diffBack];
+  if (!go || !back) { renderCommute(); return; }
+  const gp = cmRoutePath(go), bp = cmRoutePath(back).slice().reverse();
+  const route = [...gp, ...bp.slice(1)].join(' → ');
+  const name = go === back ? go.name : `${go.name}／帰り：${back.name}`;
+  cmSaveDay(day, { routeId: CM.diffGo, backRouteId: CM.diffBack, trip: 'diff', name, short: cmRouteShort(go), route,
+    km: cmR1(cmOneWay(go) + cmOneWay(back)), by: tkMe(), at: Date.now() });
+}
+function cmChoose(day, routeId, keepOpen) {
   if (!routeId) return cmSaveDay(day, null);
   const r = CM.routes[routeId];
   if (!r) return;
+  const mode = CM.tripMode || 'round';
   const legs = cmLegs(r);
   const path = legs.length ? [legs[0].from, ...legs.map(l => l.to)] : [];
-  const route = path.length ? path.join(' → ') + ' → ' + path.slice(0, -1).reverse().join(' → ') : '';
-  cmSaveDay(day, { routeId, name: r.name, short: r.short || (legs.length ? legs.map(l => String(l.to || '').replace(/事務所$/, '')).join('→') : r.name).slice(0, 10), route, km: cmR1(cmOneWay(r) * 2), by: tkMe(), at: Date.now() });
+  const route = path.length ? path.join(' → ') + (mode === 'round' ? ' → ' + path.slice(0, -1).reverse().join(' → ') : '') : '';
+  cmSaveDay(day, { routeId, trip: mode, name: r.name, short: r.short || (legs.length ? legs.map(l => String(l.to || '').replace(/事務所$/, '')).join('→') : r.name).slice(0, 10), route, km: cmR1(cmOneWay(r) * cmMul(mode)), by: tkMe(), at: Date.now() }, keepOpen);
 }
 function cmChooseOther(day) {
   const name = (document.getElementById('cm-other-name')?.value || '').trim();
-  const km = Number(document.getElementById('cm-other-km')?.value);
+  const oneWay = Number(document.getElementById('cm-other-km')?.value);
+  const addr = (document.getElementById('cm-other-addr')?.value || '').trim();
   if (!name) { showToast('行き先を入力してください'); return; }
-  if (!(km > 0)) { showToast('往復の距離（km）を入力してください'); return; }
-  cmSaveDay(day, { routeId: 'other', name, short: name.slice(0, 6), km: cmR1(km), by: tkMe(), at: Date.now() });
+  if (!(oneWay > 0) && !addr) { showToast('片道の距離か、行き先の住所を入力してください'); return; }
+  const mode = CM.tripMode || 'round';
+  const rec = { routeId: 'other', trip: mode, name, short: name.slice(0, 6), by: tkMe(), at: Date.now() };
+  if (addr) rec.addr = addr;
+  if (oneWay > 0) { rec.oneWay = cmR1(oneWay); rec.km = cmR1(oneWay * cmMul(mode)); rec.route = mode === 'oneway' ? `自宅 → ${name}` : `自宅 → ${name} → 自宅`; }
+  else { rec.km = 0; rec.needKm = true; }
+  cmSaveDay(day, rec);
+  if (!(oneWay > 0)) showToast('登録しました。距離は担当者が確認して入力します');
+}
+// 管理担当：住所だけで登録された日に、片道の距離を入れて確定する（往復＝片道×2）
+async function cmSetOtherKm(dd) {
+  if (!cmCanSetup()) return;
+  const v = CM.days[dd];
+  const inp = document.getElementById('cm-fix-' + dd);
+  const oneWay = Number(inp?.value);
+  if (!v || !(oneWay > 0)) { showToast('片道の距離（km）を入力してください'); return; }
+  const trip = cmTripOf(v);
+  const rec = { ...v, oneWay: cmR1(oneWay), km: cmR1(oneWay * cmMul(trip)), route: trip === 'oneway' ? `自宅 → ${v.name}` : `自宅 → ${v.name} → 自宅`, kmBy: tkMe(), kmAt: Date.now() };
+  delete rec.needKm;
+  const day = cmYm() + '-' + dd;
+  await cmSaveDay(day, rec);
+  showToast('距離を入力しました');
 }
 
 // 申請・承認
@@ -21064,6 +21166,7 @@ async function cmWithdraw() {
 }
 async function cmApprove() {
   const tot = cmTotals();
+  if (tot.pending) { showToast(`距離確認中の日が${tot.pending}日あります。先に距離を確定してください`); return; }
   if (!await showConfirm(`${tkName(CM.email)}さんの${CM.m + 1}月分（${tot.days}日・${tot.km}km・¥${tot.amount.toLocaleString('ja-JP')}）を承認しますか？`)) return;
   cmSetMonth({ status: 'approved', email: CM.email, ym: cmYm(), days: tot.days, km: tot.km, amount: tot.amount, rate: tot.rate, approvedBy: tkMe(), approvedAt: Date.now() }, '承認しました');
 }
@@ -21113,7 +21216,7 @@ function cmOpenRoutes() {
 function cmRenderRouteEd() {
   const list = CM._edRoutes;
   tkShowModal(`<h3>🛣 ${tkEsc(tkName(CM.email))}さんの通勤ルート</h3>
-    <div class="cm-note" style="margin-top:-8px">距離は<b>片道</b>で入力します。帰りも同じ道を通る前提で、往復＝片道×2 で計算します。家の場所によって距離が変わるので、人ごとに登録してください。</div>
+    <div class="cm-note" style="margin-top:-8px">距離は<b>片道</b>で入力します。日付ごとに「往復（片道×2）」か「片道」かを選べます。家の場所によって距離が変わるので、人ごとに登録してください。</div>
     <div id="cm-route-ed">${list.map((r, i) => `<div class="cm-route-ed" data-i="${i}">
         <div style="display:flex;gap:6px;align-items:center"><input type="text" class="cm-rname" value="${tkEsc(r.name)}" placeholder="ルート名（例：港区事務所）"><button class="x" onclick="cmRouteDel(${i})" title="このルートを削除">🗑</button></div>
         ${cmLegs(r).map((l, j) => `<div class="leg"><input type="text" class="cm-lfrom" value="${tkEsc(l.from)}" placeholder="出発"><input type="text" class="cm-lto" value="${tkEsc(l.to)}" placeholder="到着"><input type="number" step="0.1" inputmode="decimal" class="cm-lkm" value="${l.km}" placeholder="km"><button class="x" onclick="cmLegDel(${i},${j})">×</button></div>`).join('')}
@@ -21167,7 +21270,7 @@ function cmViewRoutes() {
 function cmReportRows() {
   const tot = cmTotals();
   const ym = cmYm();
-  return { tot, rows: tot.list.map(([dd, v]) => ({ day: ym + '-' + dd, name: v.name || '', route: v.route || v.note || '', km: cmR1(v.km), yen: Math.round(v.km * tot.rate) })) };
+  return { tot, rows: tot.list.map(([dd, v]) => ({ day: ym + '-' + dd, name: (v.name || '') + (cmTripOf(v) === 'oneway' ? '（片道）' : ''), route: (v.route || v.note || '') + (v.addr ? `（${v.addr}）` : ''), km: cmIsPending(v) ? '未確認' : cmR1(v.km), yen: Math.round((Number(v.km) || 0) * tot.rate) })) };
 }
 function cmPrint() {
   const { tot, rows } = cmReportRows();
@@ -21202,8 +21305,8 @@ function cmPrint() {
         <tr><td>単価</td><td>${cmR1(tot.rate)}円／km</td></tr><tr><td>申請日</td><td>${CM.month.submittedAt ? new Date(CM.month.submittedAt).toLocaleDateString('ja-JP') : '　　年　　月　　日'}</td></tr></table>
       <div class="stamps"><div><div class="t">申請者</div><div class="b"></div></div><div><div class="t">承認者</div><div class="b">${st === 'approved' ? tkEsc(tkName(CM.month.approvedBy)) + '<br>' + new Date(CM.month.approvedAt).toLocaleDateString('ja-JP') : ''}</div></div></div>
     </div>
-    <table class="main"><thead><tr><th style="width:90px">日付</th><th>行き先</th><th>経路</th><th style="width:70px">距離（往復）</th><th style="width:80px">金額</th></tr></thead><tbody>
-      ${rows.map(r => `<tr><td>${cmFmtDay(r.day)}</td><td>${tkEsc(r.name)}</td><td style="font-size:10px">${tkEsc(r.route)}</td><td class="n">${r.km}km</td><td class="n">¥${r.yen.toLocaleString('ja-JP')}</td></tr>`).join('')}
+    <table class="main"><thead><tr><th style="width:90px">日付</th><th>行き先</th><th>経路</th><th style="width:70px">距離</th><th style="width:80px">金額</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td>${cmFmtDay(r.day)}</td><td>${tkEsc(r.name)}</td><td style="font-size:10px">${tkEsc(r.route)}</td><td class="n">${r.km === '未確認' ? '未確認' : r.km + 'km'}</td><td class="n">¥${r.yen.toLocaleString('ja-JP')}</td></tr>`).join('')}
       <tr class="tot"><td>合計</td><td>${tot.days}日</td><td></td><td class="n">${tot.km}km</td><td class="n">¥${tot.amount.toLocaleString('ja-JP')}</td></tr>
     </tbody></table>
     <div style="margin-top:6px;font-size:10px">支給額 ＝ 合計距離 ${tot.km}km × ${cmR1(tot.rate)}円 ＝ ¥${tot.amount.toLocaleString('ja-JP')}（1円未満四捨五入）</div>
@@ -21226,7 +21329,7 @@ function cmExcel() {
   const name = tkName(CM.email);
   const aoa = [
     [`通勤実績表（兼 申請書）　${CM.y}年${CM.m + 1}月分`], ['氏名：' + name], ['単価：' + cmR1(tot.rate) + '円/km'], [],
-    ['日付', '行き先', '経路', '距離（往復km）', '金額（円）'],
+    ['日付', '行き先', '経路', '距離（km）', '金額（円）'],
     ...rows.map(r => [cmFmtDay(r.day), r.name, r.route, r.km, r.yen]),
     [], ['合計', tot.days + '日', '', tot.km, tot.amount],
     [], ['状態', { draft: '入力中', submitted: '申請中', approved: '承認済み', returned: '差し戻し' }[CM.month.status || 'draft']],
