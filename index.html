@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-10-22b">
+<meta name="app-build" content="2026-10-22c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -20732,6 +20732,18 @@ function tkUpdateBadges() {
 .cm-switch button.active { background:var(--white); color:var(--gold-dark); box-shadow:0 1px 3px rgba(0,0,0,0.1); }
 .cm-top { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
 .cm-top select { width:auto; max-width:260px; padding:8px 10px; font-size:14px; border:1.5px solid var(--border); border-radius:10px; background:var(--white); font-family:inherit; }
+.cm-ov { background:var(--white); border:1px solid var(--border); border-radius:12px; padding:8px 10px; margin-bottom:10px; }
+.cm-ov .h { font-size:13px; font-weight:700; display:flex; justify-content:space-between; padding:2px 2px 6px; }
+.cm-ov .h span { font-size:12px; color:var(--text-sub); }
+.cm-ov .row { display:flex; align-items:center; gap:8px; padding:7px 4px; border-top:1px solid #f0f0f0; font-size:12.5px; cursor:pointer; border-radius:6px; }
+.cm-ov .row.cur { background:#f0fdfa; }
+.cm-ov .row .nm { flex:1; min-width:0; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cm-ov .row .n { width:62px; text-align:right; color:var(--text-sub); flex-shrink:0; }
+.cm-ov .row .n.b { width:76px; color:var(--text); font-weight:700; }
+.cm-ov .stb { font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:10px; background:#f3f4f6; color:#4b5563; flex-shrink:0; }
+.cm-ov .stb.submitted { background:#fef3c7; color:#92400e; }
+.cm-ov .stb.approved { background:#d1fae5; color:#065f46; }
+.cm-ov .stb.returned { background:#fee2e2; color:#991b1b; }
 .cm-pending { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
 .cm-pending button { padding:6px 10px; font-size:12px; font-weight:700; border-radius:20px; border:1.5px solid #fcd34d; background:#fffbeb; color:#92400e; cursor:pointer; font-family:inherit; }
 .cm-status { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; padding:10px 12px; border-radius:12px; margin-bottom:10px; font-size:13px; border:1.5px solid var(--border); background:var(--white); }
@@ -20813,8 +20825,8 @@ function cmTaxFree(oneWay) { let v = 0; CM_TAX_FREE.forEach(([km, yen]) => { if 
 function cmCanEdit() {
   const st = CM.month.status || 'draft';
   if (st === 'approved') return false;
-  if (st === 'submitted') return isAdmin();
-  return isAdmin() || CM.email === tkMe();
+  if (st === 'submitted') return cmCanSetup();
+  return cmCanSetup() || CM.email === tkMe();
 }
 function cmFmtDay(day) { const d = tkParse(day); return `${d.getMonth() + 1}/${d.getDate()}(${TK_WD[d.getDay()]})`; }
 
@@ -20829,7 +20841,8 @@ async function openCommuteScreen(email) {
   if (!TK.loaded) { try { await tkLoad(true); } catch (e) {} }
   const now = new Date();
   if (CM.y == null) { CM.y = now.getFullYear(); CM.m = now.getMonth(); }
-  CM.email = isAdmin() ? (email || CM.email || tkMe()) : tkMe();
+  // 要望「自分の分だけ見えるように。Hinaだけは全員分を見て管理できるように」
+  CM.email = cmCanSetup() ? (email || CM.email || tkMe()) : tkMe();
   CM.pick = null;
   showScreen('commute');
   await cmLoad();
@@ -20841,10 +20854,16 @@ async function cmLoad() {
   try {
     const [settings, routes, days, month, all] = await Promise.all([
       tkReq('commute/settings'), tkReq('commute/routes/' + key), tkReq('commute/days/' + key + '/' + ym),
-      tkReq('commute/months/' + key + '/' + ym), isAdmin() ? tkReq('commute/months') : Promise.resolve(null)
+      tkReq('commute/months/' + key + '/' + ym), cmCanSetup() ? tkReq('commute/months') : Promise.resolve(null)
     ]);
     CM.settings = settings || {}; CM.routes = routes || {}; CM.days = days || {}; CM.month = month || {};
     if (all) CM.allMonths = all;
+    // 管理担当（Hina）：その月の全員分の日数・距離・金額をまとめて取得する
+    if (cmCanSetup()) {
+      const people = tkMemberEmails();
+      const res = await Promise.all(people.map(e => tkReq('commute/days/' + tkKey(e) + '/' + ym).catch(() => null)));
+      CM.overview = people.map((e, i) => ({ email: e, days: res[i] || {} }));
+    } else CM.overview = null;
     CM.loaded = true;
   } catch (e) {
     console.error('通勤データの読み込みエラー', e);
@@ -20854,7 +20873,7 @@ async function cmLoad() {
   renderCommute();
 }
 function cmMove(n) { const d = new Date(CM.y, CM.m + n, 1); CM.y = d.getFullYear(); CM.m = d.getMonth(); CM.pick = null; cmLoad(); }
-function cmSetPerson(email) { CM.email = email; CM.pick = null; cmLoad(); }
+function cmSetPerson(email) { if (!cmCanSetup()) return; CM.email = email; CM.pick = null; cmLoad(); }
 
 function cmTotals() {
   const list = Object.entries(CM.days || {}).filter(([, v]) => v && Number(v.km) > 0).sort(([a], [b]) => a.localeCompare(b));
@@ -20871,6 +20890,7 @@ function renderCommute() {
   const root = document.getElementById('cm-root');
   if (!root) return;
   const admin = isAdmin();
+  const mgr = cmCanSetup();
   const me = tkMe();
   const st = CM.month.status || 'draft';
   const tot = cmTotals();
@@ -20878,13 +20898,14 @@ function renderCommute() {
   const ym = cmYm();
   let html = admin ? `<div class="cm-switch"><button onclick="showScreen('form')">✈ 旅費出張</button><button class="active">🚗 マイカー通勤</button></div>` : '';
   html += `<div class="cm-top">
-    ${admin ? `<select onchange="cmSetPerson(this.value)">${tkMemberEmails().map(e => `<option value="${tkEsc(e)}" ${e === CM.email ? 'selected' : ''}>${tkEsc(tkName(e))}${e === me ? '（自分）' : ''}</option>`).join('')}</select>` : `<b style="font-size:15px">${tkEsc(tkName(me))}さん</b>`}
+    ${mgr ? `<select onchange="cmSetPerson(this.value)">${tkMemberEmails().map(e => `<option value="${tkEsc(e)}" ${e === CM.email ? 'selected' : ''}>${tkEsc(tkName(e))}${e === me ? '（自分）' : ''}</option>`).join('')}</select>` : `<b style="font-size:15px">${tkEsc(tkName(me))}さん</b>`}
     <span style="flex:1"></span>
-    ${admin ? (cmCanSetup()
+    ${mgr
       ? `<button class="cm-btn" onclick="cmOpenRoutes()">🛣 ルート設定</button><button class="cm-btn" onclick="cmOpenRate()">⚙ 単価 ${cmR1(Number(CM.settings.rate) || CM_DEFAULT_RATE)}円/km</button>`
-      : `<button class="cm-btn" onclick="cmViewRoutes()">🛣 ルートを見る</button><span style="font-size:12px;color:var(--text-sub)">単価 ${cmR1(Number(CM.settings.rate) || CM_DEFAULT_RATE)}円/km</span>`) : ''}
+      : `<button class="cm-btn" onclick="cmViewRoutes()">🛣 ルートを見る</button><span style="font-size:12px;color:var(--text-sub)">単価 ${cmR1(Number(CM.settings.rate) || CM_DEFAULT_RATE)}円/km</span>`}
   </div>`;
-  if (admin) {
+  if (mgr) {
+    html += cmOverviewHtml();
     const pend = [];
     Object.entries(CM.allMonths || {}).forEach(([k, months]) => Object.entries(months || {}).forEach(([m, v]) => { if (v && v.status === 'submitted') pend.push({ email: v.email, ym: m }); }));
     if (pend.length) html += `<div class="cm-pending"><span style="font-size:12px;font-weight:700;color:#92400e;align-self:center">📝 承認待ち</span>${pend.map(p => `<button onclick="cmJump('${tkEsc(p.email)}','${p.ym}')">${tkEsc(tkName(p.email))}　${Number(p.ym.slice(5))}月分</button>`).join('')}</div>`;
@@ -20893,9 +20914,9 @@ function renderCommute() {
   const stLabel = { draft: '📝 入力中', submitted: '⏳ 申請中（管理者の確認待ち）', approved: '✅ 承認済み', returned: '↩ 差し戻し' }[st];
   let btns = '';
   const self = CM.email === me;
-  if (st === 'draft' || st === 'returned') btns = (self || admin) ? `<button class="cm-btn primary" onclick="cmSubmit()">${admin && !self ? '申請済みにする' : '申請する'}</button>` : '';
-  else if (st === 'submitted') btns = (admin ? `<button class="cm-btn primary" onclick="cmApprove()">承認する</button><button class="cm-btn warn" onclick="cmReturn()">差し戻す</button>` : '') + (self ? `<button class="cm-btn" onclick="cmWithdraw()">申請を取り下げる</button>` : '');
-  else if (st === 'approved' && admin) btns = `<button class="cm-btn warn" onclick="cmUnapprove()">承認を取り消す</button>`;
+  if (st === 'draft' || st === 'returned') btns = (self || mgr) ? `<button class="cm-btn primary" onclick="cmSubmit()">${mgr && !self ? '申請済みにする' : '申請する'}</button>` : '';
+  else if (st === 'submitted') btns = (mgr ? `<button class="cm-btn primary" onclick="cmApprove()">承認する</button><button class="cm-btn warn" onclick="cmReturn()">差し戻す</button>` : '') + (self ? `<button class="cm-btn" onclick="cmWithdraw()">申請を取り下げる</button>` : '');
+  else if (st === 'approved' && mgr) btns = `<button class="cm-btn warn" onclick="cmUnapprove()">承認を取り消す</button>`;
   let sub = '';
   if (st === 'submitted' && CM.month.submittedAt) sub = `申請：${tkStamp(CM.month.submittedAt)}`;
   if (st === 'approved') sub = `承認：${tkEsc(tkName(CM.month.approvedBy))}（${tkStamp(CM.month.approvedAt)}）`;
@@ -20944,7 +20965,31 @@ function renderCommute() {
   root.innerHTML = html;
   document.querySelectorAll('.cm-home-btn').forEach(b => { b.style.display = admin ? 'none' : ''; });
 }
-function cmJump(email, ym) { CM.email = email; CM.y = Number(ym.slice(0, 4)); CM.m = Number(ym.slice(5)) - 1; CM.pick = null; cmLoad(); }
+// 管理担当用：その月の全員の状況（クリックでその人の画面へ）
+function cmOverviewHtml() {
+  if (!CM.overview) return '';
+  const ym = cmYm();
+  const rateNow = Number(CM.settings.rate) || CM_DEFAULT_RATE;
+  const label = { draft: '入力中', submitted: '申請中', approved: '承認済み', returned: '差し戻し' };
+  let sumAmt = 0;
+  const rows = CM.overview.map(p => {
+    const mon = ((CM.allMonths || {})[tkKey(p.email)] || {})[ym] || {};
+    const vals = Object.values(p.days || {}).filter(v => v && Number(v.km) > 0);
+    const km = cmR1(vals.reduce((a, v) => a + Number(v.km), 0));
+    const rate = Number(mon.rate) || rateNow;
+    const amt = Math.round(km * rate);
+    const st = mon.status || (vals.length ? 'draft' : '');
+    sumAmt += amt;
+    return { email: p.email, n: vals.length, km, amt, st };
+  }).filter(r => r.n || r.st);
+  if (!rows.length) return `<div class="cm-ov"><div class="h">👥 ${CM.m + 1}月の全員の状況</div><div class="cm-note" style="margin:6px 0 0">この月の入力はまだありません</div></div>`;
+  return `<div class="cm-ov"><div class="h">👥 ${CM.m + 1}月の全員の状況<span>合計 ¥${sumAmt.toLocaleString('ja-JP')}</span></div>
+    ${rows.map(r => `<div class="row ${r.email === CM.email ? 'cur' : ''}" onclick="cmSetPerson('${tkEsc(r.email)}')">
+      <span class="nm">${tkEsc(tkName(r.email))}</span><span class="stb ${r.st}">${label[r.st] || '—'}</span>
+      <span class="n">${r.n}日</span><span class="n">${r.km}km</span><span class="n b">¥${r.amt.toLocaleString('ja-JP')}</span></div>`).join('')}
+  </div>`;
+}
+function cmJump(email, ym) { if (!cmCanSetup()) return; CM.email = email; CM.y = Number(ym.slice(0, 4)); CM.m = Number(ym.slice(5)) - 1; CM.pick = null; cmLoad(); }
 
 // 日付を押したときのルート選択欄
 function cmPick(day) {
