@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-10-22a">
+<meta name="app-build" content="2026-10-22b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -18796,7 +18796,7 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
 .tk-offbar.co { background:#fff1f2; border-color:#fecdd3; color:#9f1239; }
 .tk-week-day.co .h { color:#dc2626; }
 .tk-offgrid .tk-offcell { min-height:52px; text-align:left; }
-.tk-offcell.on { background:#fffbeb; }
+.tk-offcell.on { background:#fff3dc; }
 .tk-offmark { display:block; margin-top:2px; font-size:10.5px; font-weight:700; border-radius:4px; padding:1px 3px; text-align:center; }
 .tk-offmark.off { background:#f59e0b; color:#fff; }
 .tk-offmark.am, .tk-offmark.pm { background:#fde68a; color:#92400e; }
@@ -20751,7 +20751,14 @@ function tkUpdateBadges() {
 .cm-grid .tk-cell { min-height:58px; }
 .cm-cell-r { display:block; margin-top:2px; font-size:10px; font-weight:700; border-radius:4px; padding:1px 3px; background:#ccfbf1; color:#115e59; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .cm-cell-k { display:block; font-size:9.5px; color:var(--text-sub); }
-.cm-cell-off { display:block; margin-top:2px; font-size:10px; font-weight:700; color:#b45309; }
+.cm-cell-off { display:inline-block; max-width:100%; box-sizing:border-box; white-space:nowrap; overflow:hidden; margin-top:3px; font-size:10.5px; font-weight:700; line-height:1.35; padding:1px 5px; border-radius:10px; background:#f59e0b; color:#fff; }
+@media (min-width:900px) { .cm-cell-off { font-size:11.5px; padding:1px 8px; } }
+.cm-cell-off.off-half { background:#fde68a; color:#78350f; }
+.cm-cell-off.off-co { background:#be123c; color:#fff; }
+.cm-grid .tk-cell.off { background:#fff3dc; }
+.cm-grid .tk-cell.off-half { background:#fffaeb; }
+.cm-grid .tk-cell.off-co { background:#ffe9ec; }
+.cm-grid .tk-cell.clash { box-shadow:inset 0 0 0 2px #f59e0b; }
 .cm-grid .tk-cell.picked { outline:2px solid #0f766e; outline-offset:-2px; }
 .cm-grid .tk-cell.has { background:#f0fdfa; }
 .cm-pick { margin-top:8px; padding:10px; border:1.5px solid #99f6e4; background:#f0fdfa; border-radius:12px; }
@@ -20907,15 +20914,18 @@ function renderCommute() {
     const v = inMonth ? CM.days[String(d.getDate()).padStart(2, '0')] : null;
     const co = typeof tkCompanyOff === 'function' ? tkCompanyOff(day) : null;
     const po = typeof tkPersonOffs === 'function' ? tkPersonOffs(day).find(o => o.email === CM.email) : null;
-    const offLbl = co ? '会社休' : po ? (po.kind === 'am' ? '午前休' : po.kind === 'pm' ? '午後休' : '休') : '';
-    cells += `<div class="tk-cell ${inMonth ? '' : 'other'} ${day === today ? 'today' : ''} ${d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : ''} ${v ? 'has' : ''} ${CM.pick === day ? 'picked' : ''}" ${inMonth ? `onclick="cmPick('${day}')"` : ''}>
+    const offLbl = co ? '会社休' : po ? (po.kind === 'am' ? '午前休' : po.kind === 'pm' ? '午後休' : '休み') : '';
+    // 休みの日は枠ごと薄い色にする（会社の休み＝薄いピンク、本人の休み＝薄いオレンジ、半休＝さらに薄く）
+    const offCls = !inMonth ? '' : co ? 'off-co' : po ? (po.kind === 'am' || po.kind === 'pm' ? 'off-half' : 'off') : '';
+    const clash = inMonth && v && (co || (po && po.kind !== 'am' && po.kind !== 'pm'));
+    cells += `<div class="tk-cell ${inMonth ? '' : 'other'} ${day === today ? 'today' : ''} ${d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : ''} ${v ? 'has' : ''} ${offCls} ${clash ? 'clash' : ''} ${CM.pick === day ? 'picked' : ''}" ${inMonth ? `onclick="cmPick('${day}')"` : ''} ${clash ? 'title="休みの日に通勤が入力されています"' : ''}>
       <span class="d">${d.getDate()}</span>
       ${v ? `<span class="cm-cell-r">${tkEsc(v.short || v.name || '')}</span><span class="cm-cell-k">${cmR1(v.km)}km</span>` : ''}
-      ${inMonth && offLbl ? `<span class="cm-cell-off">${offLbl}</span>` : ''}</div>`;
+      ${inMonth && offLbl ? `<span class="cm-cell-off ${offCls}">${clash ? '⚠' : ''}${offLbl}</span>` : ''}</div>`;
   }
   const cal = `<div class="tk-cal-head" style="margin-bottom:6px"><button class="tk-nav-btn" onclick="cmMove(-1)">‹</button><div class="ttl">${CM.y}年${CM.m + 1}月</div><button class="tk-nav-btn" onclick="cmMove(1)">›</button></div>
     <div class="tk-grid cm-grid">${cells}</div>${cmPickerHtml(routes)}
-    <div class="cm-note">日付をタップして、その日の通勤ルートを選びます。「休」はカレンダーで入力したお休みです。${cmCanEdit() ? '' : '<br><b>この月は申請中・承認済みのため変更できません。</b>'}</div>`;
+    <div class="cm-note">日付をタップして、その日の通勤ルートを選びます。オレンジ色の日は本人のお休み、ピンク色の日は会社のお休みです（休みの日に通勤を入力すると「⚠」が付きます）。${cmCanEdit() ? '' : '<br><b>この月は申請中・承認済みのため変更できません。</b>'}</div>`;
 
   const sum = `<div class="cm-sum">
       <div><div class="l">通勤日数</div><div class="v">${tot.days}日</div></div>
