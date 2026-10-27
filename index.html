@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-10-27d">
+<meta name="app-build" content="2026-10-27e">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -123,6 +123,13 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
 .wh-sr-chk { font-size:10.5px; font-weight:700; color:#0f766e; }
 .wh-sr-model.big { font-size:18px; letter-spacing:.02em; }
 .wh-sr.sel .wh-sr-in { flex:1; justify-content:flex-end; }
+.wh-sr-bb { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:center; margin-top:6px; padding:6px 8px; background:#fff; border:1px solid #ccfbf1; border-radius:8px; font-size:12px; }
+.wh-sr-bb .lbl { font-weight:700; color:#0f766e; }
+.wh-sr-bb .q { color:var(--text-sub); white-space:nowrap; }
+.wh-sr-bb .q.top { color:#0f766e; font-weight:700; }
+.wh-sr-bb .q.more { display:none; }
+.wh-sr-bb.open .q.more { display:inline; }
+.wh-sr-bb .tg { background:none; border:none; color:#0f766e; text-decoration:underline; font-size:12px; cursor:pointer; padding:0; font-family:inherit; }
 .wh-sr-back { background:none; border:none; color:var(--text-sub); font-size:12px; text-decoration:underline; cursor:pointer; padding:2px 2px 6px; font-family:inherit; }
 .wh-sr-hint { font-size:10.5px; color:var(--text-muted); padding:0 2px 2px; }
 @media (max-width:520px) {
@@ -4495,13 +4502,27 @@ function searchWhItemByModel() {
     return '';
   };
   if (sel) {
-    const ref = refOf(sel);
+    // 選んだ商品は、他社相場をすべて見られるようにする（最初は上位3社＋Amazon、「すべて」で全社）
+    let ref = '';
+    try {
+      const hit = window._buybackPriceRef && whItemBuybackRec({ jan: sel.jan, model: sel.model, name: sel.name });
+      const q = hit && hit.rec && hit.rec.q ? hit.rec.q : [];
+      if (q.length || (hit && hit.rec && hit.rec.a)) {
+        ref = `<div class="wh-sr-bb" id="wh-sr-bb">
+          <span class="lbl">他社相場${hit.byName ? '（名前で一致）' : ''}</span>
+          ${q.map(([name, price], i) => `<span class="q ${i === 0 ? 'top' : ''} ${i >= 3 ? 'more' : ''}">${escapeHtmlMain(name)} ¥${price.toLocaleString('ja-JP')}</span>`).join('')}
+          ${hit.rec.a ? `<span class="q">Amazon最安 ¥${hit.rec.a.toLocaleString('ja-JP')}</span>` : ''}
+          ${q.length > 3 ? `<button type="button" class="tg" onclick="const b=document.getElementById('wh-sr-bb');b.classList.toggle('open');this.textContent=b.classList.contains('open')?'閉じる':'すべて見る（${q.length}社）'">すべて見る（${q.length}社）</button>` : ''}
+        </div>`;
+      } else if (window._buybackPriceRef) ref = '<div class="wh-sr-bb"><span class="lbl">他社相場：データなし</span></div>';
+    } catch (e) {}
     resultsEl.innerHTML = `
     <div class="wh-sr sel">
       <div class="wh-sr-info" style="flex-basis:100%">
         <div class="wh-sr-chk">この商品を追加します</div>
         <div class="wh-sr-model big">${escapeHtmlMain(sel.model || '型番未登録')}</div>
-        <div class="wh-sr-sub">${escapeHtmlMain(sel.name || '')}${sel.name ? '・' : ''}在庫${sel.stock ?? 0}個${sel.jan ? '・JAN ' + escapeHtmlMain(sel.jan) : ''}${ref ? `<span class="wh-sr-ref">${ref}</span>` : ''}</div>
+        <div class="wh-sr-sub">${escapeHtmlMain(sel.name || '')}${sel.name ? '・' : ''}在庫${sel.stock ?? 0}個${sel.jan ? '・JAN ' + escapeHtmlMain(sel.jan) : ''}</div>
+        ${ref}
       </div>
       <div class="wh-sr-in">
         <input type="number" inputmode="numeric" min="1" id="wh-sr-q-${sel._key}" placeholder="数量" title="数量（空欄なら1）" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('wh-sr-p-${sel._key}').focus();}if(event.key==='Escape'){whSrUnselect();}">
