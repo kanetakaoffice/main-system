@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-10-22g">
+<meta name="app-build" content="2026-10-27a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -19080,10 +19080,10 @@ async function tkLoad(force) {
   if (TK.loading && !force) return TK.loading;
   TK.loading = (async () => {
     try {
-      const [tasks, events, members, offs] = await Promise.all([
-        tkReq('tasks'), tkReq('events'), tkReq('members'), tkReq('dayoffs').catch(() => null)
+      const [tasks, events, members, offs, issues] = await Promise.all([
+        tkReq('tasks'), tkReq('events'), tkReq('members'), tkReq('dayoffs').catch(() => null), tkReq('issues').catch(() => null)
       ]);
-      TK.tasks = tasks || {}; TK.events = events || {}; TK.members = members || {}; TK.offs = offs || {};
+      TK.tasks = tasks || {}; TK.events = events || {}; TK.members = members || {}; TK.offs = offs || {}; TK.issues = issues || {};
       TK.loaded = true;
       setTimeout(() => { tkEnsureRepeatInstances(); }, 0);
     } catch (e) {
@@ -19130,6 +19130,7 @@ async function tkInit() {
   }
 }
 function tkRefreshAll() {
+  if (typeof isRefreshView === 'function') isRefreshView();
   const pv = document.getElementById('tk-person-view');
   if (pv && document.getElementById('tk-modal').style.display === 'flex') pv.innerHTML = tkPersonViewHtml(pv.dataset.email || '');
   const view = document.getElementById('tk-view');
@@ -19167,9 +19168,12 @@ async function renderTasksScreen(noFetch) {
     </div>
     <div class="tab-switch">
       <button class="tab-switch-btn ${TK.tab==='tasks'?'active':''}" onclick="tkSetTab('tasks')">✅ タスク</button>
-      <button class="tab-switch-btn ${TK.tab==='cal'?'active':''}" onclick="tkSetTab('cal')">📅 予定（カレンダー）</button>
+      <button class="tab-switch-btn ${TK.tab==='cal'?'active':''}" onclick="tkSetTab('cal')">📅 予定</button>
+      <button class="tab-switch-btn ${TK.tab==='issues'?'active':''}" onclick="tkSetTab('issues')">📋 課題${isOpenCount() ? ` ${isOpenCount()}` : ''}${isUnseenCount() ? ` <span style="background:#2563eb;color:#fff;border-radius:8px;padding:0 5px;font-size:10px">NEW</span>` : ''}</button>
     </div>`;
-  if (TK.tab === 'cal') {
+  if (TK.tab === 'issues') {
+    el.innerHTML = `<div class="tk-wide"><div class="tk-main">${head}${isTabHtml()}</div><aside class="tk-side">${tkSideHtml()}</aside></div>`;
+  } else if (TK.tab === 'cal') {
     // パソコン幅では左にカレンダー、右に「選んだ日の予定・タスク」（週表示のときは状態・みんなの状況）を並べる。
     // 狭い幅では右側は出さず、今まで通りカレンダーの下に選んだ日の一覧を出す
     const side = TK.calView === 'month'
@@ -19835,6 +19839,7 @@ function tkShowModal(html) {
 function tkCloseModal() { document.getElementById('tk-modal').style.display = 'none'; }
 
 function tkOpenTaskModal(id, presetDue) {
+  TK._fromIssue = null;
   const t = id ? TK.tasks[id] : null;
   if (id && !t) return;
   const me = tkMe();
@@ -19932,6 +19937,8 @@ async function tkSaveTask(id) {
     cid: row.dataset.cid, text: row.querySelector('input').value.trim(), order: i
   })).filter(r => r.text);
   const newStatus = document.getElementById('tkf-status')?.value || null;
+  const fromIssue = TK._fromIssue;
+  if (fromIssue && !id) { const asg = document.getElementById('tkf-assignee')?.value; setTimeout(() => isAfterTaskSaved(title, asg), 0); }
   tkCloseModal();
   if (id) {
     const t = TK.tasks[id];
@@ -20668,6 +20675,10 @@ async function renderHomeTodayCard(noFetch) {
   }
   html += `<div class="tk-today-sec"><div class="h">📅 今日の予定</div>${evs.length ? evs.map(e => `<div class="tk-today-row"><span class="tm">${tkEsc(e.start || '終日')}</span><span class="t" onclick="tkOpenEventView('${e.id}')">${tkEsc(e.title)}${e.place ? ' <span style="color:var(--text-muted);font-size:11px">📍' + tkEsc(e.place) + '</span>' : ''}</span></div>`).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">予定はありません</div>'}</div>`;
   if (myOverdue.length) html += `<div class="tk-today-sec"><div class="h danger">⚠️ 期限切れ（${myOverdue.length}件）</div>${myOverdue.map(row).join('')}</div>`;
+  {
+    const n = typeof isOpenCount === 'function' ? isOpenCount() : 0, nn = n ? isUnseenCount() : 0;
+    if (n) html += `<div class="home-is-line" onclick="TK.tab='issues';openTasksScreen('issues')">📋 みんなの課題 <b>${n}件</b>${nn ? `<span style="background:#2563eb;color:#fff;border-radius:8px;padding:0 6px;font-size:10.5px;font-weight:700">新着 ${nn}</span>` : ''}<span style="margin-left:auto;white-space:nowrap">確認 →</span></div>`;
+  }
   html += `<div class="tk-today-sec"><div class="h">✅ 今日のタスク</div>${myToday.length ? myToday.map(row).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">今日が期限のタスクはありません</div>'}</div>`;
   if (teamOverdue || unassigned) {
     html += `<div class="tk-today-team" onclick="TK.filter='people';openTasksScreen('tasks')">👥 ${[teamOverdue ? `ほかの人の期限切れ ${teamOverdue}件` : '', unassigned ? `担当者未定 ${unassigned}件` : ''].filter(Boolean).join('／')} → 確認する</div>`;
@@ -21341,6 +21352,257 @@ function cmExcel() {
   XLSX.utils.book_append_sheet(wb, ws, '通勤実績');
   XLSX.writeFile(wb, `通勤実績表_${name}_${cmYm()}.xlsx`);
   showToast('Excelを出力しました');
+}
+</script>
+
+<style>
+/* ── みんなの課題（まだ決まっていないこと・できていないこと） ── */
+.is-intro { font-size:12px; color:var(--text-sub); background:var(--white); border:1px dashed var(--border); border-radius:12px; padding:9px 12px; margin-bottom:10px; line-height:1.6; }
+.is-sec { font-size:13px; font-weight:700; margin:14px 2px 6px; display:flex; align-items:center; gap:6px; }
+.is-sec .n { font-size:11px; padding:0 7px; border-radius:10px; background:var(--surface); border:1px solid var(--border); color:var(--text-sub); }
+.is-item { background:var(--white); border:1px solid var(--border); border-radius:12px; padding:10px 12px; margin-bottom:8px; cursor:pointer; position:relative; }
+.is-item.unseen { border-color:#93c5fd; box-shadow:0 0 0 1px #bfdbfe inset; }
+.is-item .t { font-size:14.5px; font-weight:700; padding-right:44px; line-height:1.4; }
+.is-item .m { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; font-size:11px; color:var(--text-sub); align-items:center; }
+.is-badge { font-size:10.5px; font-weight:700; padding:1px 8px; border-radius:10px; background:#f3f4f6; color:#374151; }
+.is-badge.open { background:#fee2e2; color:#991b1b; }
+.is-badge.discuss { background:#fef3c7; color:#92400e; }
+.is-badge.doing { background:#dbeafe; color:#1e40af; }
+.is-badge.resolved { background:#d1fae5; color:#065f46; }
+.is-badge.stale { background:#fff7ed; color:#c2410c; }
+.is-new { position:absolute; top:10px; right:10px; font-size:10px; font-weight:800; color:#fff; background:#2563eb; border-radius:8px; padding:1px 6px; }
+.is-status-btns { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 12px; }
+.is-status-btns button { padding:7px 11px; font-size:12.5px; font-weight:700; border-radius:20px; border:1.5px solid var(--border); background:var(--white); cursor:pointer; font-family:inherit; color:var(--text-sub); }
+.is-status-btns button.on { border-color:#0f766e; background:#0f766e; color:#fff; }
+.is-cmts { border-top:1px solid var(--border); margin-top:10px; padding-top:8px; }
+.is-cmt { padding:7px 0; border-bottom:1px dashed #eee; font-size:13px; line-height:1.55; }
+.is-cmt .by { font-size:11px; color:var(--text-muted); margin-bottom:2px; }
+.is-cmt.sys { color:var(--text-sub); font-size:12px; }
+.is-seen { font-size:11.5px; color:var(--text-sub); margin-top:10px; line-height:1.7; }
+.is-seen b { color:#065f46; }
+.is-btns { flex-wrap:wrap; }
+.is-btns button { flex:1 1 40% !important; min-width:120px; }
+.home-is-line { display:flex; align-items:center; gap:8px; padding:9px 12px; margin:8px 0 0; background:#eff6ff; border:1px solid #bfdbfe; color:#1e3a8a; border-radius:10px; font-size:12.5px; cursor:pointer; }
+</style>
+<script>
+// ── みんなの課題 ──
+// 期限や日付がまだ決まっていない「やらなければいけないが、できていないこと」を全員で共有する。
+// /issues/{id}：title, detail, status(open=未着手／discuss=検討中／doing=対応中／resolved=解決済み),
+// assignee（空＝未定）, raisedBy, createdAt, updatedAt, updatedBy, comments{}, seen{人: 見た時刻}
+const IS_STATUS = { open: '未着手', discuss: '検討中', doing: '対応中', resolved: '解決済み' };
+const IS_STALE_DAYS = 7;
+function isList() { return Object.entries(TK.issues || {}).filter(([, v]) => v && v.title).map(([id, v]) => ({ ...v, id })); }
+function isSeenAt(it, email) { return Number(((it.seen || {})[tkKey(email || tkMe())]) || 0); }
+function isUnseen(it) { return (it.updatedAt || it.createdAt || 0) > isSeenAt(it) && it.updatedBy !== tkMe(); }
+function isStaleDays(it) {
+  if (it.status === 'resolved') return 0;
+  const d = Math.floor((Date.now() - (it.updatedAt || it.createdAt || Date.now())) / 86400000);
+  return d >= IS_STALE_DAYS ? d : 0;
+}
+function isComments(it) { return Object.entries(it.comments || {}).map(([cid, c]) => ({ ...c, cid })).sort((a, b) => (a.at || 0) - (b.at || 0)); }
+function isOpenCount() { return isList().filter(i => i.status !== 'resolved').length; }
+function isUnseenCount() { return isList().filter(i => i.status !== 'resolved' && isUnseen(i)).length; }
+
+function isItemHtml(it) {
+  const st = it.status || 'open';
+  const stale = isStaleDays(it);
+  const cm = isComments(it).filter(c => !c.sys).length;
+  const members = tkMemberEmails();
+  const seenN = members.filter(e => isSeenAt(it, e) >= (it.updatedAt || it.createdAt || 0) || it.updatedBy === e).length;
+  return `<div class="is-item ${isUnseen(it) ? 'unseen' : ''}" onclick="isOpenView('${it.id}')">
+    ${isUnseen(it) ? '<span class="is-new">NEW</span>' : ''}
+    <div class="t">${tkEsc(it.title)}</div>
+    <div class="m">
+      <span class="is-badge ${st}">${IS_STATUS[st]}</span>
+      <span>${it.assignee ? '👤 ' + tkEsc(tkName(it.assignee)) : '<span style="color:#b45309">👤 担当未定</span>'}</span>
+      ${cm ? `<span>💬 ${cm}</span>` : ''}
+      ${stale ? `<span class="is-badge stale">⏳ ${stale}日間動きなし</span>` : ''}
+      <span style="margin-left:auto">${st === 'resolved' ? '✅ ' + tkStamp(it.resolvedAt) : `👀 確認 ${seenN}/${members.length}人`}</span>
+    </div>
+  </div>`;
+}
+function isTabHtml() {
+  const all = isList();
+  const showDone = TK.isShowResolved;
+  const open = all.filter(i => i.status !== 'resolved');
+  const sortFn = (a, b) => (isUnseen(b) - isUnseen(a)) || ((b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+  let html = `<div class="tk-toolbar">
+      <button class="tk-chip ${!showDone ? 'active' : ''}" onclick="TK.isShowResolved=false;renderTasksScreen(true)">未解決 ${open.length}</button>
+      <button class="tk-chip ${showDone ? 'active' : ''}" onclick="TK.isShowResolved=true;renderTasksScreen(true)">解決済み</button>
+      <button class="tk-add-btn" onclick="isOpenEdit()">＋ 課題を追加</button>
+    </div>
+    <div class="is-intro">📋 期限や担当がまだ決まっていない「やらなければいけないけれど、できていないこと」を全員で共有する場所です。気づいたことは誰でも追加できます。やることと担当が決まったら「タスクにする」でタスクに移せます。</div>`;
+  if (showDone) {
+    const done = all.filter(i => i.status === 'resolved').sort((a, b) => (b.resolvedAt || 0) - (a.resolvedAt || 0));
+    html += done.length ? done.map(isItemHtml).join('') : '<div class="tk-list"><div class="tk-empty">解決済みの課題はまだありません</div></div>';
+    return html;
+  }
+  if (!open.length) return html + '<div class="tk-list"><div class="tk-empty">未解決の課題はありません 🎉</div></div>';
+  [['open', '🆕 未着手'], ['discuss', '💬 検討中'], ['doing', '▶ 対応中']].forEach(([st, label]) => {
+    const list = open.filter(i => (i.status || 'open') === st).sort(sortFn);
+    if (!list.length) return;
+    html += `<div class="is-sec">${label}<span class="n">${list.length}</span></div>` + list.map(isItemHtml).join('');
+  });
+  return html;
+}
+
+// 詳細を開く（開いた時点で「確認済み」になる）
+function isOpenView(id) {
+  const it = (TK.issues || {})[id];
+  if (!it) return;
+  tkShowModal(`<div id="tk-issue-view" data-id="${id}">${isViewHtml(id)}</div>`);
+  isMarkSeen(id);
+}
+function isMarkSeen(id) {
+  const it = (TK.issues || {})[id];
+  if (!it) return;
+  const now = Date.now();
+  if (!it.seen) it.seen = {};
+  if (isSeenAt(it) >= (it.updatedAt || it.createdAt || 0)) return;
+  it.seen[tkKey(tkMe())] = now;
+  tkReq(`issues/${id}/seen/${tkKey(tkMe())}`, 'PUT', now).catch(() => {});
+  isRefreshView();
+  renderTasksScreenIfIssues();
+}
+function isViewHtml(id) {
+  const it = (TK.issues || {})[id];
+  if (!it) return '<div class="tk-empty">この課題は削除されました</div>';
+  const st = it.status || 'open';
+  const members = tkMemberEmails();
+  const upd = it.updatedAt || it.createdAt || 0;
+  const seen = members.filter(e => isSeenAt(it, e) >= upd || it.updatedBy === e);
+  const notYet = members.filter(e => !seen.includes(e));
+  const canEdit = it.raisedBy === tkMe() || isAdmin();
+  return `<h3 style="margin-bottom:4px">${tkEsc(it.title)}</h3>
+    <div style="font-size:11.5px;color:var(--text-muted)">気づいた人：${tkEsc(tkName(it.raisedBy))}（${tkStamp(it.createdAt)}）${isStaleDays(it) ? `　<span class="is-badge stale">⏳ ${isStaleDays(it)}日間動きなし</span>` : ''}</div>
+    ${it.detail ? `<div class="tk-detail-memo" style="margin-top:10px">${tkEsc(it.detail).replace(/\n/g, '<br>')}</div>` : ''}
+    <div style="font-size:12px;font-weight:700;color:var(--text-sub);margin-top:12px">状態</div>
+    <div class="is-status-btns">${Object.entries(IS_STATUS).map(([k, l]) => `<button class="${st === k ? 'on' : ''}" onclick="isSetStatus('${id}','${k}')">${l}</button>`).join('')}</div>
+    <div class="tk-f"><label>担当（決まっていなければ空のままでOK）</label><select onchange="isSetAssignee('${id}', this.value)">
+      <option value="">担当未定</option>${members.map(e => `<option value="${tkEsc(e)}" ${e === it.assignee ? 'selected' : ''}>${tkEsc(tkName(e))}</option>`).join('')}</select></div>
+    <div class="is-cmts"><div style="font-size:12px;font-weight:700;color:var(--text-sub)">💬 進んだこと・メモ</div>
+      ${isComments(it).map(c => `<div class="is-cmt ${c.sys ? 'sys' : ''}"><div class="by">${tkEsc(tkName(c.by))}・${tkStamp(c.at)}</div>${tkEsc(c.text).replace(/\n/g, '<br>')}</div>`).join('') || '<div class="is-cmt sys">まだありません</div>'}
+      <div class="tk-f" style="margin-top:8px"><textarea id="is-cmt-in" placeholder="例：〇〇さんに確認したら△△とのこと／見積もりを依頼した"></textarea></div>
+      <button class="cm-btn primary" style="width:100%;padding:10px" onclick="isAddComment('${id}')">書き込む</button>
+    </div>
+    <div class="is-seen"><b>👀 確認済み：</b>${seen.map(e => tkEsc(tkName(e))).join('、') || '—'}${notYet.length ? `<br><span style="color:#b45309">まだ見ていない：${notYet.map(e => tkEsc(tkName(e))).join('、')}</span>` : ''}</div>
+    <div class="tk-btns is-btns">
+      ${canEdit ? `<button class="tk-btn-del" onclick="isDelete('${id}')">削除</button><button class="tk-btn-cancel" onclick="isOpenEdit('${id}')">✏️ 編集</button>` : ''}
+      ${st !== 'resolved' ? `<button class="tk-btn-cancel" onclick="isToTask('${id}')">✅ タスクにする</button>` : ''}
+      <button class="tk-btn-save" onclick="tkCloseModal()">閉じる</button>
+    </div>`;
+}
+function isRefreshView() {
+  const v = document.getElementById('tk-issue-view');
+  if (v && document.getElementById('tk-modal').style.display === 'flex') v.innerHTML = isViewHtml(v.dataset.id);
+}
+async function isPatch(id, patch, sysText) {
+  const it = TK.issues[id];
+  if (!it) return;
+  const me = tkMe(), now = Date.now();
+  const prev = JSON.parse(JSON.stringify(it));
+  const body = { ...patch, updatedAt: now, updatedBy: me, ['seen/' + tkKey(me)]: now };
+  Object.assign(it, patch, { updatedAt: now, updatedBy: me });
+  if (!it.seen) it.seen = {}; it.seen[tkKey(me)] = now;
+  if (sysText) {
+    const cid = 'c' + now.toString(36);
+    if (!it.comments) it.comments = {};
+    it.comments[cid] = { text: sysText, by: me, at: now, sys: true };
+    body['comments/' + cid] = it.comments[cid];
+  }
+  Object.keys(it).forEach(k => { if (it[k] === null) delete it[k]; });
+  isRefreshView(); renderTasksScreenIfIssues();
+  await tkSave('issues/' + id, 'PATCH', body, () => { TK.issues[id] = prev; isRefreshView(); });
+}
+function renderTasksScreenIfIssues() {
+  if (document.getElementById('screen-tasks')?.classList.contains('active') && TK.tab === 'issues') renderTasksScreen(true);
+  tkUpdateBadges();
+  if (document.getElementById('home-today-card')) try { renderHomeTodayCard(true); } catch (e) {}
+}
+function isSetStatus(id, st) {
+  const it = TK.issues[id];
+  if (!it || (it.status || 'open') === st) return;
+  const patch = { status: st };
+  if (st === 'resolved') { patch.resolvedAt = Date.now(); patch.resolvedBy = tkMe(); } else { patch.resolvedAt = null; patch.resolvedBy = null; }
+  isPatch(id, patch, `状態を「${IS_STATUS[st]}」にしました`);
+  if (st === 'resolved') showToast('解決済みにしました');
+}
+function isSetAssignee(id, email) {
+  isPatch(id, { assignee: email || null }, email ? `担当を${tkName(email)}さんにしました` : '担当を未定に戻しました');
+}
+function isAddComment(id) {
+  const t = (document.getElementById('is-cmt-in')?.value || '').trim();
+  if (!t) { showToast('内容を入力してください'); return; }
+  const it = TK.issues[id];
+  const me = tkMe(), now = Date.now();
+  const cid = 'c' + now.toString(36);
+  const patch = {};
+  // 未着手の課題に書き込みがあったら「検討中」にする
+  if ((it.status || 'open') === 'open') patch.status = 'discuss';
+  if (!it.comments) it.comments = {};
+  it.comments[cid] = { text: t, by: me, at: now };
+  isPatch(id, { ...patch, ['comments/' + cid]: { text: t, by: me, at: now } });
+  delete it['comments/' + cid];
+}
+// 追加・編集
+function isOpenEdit(id) {
+  const it = id ? TK.issues[id] : null;
+  tkShowModal(`<h3>${it ? '課題の編集' : '📋 課題を追加'}</h3>
+    <div class="tk-f"><label>何ができていない？何を決めないといけない？</label><input type="text" id="is-title" value="${tkEsc(it ? it.title : '')}" placeholder="例：倉庫の棚が足りない／返品の流れを決める"></div>
+    <div class="tk-f"><label>詳しく（任意）</label><textarea id="is-detail" placeholder="気づいたきっかけ、困っていること、案など">${tkEsc(it ? it.detail || '' : '')}</textarea></div>
+    ${it ? '' : `<div class="tk-f"><label>担当（決まっていなければ空のままでOK）</label><select id="is-assignee"><option value="">担当未定</option>${tkMemberEmails().map(e => `<option value="${tkEsc(e)}">${tkEsc(tkName(e))}</option>`).join('')}</select></div>`}
+    <div class="tk-btns"><button class="tk-btn-cancel" onclick="${it ? `isOpenView('${id}')` : 'tkCloseModal()'}">キャンセル</button><button class="tk-btn-save" onclick="isSave(${it ? `'${id}'` : 'null'})">${it ? '保存' : '追加して全員に知らせる'}</button></div>`);
+  setTimeout(() => document.getElementById('is-title')?.focus(), 50);
+}
+async function isSave(id) {
+  const title = document.getElementById('is-title').value.trim();
+  const detail = document.getElementById('is-detail').value.trim();
+  if (!title) { showToast('内容を入力してください'); return; }
+  if (!TK.issues) TK.issues = {};
+  if (id) { await isPatch(id, { title, detail }, null); isOpenView(id); return; }
+  const me = tkMe(), now = Date.now();
+  const nid = 'i' + tkNewId();
+  const rec = { title, detail, status: 'open', raisedBy: me, createdAt: now, updatedAt: now, updatedBy: me, seen: { [tkKey(me)]: now } };
+  const as = document.getElementById('is-assignee')?.value;
+  if (as) rec.assignee = as;
+  TK.issues[nid] = rec;
+  tkCloseModal();
+  TK.tab = 'issues'; TK.isShowResolved = false;
+  renderTasksScreenIfIssues();
+  showToast('課題を追加しました。全員に通知されます');
+  await tkSave('issues/' + nid, 'PUT', rec, () => { delete TK.issues[nid]; renderTasksScreenIfIssues(); });
+}
+async function isDelete(id) {
+  const it = TK.issues[id];
+  if (!it || !await showConfirm(`「${it.title}」を削除しますか？（全員の画面から消えます。解決した場合は「解決済み」にすると記録が残ります）`)) return;
+  tkCloseModal();
+  const prev = it;
+  delete TK.issues[id];
+  renderTasksScreenIfIssues();
+  await tkSave('issues/' + id, 'DELETE', undefined, () => { TK.issues[id] = prev; renderTasksScreenIfIssues(); });
+}
+// タスクにする：タスク追加画面を、課題の内容を入れた状態で開く。保存すると課題に記録して「対応中」にする
+function isToTask(id) {
+  const it = TK.issues[id];
+  if (!it) return;
+  tkOpenTaskModal(null);
+  TK._fromIssue = id;
+  setTimeout(() => {
+    const t = document.getElementById('tkf-title'); if (t) t.value = it.title;
+    const d = document.getElementById('tkf-detail'); if (d) d.value = (it.detail ? it.detail + '\n' : '') + '（課題から作成）';
+    const a = document.getElementById('tkf-assignee'); if (a && it.assignee) a.value = it.assignee;
+    const due = document.getElementById('tkf-due'); if (due) due.value = '';
+  }, 30);
+}
+function isAfterTaskSaved(title, assignee) {
+  const id = TK._fromIssue;
+  TK._fromIssue = null;
+  if (!id || !TK.issues || !TK.issues[id]) return;
+  const it = TK.issues[id];
+  const patch = {};
+  if ((it.status || 'open') !== 'doing') patch.status = 'doing';
+  if (!it.assignee && assignee && assignee !== '__each__') patch.assignee = assignee;
+  isPatch(id, patch, `タスクを作成しました：「${title}」${assignee && assignee !== '__each__' ? '（担当：' + tkName(assignee) + 'さん）' : ''}`);
 }
 </script>
 
