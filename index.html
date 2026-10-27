@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-10-27a">
+<meta name="app-build" content="2026-10-27c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -105,6 +105,37 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
 .wh-sec-h .t { font-size:14px; font-weight:700; color:var(--text); }
 .wh-sec-h .n { font-size:12px; color:var(--text-sub); }
 .wh-sec-sub { font-size:11.5px; color:var(--text-muted); margin:4px 0 10px; }
+#wh-deliv-search-sticky { position:sticky; top:calc(var(--side-nav-top, 60px) + 4px); z-index:6; background:var(--white); margin:0 0 10px; padding:8px 16px 10px; border-bottom:1px solid var(--border); box-shadow:0 6px 10px -8px rgba(0,0,0,.18); }
+#wh-item-model-results { max-height:46vh; overflow-y:auto; margin-top:6px; }
+.wh-sr { display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--surface); border:1px solid var(--border); border-radius:10px; margin-bottom:6px; }
+.wh-sr-info { flex:1; min-width:0; }
+.wh-sr-model { font-size:14px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wh-sr-sub { font-size:11px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wh-sr-ref { margin-left:6px; color:#0f766e; font-weight:700; }
+.wh-sr-in { display:flex; gap:5px; flex-shrink:0; align-items:center; }
+.wh-sr-in input { width:64px !important; flex:none; min-width:0; padding:7px 8px !important; font-size:15px; border:1.5px solid var(--border); border-radius:8px; background:var(--white); box-sizing:border-box; }
+.wh-sr-in input[id^="wh-sr-p-"] { width:104px !important; }
+.wh-sr-in button { padding:8px 11px; font-size:13px; font-weight:700; border:none; border-radius:8px; background:#0f766e; color:#fff; cursor:pointer; white-space:nowrap; font-family:inherit; }
+.wh-sr.pick { cursor:pointer; }
+.wh-sr.pick:hover { border-color:#5eead4; background:#f0fdfa; }
+.wh-sr-go { font-size:12.5px; font-weight:700; color:#0f766e; white-space:nowrap; flex-shrink:0; }
+.wh-sr.sel { flex-wrap:wrap; background:#f0fdfa; border:2px solid #0f766e; }
+.wh-sr-chk { font-size:10.5px; font-weight:700; color:#0f766e; }
+.wh-sr-model.big { font-size:18px; letter-spacing:.02em; }
+.wh-sr.sel .wh-sr-in { flex:1; justify-content:flex-end; }
+.wh-sr-back { background:none; border:none; color:var(--text-sub); font-size:12px; text-decoration:underline; cursor:pointer; padding:2px 2px 6px; font-family:inherit; }
+.wh-sr-hint { font-size:10.5px; color:var(--text-muted); padding:0 2px 2px; }
+@media (max-width:520px) {
+  .wh-sr { flex-wrap:wrap; }
+  .wh-sr-info { flex-basis:100%; }
+  .wh-sr-in { flex:1; min-width:0; }
+  .wh-sr-in input { flex:1 1 0; width:auto !important; }
+  .wh-sr-in input[id^="wh-sr-p-"] { flex:1.6 1 0; width:auto !important; }
+  .wh-sr-in button { flex-shrink:0; }
+}
+.wh-drow-flash { animation:whDrowFlash 2.5s ease-out; }
+@keyframes whDrowFlash { 0%,40% { background:#ccfbf1; } 100% { background:transparent; } }
+.wh-items-card { overflow:visible !important; }
 .wh-inv-bar { position:sticky; bottom:calc(env(safe-area-inset-bottom) + 72px); z-index:5; display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding:10px 12px; border-radius:10px; background:#1f2937; color:#fff; font-size:13px; box-shadow:0 4px 14px rgba(0,0,0,0.18); }
 .wh-inv-bar b { font-weight:800; }
 .wh-inv-bar button { padding:9px 14px; font-size:13px; font-weight:700; border:none; border-radius:8px; background:#c5e8e5; color:#1f5f5a; cursor:pointer; font-family:inherit; white-space:nowrap; }
@@ -1984,12 +2015,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         </div>
         <div id="wh-item-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
         <div id="wh-jan-buyback-ref" style="display:none;margin-top:6px"></div>
-        <div style="margin-top:14px">
-          <div class="field-label">型番・商品名で検索して追加</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">JANコードが手元になくても、登録済みの商品から型番や商品名の一部で探せます</div>
-          <input type="text" id="wh-item-model-search" placeholder="例：NW-500" oninput="searchWhItemByModel()">
-          <div id="wh-item-model-results" style="margin-top:6px"></div>
-        </div>
+        <div style="margin-top:12px;font-size:12px;color:var(--text-muted)">🔍 型番・商品名での検索は、下の「納品明細」のいちばん上にあります（明細をスクロールしても上に付いてきます）</div>
         <div id="wh-quick-register" style="display:none;margin-top:10px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px">
           <div id="wh-qr-intro" style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">この商品はまだ登録されていません。JANコードから商品情報を自動検索します</div>
           <div style="display:flex;gap:6px;margin-bottom:8px">
@@ -2044,8 +2070,16 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <span id="wh-deliv-edit-banner-text">編集中の納品書があります</span>
       <button onclick="cancelEditDeliverySlip()" style="background:none;border:none;color:#7a5a00;text-decoration:underline;font-size:12px;cursor:pointer">編集をやめる</button>
     </div>
-    <div class="card">
+    <div class="card wh-items-card">
       <div class="card-title">納品明細</div>
+      <!-- 要望：「商品が増えると下へ伸びていき、追加してから数量・金額を入れに行くのが大変」への対応。
+           検索欄を明細の上に置き、明細をスクロールしても画面の上に付いてくるようにした。
+           検索結果の行で数量・単価もその場で入れてから追加できる（空欄なら数量1・単価未入力で追加） -->
+      <div id="wh-deliv-search-sticky">
+        <div class="field-label" style="margin-bottom:4px">🔍 型番・商品名で検索して追加</div>
+        <input type="text" id="wh-item-model-search" placeholder="例：NW-500（JANコードが手元になくても探せます）" oninput="_whSrSel=null;searchWhItemByModel()" onkeydown="if(event.key==='Escape'){this.value='';_whSrSel=null;searchWhItemByModel();}if(event.key==='Enter'){event.preventDefault();whSrEnter();}">
+        <div id="wh-item-model-results"></div>
+      </div>
       <div id="wh-deliv-items" style="margin-bottom:8px"></div>
       <div id="wh-deliv-empty" style="text-align:center;padding:16px;color:var(--text-muted);font-size:13px">まだ商品が追加されていません</div>
       <div id="wh-deliv-total" style="display:none;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid var(--border);font-size:14px;font-weight:700;color:var(--text)"></div>
@@ -4449,26 +4483,86 @@ function searchWhItemByModel() {
       </div>`;
     return;
   }
-  resultsEl.innerHTML = matches.map(p => `
-    <div onclick="selectWhItemModelResult('${p._key}')" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer">
-      <div style="min-width:0">
-        <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name || ''}</div>
-        <div style="font-size:11px;color:var(--text-muted)">${p.model || '型番未登録'}・在庫${p.stock ?? 0}個</div>
+  // 要望：「入力途中は別の商品もヒットするので、型番を間違えたまま数量・金額を入れてしまうと損失になる。
+  // 候補は今のように一覧で出し、タップした商品だけに数量・金額の欄を出したい」への対応
+  if (_whSrSel && !matches.some(p => p._key === _whSrSel)) _whSrSel = null;
+  const sel = _whSrSel ? matches.find(p => p._key === _whSrSel) : null;
+  const refOf = p => {
+    try {
+      const hit = window._buybackPriceRef && whItemBuybackRec({ jan: p.jan, model: p.model, name: p.name });
+      if (hit && hit.rec && hit.rec.q && hit.rec.q.length) return `相場 ¥${hit.rec.q[0][1].toLocaleString('ja-JP')}（${escapeHtmlMain(hit.rec.q[0][0])}）`;
+    } catch (e) {}
+    return '';
+  };
+  if (sel) {
+    const ref = refOf(sel);
+    resultsEl.innerHTML = `
+    <div class="wh-sr sel">
+      <div class="wh-sr-info" style="flex-basis:100%">
+        <div class="wh-sr-chk">この商品を追加します</div>
+        <div class="wh-sr-model big">${escapeHtmlMain(sel.model || '型番未登録')}</div>
+        <div class="wh-sr-sub">${escapeHtmlMain(sel.name || '')}${sel.name ? '・' : ''}在庫${sel.stock ?? 0}個${sel.jan ? '・JAN ' + escapeHtmlMain(sel.jan) : ''}${ref ? `<span class="wh-sr-ref">${ref}</span>` : ''}</div>
       </div>
-      <div style="font-size:12px;color:var(--gold-dark);font-weight:600;white-space:nowrap;flex-shrink:0">＋ 追加</div>
+      <div class="wh-sr-in">
+        <input type="number" inputmode="numeric" min="1" id="wh-sr-q-${sel._key}" placeholder="数量" title="数量（空欄なら1）" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('wh-sr-p-${sel._key}').focus();}if(event.key==='Escape'){whSrUnselect();}">
+        <input type="number" inputmode="numeric" min="0" id="wh-sr-p-${sel._key}" placeholder="単価" title="単価（空欄でもOK）" onkeydown="if(event.key==='Enter'){event.preventDefault();selectWhItemModelResult('${sel._key}');}if(event.key==='Escape'){whSrUnselect();}">
+        <button type="button" onclick="selectWhItemModelResult('${sel._key}')">＋ 追加</button>
+      </div>
     </div>
-  `).join('');
+    <button type="button" class="wh-sr-back" onclick="whSrUnselect()">← 別の商品を選ぶ（候補 ${matches.length}件）</button>
+    <div class="wh-sr-hint">数量・単価は分かっていれば入力（空欄なら数量1で追加し、あとから明細で入力できます）。Enterキーでも追加できます</div>`;
+    return;
+  }
+  resultsEl.innerHTML = matches.map(p => {
+    const ref = refOf(p);
+    return `
+    <div class="wh-sr pick" onclick="whSrSelect('${p._key}')">
+      <div class="wh-sr-info">
+        <div class="wh-sr-model">${escapeHtmlMain(p.model || '型番未登録')}</div>
+        <div class="wh-sr-sub">${escapeHtmlMain(p.name || '')}${p.name ? '・' : ''}在庫${p.stock ?? 0}個${ref ? `<span class="wh-sr-ref">${ref}</span>` : ''}</div>
+      </div>
+      <div class="wh-sr-go">選ぶ ›</div>
+    </div>`;
+  }).join('') + `<div class="wh-sr-hint">商品をタップすると、数量・単価を入れて追加できます${matches.length === 1 ? '（候補が1件なので Enter キーでも選べます）' : ''}</div>`;
+}
+let _whSrSel = null;
+function whSrSelect(key) {
+  _whSrSel = key;
+  searchWhItemByModel();
+  setTimeout(() => document.getElementById('wh-sr-q-' + key)?.focus({ preventScroll: true }), 30);
+}
+function whSrUnselect() {
+  _whSrSel = null;
+  searchWhItemByModel();
+  document.getElementById('wh-item-model-search')?.focus({ preventScroll: true });
+}
+// 検索欄で Enter：候補が1件、または型番が完全に一致する商品が1件だけのときはそれを選ぶ
+function whSrEnter() {
+  const q = (document.getElementById('wh-item-model-search')?.value || '').trim();
+  if (!q) return;
+  const qNorm = normalizeModelStr(q.toLowerCase());
+  const matches = products.filter(p => (p.model && qNorm && normalizeModelStr(p.model).includes(qNorm)) || (p.name && p.name.toLowerCase().includes(q.toLowerCase())));
+  const exact = matches.filter(p => p.model && normalizeModelStr(p.model) === qNorm);
+  const pick = matches.length === 1 ? matches[0] : exact.length === 1 ? exact[0] : null;
+  if (pick) whSrSelect(pick._key);
+  else if (matches.length) showToast('候補が複数あります。追加する商品をタップしてください');
 }
 
 // 検索結果から商品を選ぶと、JANでスキャンした時と同じ経路（addWhItemRow）で納品明細に追加される
 function selectWhItemModelResult(productKey) {
   const prod = products.find(p => p._key === productKey);
   if (!prod) return;
-  addWhItemRow(prod);
+  const q = parseInt(document.getElementById('wh-sr-q-' + productKey)?.value, 10);
+  const pr = document.getElementById('wh-sr-p-' + productKey)?.value;
+  const opts = {};
+  if (q > 0) opts.qty = q;
+  if (pr !== undefined && pr !== '' && Number(pr) >= 0) opts.price = Math.round(Number(pr));
+  addWhItemRow(prod, opts);
   const input = document.getElementById('wh-item-model-search');
-  if (input) input.value = '';
+  if (input) { input.value = ''; input.focus({ preventScroll: true }); }
   const resultsEl = document.getElementById('wh-item-model-results');
   if (resultsEl) resultsEl.innerHTML = '';
+  _whSrSel = null;
 }
 
 // スキャン（または入力）されたJANコードから価格.comを自動検索し、商品名・型番・メーカーを推定して埋める。
@@ -4649,8 +4743,10 @@ async function submitWhQuickRegister() {
 // 単価は常に0円（未入力）から始める。以前は「その取引先・その商品で前回使った単価」を
 // suggestUnitPrice()で自動反映していたが、同じ取引先・同じ商品でも都度金額が変わることが多く、
 // 前回の金額を毎回消す手間になっていたため廃止した（要望：前回の金額を再度反映させないでほしい）。
-function addWhItemRow(prod) {
-  const defaultPrice = 0;
+function addWhItemRow(prod, opts) {
+  opts = opts || {};
+  const addQty = opts.qty > 0 ? opts.qty : 1;
+  const defaultPrice = opts.price > 0 ? opts.price : 0;
   // 委託の印が付いた行には合流させない（一部だけ委託にする機能により、同じ商品・同じ単価の
   // 行が「通常」「委託」で並んで存在しうるようになったため。委託行が先に来るよう並べ替えられた
   // 場合でも、誤って委託済みの数量に上乗せしてしまわないようにする）
@@ -4658,18 +4754,28 @@ function addWhItemRow(prod) {
   // 定位置に在庫があれば定位置、無ければ在庫のある事務所（清洲から出すときは行ごとに切り替える）
   const defLoc = getDefaultOutLoc(prod);
   const existing = _whDelivItems.find(it => it.productKey === prod._key && it.unitPrice === defaultPrice && !it._consignMarked && (it.loc || defLoc) === defLoc);
+  let row;
   if (existing) {
-    existing.qty += 1;
+    existing.qty += addQty;
     existing.amount = existing.qty * existing.unitPrice;
     if (!existing.loc) existing.loc = defLoc;
+    row = existing;
   } else {
-    _whDelivItems.push({ productKey: prod._key, jan: prod.jan, name: prod.name, model: prod.model || '', qty: 1, unitPrice: defaultPrice, amount: defaultPrice, loc: defLoc, _uid: _whDelivItemUidSeq++ });
+    row = { productKey: prod._key, jan: prod.jan, name: prod.name, model: prod.model || '', qty: addQty, unitPrice: defaultPrice, amount: addQty * defaultPrice, loc: defLoc, _uid: _whDelivItemUidSeq++ };
+    _whDelivItems.push(row);
   }
   renderWhDelivItems();
   saveWhDelivDraft();
+  // 追加（または数量を足した）行を数秒間うっすら色付けして、どこに入ったか分かるようにする
+  try {
+    const i = _whDelivItems.indexOf(row);
+    const el = document.querySelectorAll('#wh-deliv-items .wh-drow')[i];
+    if (el) { el.classList.add('wh-drow-flash'); setTimeout(() => el.classList.remove('wh-drow-flash'), 2500); }
+  } catch (e) {}
   // 商品名が空欄のまま仮登録した商品も追加できるよう、表示名が無い場合は型番・JANコードで代用する
-  const displayName = prod.name || prod.model || (prod.jan ? 'JAN:' + prod.jan : '') || '商品';
-  showToast(`${displayName} を追加しました（${existing ? existing.qty : 1}個）`);
+  const displayName = prod.model || prod.name || (prod.jan ? 'JAN:' + prod.jan : '') || '商品';
+  const n = _whDelivItems.indexOf(row) + 1;
+  showToast(`${displayName} を追加しました（${row.qty}個${row.unitPrice ? '・¥' + row.unitPrice.toLocaleString('ja-JP') : '・単価未入力'}／${n}行目）`);
 }
 
 // 「傷・潰れなどで1個だけ単価を変える」で切り分けた行を削除（取り消す）した場合は、
