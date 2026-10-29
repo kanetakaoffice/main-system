@@ -1029,6 +1029,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 
   <!-- 仕入入力フォーム -->
   <div id="screen-purchase" class="screen">
+  <div class="cm-switch" id="pur-com-switch" style="display:none"><button class="active">🛒 仕入</button><button onclick="openCommissionScreen()">💰 仕入歩合</button></div>
   <div class="biz-grid"><div class="biz-main">
     <div id="pur-alert-box" class="alert">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -1283,6 +1284,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   <div id="screen-tasks" class="screen"></div>
   <!-- マイカー通勤（通勤実績表 兼 申請書） -->
   <div id="screen-commute" class="screen"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><div style="font-size:20px;font-weight:700;flex:1">🚗 マイカー通勤</div><button class="cm-btn cm-home-btn" onclick="showScreen('home')">‹ HOME</button></div><div id="cm-root"></div></div>
+  <div id="screen-commission" class="screen"><div class="cm-switch"><button onclick="showScreen('purchase')">🛒 仕入</button><button class="active">💰 仕入歩合</button></div><div id="com-root"></div></div>
 
 <!-- 一般ユーザー履歴スクリーン -->
   <div id="screen-myhistory" class="screen">
@@ -16063,6 +16065,7 @@ function showScreen(name) {
   if (name === 'settings')    initSettingsScreen();
   if (name === 'myhistory')   renderMyHistory();
   if (name === 'tasks')       renderTasksScreen();
+  if (name === 'purchase' && typeof comUpdateSwitch === 'function') comUpdateSwitch();
   if (window.bzRefreshSidePanels) window.bzRefreshSidePanels();
 }
 
@@ -21730,6 +21733,400 @@ function isAfterTaskSaved(title, assignee) {
   if ((it.status || 'open') !== 'doing') patch.status = 'doing';
   if (!it.assignee && assignee && assignee !== '__each__') patch.assignee = assignee;
   isPatch(id, patch, `タスクを作成しました：「${title}」${assignee && assignee !== '__each__' ? '（担当：' + tkName(assignee) + 'さん）' : ''}`);
+}
+</script>
+
+<style>
+/* ── 仕入歩合（仕入れ担当の歩合計算）── */
+#com-root { display:flex; flex-direction:column; gap:14px; }
+#com-root .com-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+#com-root .com-month { display:flex; align-items:center; gap:4px; font-size:16px; font-weight:700; }
+#com-root .com-month button { width:32px; height:32px; border-radius:8px; border:1.5px solid var(--border); background:var(--white); cursor:pointer; font-size:16px; color:var(--text); font-family:inherit; }
+#com-root select, #com-root input { font:inherit; font-size:14px; padding:8px 10px; border:1.5px solid var(--border); border-radius:8px; background:var(--white); color:var(--text); min-width:0; width:100%; box-sizing:border-box; }
+#com-root .com-bar select { width:auto; }
+#com-root .com-tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+#com-root .com-tiles.two { grid-template-columns:repeat(2,1fr); }
+#com-root .com-tiles div { background:var(--white); padding:10px 12px; min-width:0; }
+#com-root .com-tiles span { display:block; font-size:11px; color:var(--text-muted); font-weight:700; }
+#com-root .com-tiles b { font-size:18px; font-variant-numeric:tabular-nums; }
+#com-root .com-tiles .hl b { color:var(--teal); }
+@media (max-width:640px) { #com-root .com-tiles { grid-template-columns:repeat(2,1fr); } }
+#com-root .com-card { background:var(--white); border:1px solid var(--border); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:12px; }
+#com-root .com-card h3 { margin:0; font-size:14px; font-weight:700; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+#com-root .com-card h3 small { font-size:11px; font-weight:400; color:var(--text-muted); }
+#com-root .com-scroll { overflow-x:auto; }
+#com-root table { border-collapse:collapse; width:100%; font-size:13px; font-variant-numeric:tabular-nums; }
+#com-root th, #com-root td { padding:7px 8px; border-bottom:1px solid var(--border); text-align:left; white-space:nowrap; }
+#com-root th { font-size:11px; color:var(--text-muted); background:var(--surface); font-weight:700; }
+#com-root .r { text-align:right; }
+#com-root .neg { color:#b91c1c; }
+#com-root .pos { color:#0f766e; }
+#com-root .com-split { height:8px; border-radius:4px; background:var(--surface); overflow:hidden; min-width:80px; }
+#com-root .com-split i { display:block; height:100%; background:var(--teal); }
+#com-root .com-form { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; align-items:end; }
+#com-root label { display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--text-muted); font-weight:700; }
+#com-root .com-methods { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+@media (max-width:760px) { #com-root .com-methods { grid-template-columns:1fr; } }
+#com-root .com-method { border:1.5px solid var(--border); border-radius:10px; padding:10px; display:flex; flex-direction:column; gap:6px; cursor:pointer; }
+#com-root .com-method.on { border-color:var(--teal); background:var(--teal-bg); }
+#com-root .com-method b { font-size:13px; }
+#com-root .com-method p { margin:0; font-size:11.5px; color:var(--text-sub); line-height:1.5; }
+#com-root .com-params { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:6px; }
+#com-root .com-note { font-size:11.5px; color:var(--text-muted); line-height:1.6; margin:0; }
+#com-root .com-rule { font-size:13px; padding:8px 10px; border-radius:8px; background:var(--teal-bg); color:var(--teal); font-weight:700; }
+#com-root .com-staff { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+#com-root .com-chip { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:20px; background:var(--surface); font-size:12px; }
+#com-root .com-chip button { border:none; background:none; cursor:pointer; color:var(--text-muted); font-size:14px; padding:0; }
+#com-root .com-rowbtn { padding:4px 8px; font-size:12px; border-radius:6px; border:1px solid var(--border); background:var(--white); cursor:pointer; font-family:inherit; }
+</style>
+
+<script>
+// ── 仕入歩合 ──
+// 要望：仕入れ担当の従業員に、仕入れの利益の一定％を歩合として支払う。その計算画面。
+// 見える範囲：Hina・代表＝全員分の歩合・会社に残る額・ルール設定／歩合対象者（仕入れ担当）＝自分の明細と歩合額だけ／
+// それ以外の人には切り替えボタン自体を出さない。データの読み書きはFirebaseのセキュリティルールでも同じ範囲に制限する
+// （画面で隠すだけでは開発者ツールから読めてしまうため）。
+// 保存先：/commission/settings（rule＝歩合ルール、staff/{メールキー}＝歩合対象者）、
+//         /commission/entries/{メールキー}/{id}（仕入れ明細。日付・店舗名・型番・数量・仕入単価・売単価・経費）
+const COM_OWNERS = ['hinanzel27@icloud.com', 'kntk.k_11@icloud.com'];
+const COM_DEFAULT_STAFF = ['aoena1212@icloud.com'];
+const COM_DEFAULT_RULE = { method: 'flat', flatRate: 10, t1: 500000, r1: 5, t2: 1000000, r2: 10, r3: 15, base: 300000, overRate: 20 };
+const COM = { loaded: false, ym: null, filter: '', settings: null, entries: {}, isStaff: null, editing: null, draftRule: null };
+
+function comIsOwner() { return COM_OWNERS.includes(String(tkMe() || '').toLowerCase()); }
+function comRule() { return { ...COM_DEFAULT_RULE, ...((COM.settings && COM.settings.rule) || {}) }; }
+function comStaffList() {
+  const s = (COM.settings && COM.settings.staff) || {};
+  return Object.values(s).map(x => x.email).filter(Boolean).sort();
+}
+const comYen = n => (n < 0 ? '−¥' : '¥') + Math.abs(Math.round(n)).toLocaleString('ja-JP');
+const comPct = n => (Math.round(n * 10) / 10) + '%';
+const comEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const comNum = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+
+// 計算：明細ごとの利益＝売単価×数量−仕入単価×数量−経費。歩合は担当者ごとの月の利益合計にルールを当てて決める
+const comCost = e => (Number(e.cost) || 0) * (Number(e.qty) || 0);
+const comSales = e => (Number(e.price) || 0) * (Number(e.qty) || 0);
+const comProfit = e => comSales(e) - comCost(e) - (Number(e.expense) || 0);
+function comCommission(P, ru, m) {
+  m = m || ru.method;
+  if (P <= 0) return 0;
+  if (m === 'flat') return P * ru.flatRate / 100;
+  if (m === 'tier') {
+    const a = Math.min(P, ru.t1), b = Math.max(0, Math.min(P, ru.t2) - ru.t1), c = Math.max(0, P - ru.t2);
+    return a * ru.r1 / 100 + b * ru.r2 / 100 + c * ru.r3 / 100;
+  }
+  if (m === 'over') return Math.max(0, P - ru.base) * ru.overRate / 100;
+  return 0;
+}
+function comRuleText(ru) {
+  if (ru.method === 'tier') return `段階制：${ru.t1 / 10000}万円まで${ru.r1}%／${ru.t2 / 10000}万円まで${ru.r2}%／超えた分${ru.r3}%`;
+  if (ru.method === 'over') return `目標超過型：月の利益${ru.base / 10000}万円を超えた分の${ru.overRate}%`;
+  return `一律：月の利益の${ru.flatRate}%`;
+}
+
+// 仕入画面の上の切り替えボタン：Hina・代表、または歩合対象者にだけ表示する
+async function comUpdateSwitch() {
+  const sw = document.getElementById('pur-com-switch');
+  if (!sw) return;
+  if (comIsOwner()) { sw.style.display = ''; return; }
+  if (COM.isStaff === null || COM.isStaffFor !== tkMe()) {
+    COM.isStaffFor = tkMe();
+    try { COM.isStaff = !!(await tkReq('commission/settings/staff/' + tkKey(tkMe()))); }
+    catch (e) { COM.isStaff = false; }
+  }
+  sw.style.display = COM.isStaff ? '' : 'none';
+}
+
+async function openCommissionScreen() {
+  if (!comIsOwner() && COM.isStaff === false) return;
+  if (!TK.loaded) { try { await tkLoad(true); } catch (e) {} }
+  if (!COM.ym) { const d = new Date(); COM.ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+  showScreen('commission');
+  await comLoad();
+}
+
+async function comLoad() {
+  const root = document.getElementById('com-root');
+  if (root && !COM.loaded) root.innerHTML = '<div class="tk-empty">読み込み中…</div>';
+  const me = tkMe();
+  try {
+    if (comIsOwner()) {
+      const [settings, entries] = await Promise.all([tkReq('commission/settings'), tkReq('commission/entries')]);
+      COM.settings = settings;
+      // 初回：歩合ルールと歩合対象者（仕入れ担当）の初期値を保存しておく。これが無いと対象者本人が画面を開けない
+      if (!COM.settings || !COM.settings.staff) {
+        const staff = {};
+        COM_DEFAULT_STAFF.forEach(e => { staff[tkKey(e)] = { email: e }; });
+        COM.settings = { rule: comRule(), staff, ...(COM.settings || {}) };
+        COM.settings.staff = { ...staff, ...((settings && settings.staff) || {}) };
+        await tkReq('commission/settings', 'PATCH', { rule: COM.settings.rule, staff: COM.settings.staff });
+      }
+      COM.entries = entries || {};
+    } else {
+      const [settings, mine] = await Promise.all([tkReq('commission/settings'), tkReq('commission/entries/' + tkKey(me))]);
+      COM.settings = settings;
+      COM.entries = { [tkKey(me)]: mine || {} };
+    }
+    COM.loaded = true;
+  } catch (e) {
+    console.error('仕入歩合の読み込みエラー', e);
+    if (root) root.innerHTML = '<div class="tk-empty">読み込めませんでした。通信状況を確認するか、閲覧の権限がない可能性があります。</div>';
+    return;
+  }
+  COM.draftRule = null;
+  renderCommission();
+}
+
+// 全明細を { staffKey, id, email, ...明細 } の配列にする
+function comAllEntries() {
+  const staffByKey = {};
+  Object.entries((COM.settings && COM.settings.staff) || {}).forEach(([k, v]) => { staffByKey[k] = v.email; });
+  const out = [];
+  Object.entries(COM.entries || {}).forEach(([sk, list]) => {
+    Object.entries(list || {}).forEach(([id, e]) => out.push({ ...e, staffKey: sk, id, email: staffByKey[sk] || e.staffEmail || sk.replace(/,/g, '.') }));
+  });
+  return out;
+}
+
+function comShiftMonth(d) {
+  const [y, m] = COM.ym.split('-').map(Number);
+  const dt = new Date(y, m - 1 + d, 1);
+  COM.ym = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
+  renderCommission();
+}
+
+function renderCommission() {
+  const root = document.getElementById('com-root');
+  if (!root) return;
+  const owner = comIsOwner();
+  const me = tkMe();
+  const rule = COM.draftRule || comRule();
+  const [y, m] = COM.ym.split('-').map(Number);
+  const monthAll = comAllEntries().filter(e => String(e.date || '').slice(0, 7) === COM.ym);
+  const staffEmails = owner ? comStaffList() : [me];
+  if (owner && COM.filter && !staffEmails.includes(COM.filter)) COM.filter = '';
+
+  // 担当者ごとの集計（歩合は担当者ごとの月合計で決まる）
+  const byStaff = {};
+  monthAll.forEach(e => { (byStaff[e.email] = byStaff[e.email] || []).push(e); });
+  const stats = Object.entries(byStaff).map(([email, rs]) => {
+    const P = rs.reduce((s, e) => s + comProfit(e), 0);
+    return { email, rs, P, C: comCommission(P, rule), cost: rs.reduce((s, e) => s + comCost(e), 0) };
+  }).sort((a, b) => b.P - a.P);
+  const shown = COM.filter ? stats.filter(s => s.email === COM.filter) : stats;
+  const sum = k => shown.reduce((s, x) => s + x[k], 0);
+  const statOf = {}; stats.forEach(s => { statOf[s.email] = s; });
+
+  let html = `<div class="com-bar">
+    <div class="com-month"><button onclick="comShiftMonth(-1)" aria-label="前の月">‹</button><span>${y}年${m}月</span><button onclick="comShiftMonth(1)" aria-label="次の月">›</button></div>
+    ${owner ? `<select onchange="COM.filter=this.value;renderCommission()"><option value="">全員</option>${staffEmails.map(e => `<option value="${comEsc(e)}" ${COM.filter === e ? 'selected' : ''}>${comEsc(tkName(e))}</option>`).join('')}</select>` : ''}
+  </div>`;
+
+  if (owner) {
+    html += `<div class="com-tiles">
+      <div><span>仕入額</span><b>${comYen(sum('cost'))}</b></div>
+      <div><span>利益</span><b>${comYen(sum('P'))}</b></div>
+      <div class="hl"><span>歩合（従業員）</span><b>${comYen(sum('C'))}</b></div>
+      <div><span>会社に残る額</span><b>${comYen(sum('P') - sum('C'))}</b></div>
+    </div>
+    <div class="com-card"><h3>担当者別の集計<small>${comEsc(comRuleText(rule))}${COM.draftRule ? '（未保存のルールで表示中）' : ''}</small></h3>
+      <div class="com-scroll"><table><thead><tr><th>担当者</th><th class="r">件数</th><th class="r">利益</th><th class="r">歩合</th><th class="r">会社に残る額</th><th>配分</th><th class="r">実効歩合率</th></tr></thead><tbody>
+      ${shown.length ? shown.map(s => { const share = s.P > 0 ? s.C / s.P * 100 : 0; return `<tr><td>${comEsc(tkName(s.email))}</td><td class="r">${s.rs.length}</td><td class="r ${s.P < 0 ? 'neg' : ''}">${comYen(s.P)}</td><td class="r pos"><b>${comYen(s.C)}</b></td><td class="r">${comYen(s.P - s.C)}</td><td><div class="com-split"><i style="width:${Math.min(100, share)}%"></i></div></td><td class="r">${comPct(share)}</td></tr>`; }).join('') : '<tr><td colspan="7" class="tk-empty">この月の記録はまだありません</td></tr>'}
+      </tbody></table></div></div>`;
+  } else {
+    const s = statOf[me] || { P: 0, C: 0 };
+    html += `<div class="com-tiles two">
+      <div><span>今月の利益</span><b>${comYen(s.P)}</b></div>
+      <div class="hl"><span>今月の歩合（見込み）</span><b>${comYen(s.C)}</b></div>
+    </div>
+    <div class="com-rule">歩合ルール：${comEsc(comRuleText(rule))}</div>`;
+  }
+
+  // 明細の入力フォーム
+  const ed = COM.editing ? comAllEntries().find(e => e.staffKey === COM.editing.staffKey && e.id === COM.editing.id) : null;
+  const today = ymdKey(new Date());
+  const stores = [...new Set(comAllEntries().map(e => e.store).filter(Boolean))];
+  const v = (k, d) => comEsc(ed ? (ed[k] ?? d) : d);
+  const selStaff = ed ? ed.email : (COM.filter || staffEmails[0] || '');
+  html += `<div class="com-card"><h3>${ed ? '明細を編集' : '仕入れ明細を追加'}</h3>
+    <form class="com-form" onsubmit="event.preventDefault();comSubmit()" autocomplete="off">
+      ${owner ? `<label>氏名<select id="com-f-staff">${staffEmails.map(e => `<option value="${comEsc(e)}" ${selStaff === e ? 'selected' : ''}>${comEsc(tkName(e))}</option>`).join('')}</select></label>` : ''}
+      <label>日付<input id="com-f-date" type="date" required value="${v('date', today)}"></label>
+      <label>店舗名<input id="com-f-store" list="com-store-list" required value="${v('store', '')}"></label>
+      <label>型番<input id="com-f-model" required value="${v('model', '')}"></label>
+      <label>数量<input id="com-f-qty" type="number" min="1" required value="${v('qty', 1)}" oninput="comPreview()"></label>
+      <label>仕入単価（円）<input id="com-f-cost" type="number" min="0" required value="${v('cost', '')}" oninput="comPreview()"></label>
+      <label>売単価（円）<input id="com-f-price" type="number" min="0" required value="${v('price', '')}" oninput="comPreview()"></label>
+      <label>経費（送料など）<input id="com-f-exp" type="number" min="0" value="${v('expense', 0)}" oninput="comPreview()"></label>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span id="com-f-preview" style="font-size:13px;font-weight:700"></span>
+        <div style="display:flex;gap:6px"><button type="submit" class="cm-btn primary">${ed ? '更新' : '追加'}</button>${ed ? '<button type="button" class="cm-btn" onclick="COM.editing=null;renderCommission()">取消</button>' : ''}</div>
+      </div>
+    </form>
+    <datalist id="com-store-list">${stores.map(s => `<option value="${comEsc(s)}">`).join('')}</datalist>
+    ${owner && !staffEmails.length ? '<p class="com-note">先に下の「歩合の対象者」で仕入れ担当者を追加してください。</p>' : ''}
+  </div>`;
+
+  // 明細一覧
+  const list = (owner ? (COM.filter ? monthAll.filter(e => e.email === COM.filter) : monthAll) : monthAll.filter(e => e.email === me))
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  html += `<div class="com-card"><h3>仕入れ明細<small>${y}年${m}月・${list.length}件</small></h3>
+    <div class="com-scroll"><table><thead><tr><th>日付</th>${owner ? '<th>氏名</th>' : ''}<th>店舗名</th><th>型番</th><th class="r">数量</th><th class="r">仕入額</th><th class="r">売値</th><th class="r">利益</th><th class="r">歩合（目安）</th><th></th></tr></thead><tbody>
+    ${list.length ? list.map(e => {
+      const p = comProfit(e), s = statOf[e.email];
+      const posP = s ? s.rs.reduce((t, x) => t + Math.max(0, comProfit(x)), 0) : 0;
+      const est = p > 0 && posP > 0 ? s.C * p / posP : 0;
+      return `<tr><td>${comEsc(String(e.date).slice(5).replace('-', '/'))}</td>${owner ? `<td>${comEsc(tkName(e.email))}</td>` : ''}<td>${comEsc(e.store)}</td><td>${comEsc(e.model)}</td>
+        <td class="r">${Number(e.qty) || 0}</td><td class="r">${comYen(comCost(e))}</td><td class="r">${comYen(comSales(e))}</td>
+        <td class="r ${p < 0 ? 'neg' : 'pos'}">${comYen(p)}</td><td class="r">${comYen(est)}</td>
+        <td><button class="com-rowbtn" onclick="comEdit('${e.staffKey}','${e.id}')">編集</button> <button class="com-rowbtn" onclick="comDelete('${e.staffKey}','${e.id}')">削除</button></td></tr>`;
+    }).join('') : `<tr><td colspan="${owner ? 10 : 9}" class="tk-empty">この月の明細はありません</td></tr>`}
+    </tbody></table></div>
+    <p class="com-note">仕入額・売値は単価×数量。利益＝売値−仕入額−経費。段階制・目標超過型は月の合計で決まるため、明細ごとの歩合は月の歩合を利益の比率で割り振った目安です。</p>
+  </div>`;
+
+  // ルール設定・3方式の比較・対象者（Hina・代表のみ）
+  if (owner) {
+    const methods = [
+      ['flat', 'A. 一律歩合', '月の利益 × 歩合率。いちばん分かりやすい方式。', [['flatRate', '歩合率（%）', 0.5]]],
+      ['tier', 'B. 段階制', '利益が増えるほど上の段の率が上乗せ（累進）。', [['t1', '〜この額まで（円）', 10000], ['r1', 'その率（%）', 0.5], ['t2', '〜この額まで（円）', 10000], ['r2', 'その率（%）', 0.5], ['r3', '超えた分の率（%）', 0.5]]],
+      ['over', 'C. 目標超過型', '月の目標利益を超えた分だけに歩合。', [['base', '目標利益（円）', 10000], ['overRate', '超過分の率（%）', 0.5]]],
+    ];
+    html += `<div class="com-card"><h3>歩合ルール<small>保存すると仕入れ担当者の画面にも反映されます</small></h3>
+      <div class="com-methods">${methods.map(([key, title, desc, fields]) => `<div class="com-method ${rule.method === key ? 'on' : ''}" onclick="if(event.target.tagName!=='INPUT')comPickMethod('${key}')">
+        <b>${title}</b><p>${desc}</p>
+        <div class="com-params">${fields.map(([f, lb, st]) => `<label>${lb}<input type="number" step="${st}" value="${rule[f]}" oninput="comRuleInput('${f}',this.value)"></label>`).join('')}</div>
+      </div>`).join('')}</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="cm-btn primary" onclick="comSaveRule()" ${COM.draftRule ? '' : 'disabled'}>このルールで保存</button>${COM.draftRule ? '<button class="cm-btn" onclick="COM.draftRule=null;renderCommission()">元に戻す</button><span class="com-note">未保存の変更があります</span>' : ''}</div>
+      <div class="com-scroll"><table><thead><tr><th>${y}年${m}月の担当者</th><th class="r">利益</th><th class="r">A. 一律</th><th class="r">B. 段階制</th><th class="r">C. 目標超過</th></tr></thead><tbody>
+      ${stats.length ? stats.map(s => `<tr><td>${comEsc(tkName(s.email))}</td><td class="r">${comYen(s.P)}</td>${['flat', 'tier', 'over'].map(mm => { const c = comCommission(s.P, rule, mm); return `<td class="r" ${rule.method === mm ? 'style="font-weight:700;color:var(--teal)"' : ''}>${comYen(c)} <span class="com-note">(${comPct(s.P > 0 ? c / s.P * 100 : 0)})</span></td>`; }).join('')}</tr>`).join('') : '<tr><td colspan="5" class="tk-empty">比べる記録がありません</td></tr>'}
+      </tbody></table></div>
+      <p class="com-note">同じ月のデータで3方式を並べた比較表です。どの方式にするか決めるときの参考にしてください。</p>
+    </div>`;
+    const candidates = tkMemberEmails().filter(e => !staffEmails.includes(e));
+    html += `<div class="com-card"><h3>歩合の対象者<small>ここに入っている人だけが、自分の分の歩合を見られます</small></h3>
+      <div class="com-staff">${staffEmails.map(e => `<span class="com-chip">${comEsc(tkName(e))}<button onclick="comRemoveStaff('${comEsc(e)}')" aria-label="対象から外す">×</button></span>`).join('') || '<span class="com-note">まだいません</span>'}
+        ${candidates.length ? `<select id="com-add-staff" style="width:auto">${candidates.map(e => `<option value="${comEsc(e)}">${comEsc(tkName(e))}</option>`).join('')}</select><button class="cm-btn" onclick="comAddStaff()">追加</button>` : ''}
+      </div></div>`;
+  }
+
+  root.innerHTML = html;
+  comPreview();
+}
+
+function comPreview() {
+  const el = document.getElementById('com-f-preview');
+  if (!el) return;
+  const e = { qty: comNum(document.getElementById('com-f-qty').value), cost: comNum(document.getElementById('com-f-cost').value), price: comNum(document.getElementById('com-f-price').value), expense: comNum(document.getElementById('com-f-exp').value) };
+  const p = comProfit(e);
+  el.innerHTML = `利益 <span class="${p < 0 ? 'neg' : 'pos'}">${comYen(p)}</span>`;
+}
+
+async function comSubmit() {
+  const owner = comIsOwner();
+  const email = owner ? (document.getElementById('com-f-staff') || {}).value : tkMe();
+  if (!email) { showToast('先に歩合の対象者を追加してください'); return; }
+  const rec = {
+    date: document.getElementById('com-f-date').value,
+    store: document.getElementById('com-f-store').value.trim(),
+    model: document.getElementById('com-f-model').value.trim(),
+    qty: comNum(document.getElementById('com-f-qty').value),
+    cost: comNum(document.getElementById('com-f-cost').value),
+    price: comNum(document.getElementById('com-f-price').value),
+    expense: comNum(document.getElementById('com-f-exp').value),
+    staffEmail: email,
+    enteredBy: tkMe(),
+    updatedAt: Date.now()
+  };
+  if (!rec.date || !rec.store || !rec.model || rec.qty <= 0) { showToast('日付・店舗名・型番・数量を入力してください'); return; }
+  const key = tkKey(email);
+  try {
+    if (COM.editing) {
+      const old = COM.editing;
+      const prev = (COM.entries[old.staffKey] || {})[old.id] || {};
+      rec.createdAt = prev.createdAt || Date.now();
+      if (old.staffKey !== key) {
+        // 担当者を変えた場合は、新しい担当者の場所へ移す
+        const res = await tkReq('commission/entries/' + key, 'POST', rec);
+        await tkReq('commission/entries/' + old.staffKey + '/' + old.id, 'DELETE');
+        delete COM.entries[old.staffKey][old.id];
+        (COM.entries[key] = COM.entries[key] || {})[res.name] = rec;
+      } else {
+        await tkReq('commission/entries/' + key + '/' + old.id, 'PUT', rec);
+        COM.entries[key][old.id] = rec;
+      }
+      COM.editing = null;
+      showToast('明細を更新しました');
+    } else {
+      rec.createdAt = Date.now();
+      const res = await tkReq('commission/entries/' + key, 'POST', rec);
+      (COM.entries[key] = COM.entries[key] || {})[res.name] = rec;
+      showToast('明細を追加しました');
+    }
+    if (rec.date.slice(0, 7) !== COM.ym) COM.ym = rec.date.slice(0, 7);
+    renderCommission();
+  } catch (e) {
+    console.error(e);
+    showToast('保存できませんでした。通信状況をご確認ください');
+  }
+}
+
+function comEdit(staffKey, id) {
+  COM.editing = { staffKey, id };
+  renderCommission();
+  const f = document.querySelector('#com-root .com-form');
+  if (f) f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function comDelete(staffKey, id) {
+  if (!await showConfirm('この明細を削除しますか？')) return;
+  const prev = (COM.entries[staffKey] || {})[id];
+  delete COM.entries[staffKey][id];
+  renderCommission();
+  try { await tkReq('commission/entries/' + staffKey + '/' + id, 'DELETE'); showToast('削除しました'); }
+  catch (e) { COM.entries[staffKey][id] = prev; renderCommission(); showToast('削除できませんでした'); }
+}
+
+function comPickMethod(m) {
+  COM.draftRule = { ...(COM.draftRule || comRule()), method: m };
+  renderCommission();
+}
+function comRuleInput(f, val) {
+  COM.draftRule = { ...(COM.draftRule || comRule()), [f]: comNum(val) };
+  // 入力中にフォーム全体を描き直すとカーソルが外れるため、少し待ってから反映する
+  clearTimeout(COM._ruleTimer);
+  COM._ruleTimer = setTimeout(renderCommission, 600);
+}
+async function comSaveRule() {
+  if (!COM.draftRule || !comIsOwner()) return;
+  const rule = COM.draftRule;
+  try {
+    await tkReq('commission/settings', 'PATCH', { rule, updatedAt: Date.now(), updatedBy: tkMe() });
+    COM.settings = { ...(COM.settings || {}), rule };
+    COM.draftRule = null;
+    showToast('歩合ルールを保存しました');
+    renderCommission();
+  } catch (e) { showToast('保存できませんでした'); }
+}
+async function comAddStaff() {
+  const sel = document.getElementById('com-add-staff');
+  if (!sel || !sel.value) return;
+  const email = sel.value;
+  try {
+    await tkReq('commission/settings/staff/' + tkKey(email), 'PUT', { email });
+    COM.settings.staff = { ...(COM.settings.staff || {}), [tkKey(email)]: { email } };
+    showToast(tkName(email) + 'さんを歩合の対象者に追加しました');
+    renderCommission();
+  } catch (e) { showToast('保存できませんでした'); }
+}
+async function comRemoveStaff(email) {
+  if (!await showConfirm(tkName(email) + 'さんを歩合の対象者から外しますか？（これまでの明細は残ります。本人は歩合の画面を見られなくなります）')) return;
+  try {
+    await tkReq('commission/settings/staff/' + tkKey(email), 'DELETE');
+    delete COM.settings.staff[tkKey(email)];
+    renderCommission();
+  } catch (e) { showToast('保存できませんでした'); }
 }
 </script>
 
