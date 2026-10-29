@@ -21777,6 +21777,10 @@ function isAfterTaskSaved(title, assignee) {
 #com-root .com-staff { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 #com-root .com-chip { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:20px; background:var(--surface); font-size:12px; }
 #com-root .com-chip button { border:none; background:none; cursor:pointer; color:var(--text-muted); font-size:14px; padding:0; }
+#com-root .com-closed, #com-root .com-open { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:10px 12px; border-radius:12px; font-size:13px; border:1.5px solid var(--border); background:var(--white); }
+#com-root .com-closed { background:#ecfdf5; border-color:#a7f3d0; color:#065f46; }
+#com-root .com-closed span, #com-root .com-open span { flex:1; min-width:200px; }
+#com-root td a { color:var(--teal); font-weight:700; }
 #com-root .com-rowbtn { padding:4px 8px; font-size:12px; border-radius:6px; border:1px solid var(--border); background:var(--white); cursor:pointer; font-family:inherit; }
 </style>
 
@@ -21784,14 +21788,16 @@ function isAfterTaskSaved(title, assignee) {
 // ── 仕入歩合 ──
 // 要望：仕入れ担当の従業員に、仕入れの利益の一定％を歩合として支払う。その計算画面。
 // 見える範囲：Hina・代表＝全員分の歩合・会社に残る額・ルール設定／歩合対象者（仕入れ担当）＝自分の明細と歩合額だけ／
-// それ以外の人には切り替えボタン自体を出さない。データの読み書きはFirebaseのセキュリティルールでも同じ範囲に制限する
+// それ以外の人には切り替えボタン自体を出さない。明細の入力・編集はHina・代表だけ（領収書をもとに入力する運用のため、
+// 仕入れ担当者は見るだけ）。月ごとに「確定（締め）」すると、その時点の金額とルールを記録し、解除するまで明細を変更できない。データの読み書きはFirebaseのセキュリティルールでも同じ範囲に制限する
 // （画面で隠すだけでは開発者ツールから読めてしまうため）。
 // 保存先：/commission/settings（rule＝歩合ルール、staff/{メールキー}＝歩合対象者）、
-//         /commission/entries/{メールキー}/{id}（仕入れ明細。日付・店舗名・型番・数量・仕入単価・売単価・経費）
+//         /commission/entries/{メールキー}/{id}（仕入れ明細。日付・店舗名・型番・数量・仕入単価・売単価・経費）、
+//         /commission/closings/{年月}（締め。closedAt・closedBy・rule・staff/{メールキー}＝その人の確定額）
 const COM_OWNERS = ['hinanzel27@icloud.com', 'kntk.k_11@icloud.com'];
 const COM_DEFAULT_STAFF = ['aoena1212@icloud.com'];
 const COM_DEFAULT_RULE = { method: 'flat', flatRate: 10, t1: 500000, r1: 5, t2: 1000000, r2: 10, r3: 15, base: 300000, overRate: 20 };
-const COM = { loaded: false, ym: null, filter: '', settings: null, entries: {}, isStaff: null, editing: null, draftRule: null };
+const COM = { loaded: false, ym: null, filter: '', settings: null, entries: {}, closings: {}, isStaff: null, editing: null, draftRule: null };
 
 function comIsOwner() { return COM_OWNERS.includes(String(tkMe() || '').toLowerCase()); }
 function comRule() { return { ...COM_DEFAULT_RULE, ...((COM.settings && COM.settings.rule) || {}) }; }
@@ -21852,7 +21858,8 @@ async function comLoad() {
   const me = tkMe();
   try {
     if (comIsOwner()) {
-      const [settings, entries] = await Promise.all([tkReq('commission/settings'), tkReq('commission/entries')]);
+      const [settings, entries, closings] = await Promise.all([tkReq('commission/settings'), tkReq('commission/entries'), tkReq('commission/closings')]);
+      COM.closings = closings || {};
       COM.settings = settings;
       // 初回：歩合ルールと歩合対象者（仕入れ担当）の初期値を保存しておく。これが無いと対象者本人が画面を開けない
       if (!COM.settings || !COM.settings.staff) {
@@ -21867,6 +21874,8 @@ async function comLoad() {
       const [settings, mine] = await Promise.all([tkReq('commission/settings'), tkReq('commission/entries/' + tkKey(me))]);
       COM.settings = settings;
       COM.entries = { [tkKey(me)]: mine || {} };
+      COM.closings = {};
+      await comLoadStaffClosing(COM.ym);
     }
     COM.loaded = true;
   } catch (e) {
@@ -21889,12 +21898,24 @@ function comAllEntries() {
   return out;
 }
 
-function comShiftMonth(d) {
+async function comShiftMonth(d) {
   const [y, m] = COM.ym.split('-').map(Number);
   const dt = new Date(y, m - 1 + d, 1);
   COM.ym = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
+  COM.editing = null;
+  if (!comIsOwner()) await comLoadStaffClosing(COM.ym);
   renderCommission();
 }
+// 仕入れ担当者は、締めの記録のうち自分の分だけを読める（他の人の確定額は読めない）
+async function comLoadStaffClosing(ym) {
+  if (comIsOwner() || !ym || (COM.closings && ym in COM.closings)) return;
+  try {
+    const mine = await tkReq('commission/closings/' + ym + '/staff/' + tkKey(tkMe()));
+    COM.closings[ym] = mine ? { staff: { [tkKey(tkMe())]: mine } } : null;
+  } catch (e) { COM.closings[ym] = null; }
+}
+const comClosed = ym => !!(COM.closings && COM.closings[ym]);
+function comFmtClosedAt(t) { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
 
 function renderCommission() {
   const root = document.getElementById('com-root');
@@ -21917,41 +21938,56 @@ function renderCommission() {
   const shown = COM.filter ? stats.filter(s => s.email === COM.filter) : stats;
   const sum = k => shown.reduce((s, x) => s + x[k], 0);
   const statOf = {}; stats.forEach(s => { statOf[s.email] = s; });
+  const closing = (COM.closings || {})[COM.ym] || null;
+  const closedRule = closing && closing.rule ? { ...COM_DEFAULT_RULE, ...closing.rule } : null;
+  // 表に出す行：確定済みの月は確定時に記録した金額、未確定の月はその場で計算した金額
+  const tableRows = closing && closing.staff
+    ? Object.values(closing.staff).map(x => ({ email: x.email, count: x.count || 0, P: x.profit || 0, C: x.commission || 0, cost: x.cost || 0 })).sort((a, b) => b.P - a.P)
+    : stats.map(s => ({ email: s.email, count: s.rs.length, P: s.P, C: s.C, cost: s.cost }));
+  const shownRows = COM.filter ? tableRows.filter(r => r.email === COM.filter) : tableRows;
+  const tsum = k => shownRows.reduce((s, x) => s + x[k], 0);
 
   let html = `<div class="com-bar">
     <div class="com-month"><button onclick="comShiftMonth(-1)" aria-label="前の月">‹</button><span>${y}年${m}月</span><button onclick="comShiftMonth(1)" aria-label="次の月">›</button></div>
     ${owner ? `<select onchange="COM.filter=this.value;renderCommission()"><option value="">全員</option>${staffEmails.map(e => `<option value="${comEsc(e)}" ${COM.filter === e ? 'selected' : ''}>${comEsc(tkName(e))}</option>`).join('')}</select>` : ''}
   </div>`;
+  if (owner) {
+    html += closing
+      ? `<div class="com-closed"><span>✅ ${y}年${m}月分は確定済みです（${comEsc(comFmtClosedAt(closing.closedAt))}・${comEsc(tkName(closing.closedBy))}）。明細を直すときは確定を解除してください。</span><button class="cm-btn" onclick="comReopenMonth()">確定を解除</button></div>`
+      : `<div class="com-open"><span>${y}年${m}月分は未確定です。給与計算の前に確定すると、この月の歩合額が記録され、明細が変更できなくなります。</span><button class="cm-btn primary" onclick="comCloseMonth()">この月を確定</button></div>`;
+  }
 
   if (owner) {
     html += `<div class="com-tiles">
-      <div><span>仕入額</span><b>${comYen(sum('cost'))}</b></div>
-      <div><span>利益</span><b>${comYen(sum('P'))}</b></div>
-      <div class="hl"><span>歩合（従業員）</span><b>${comYen(sum('C'))}</b></div>
-      <div><span>会社に残る額</span><b>${comYen(sum('P') - sum('C'))}</b></div>
+      <div><span>仕入額</span><b>${comYen(tsum('cost'))}</b></div>
+      <div><span>利益</span><b>${comYen(tsum('P'))}</b></div>
+      <div class="hl"><span>歩合（従業員）${closing ? '・確定' : ''}</span><b>${comYen(tsum('C'))}</b></div>
+      <div><span>会社に残る額</span><b>${comYen(tsum('P') - tsum('C'))}</b></div>
     </div>
-    <div class="com-card"><h3>担当者別の集計<small>${comEsc(comRuleText(rule))}${COM.draftRule ? '（未保存のルールで表示中）' : ''}</small></h3>
+    <div class="com-card"><h3>担当者別の集計<small>${closedRule ? '確定時のルール：' + comEsc(comRuleText(closedRule)) : comEsc(comRuleText(rule)) + (COM.draftRule ? '（未保存のルールで表示中）' : '')}</small></h3>
       <div class="com-scroll"><table><thead><tr><th>担当者</th><th class="r">件数</th><th class="r">利益</th><th class="r">歩合</th><th class="r">会社に残る額</th><th>配分</th><th class="r">実効歩合率</th></tr></thead><tbody>
-      ${shown.length ? shown.map(s => { const share = s.P > 0 ? s.C / s.P * 100 : 0; return `<tr><td>${comEsc(tkName(s.email))}</td><td class="r">${s.rs.length}</td><td class="r ${s.P < 0 ? 'neg' : ''}">${comYen(s.P)}</td><td class="r pos"><b>${comYen(s.C)}</b></td><td class="r">${comYen(s.P - s.C)}</td><td><div class="com-split"><i style="width:${Math.min(100, share)}%"></i></div></td><td class="r">${comPct(share)}</td></tr>`; }).join('') : '<tr><td colspan="7" class="tk-empty">この月の記録はまだありません</td></tr>'}
+      ${shownRows.length ? shownRows.map(s => { const share = s.P > 0 ? s.C / s.P * 100 : 0; return `<tr><td>${comEsc(tkName(s.email))}</td><td class="r">${s.count}</td><td class="r ${s.P < 0 ? 'neg' : ''}">${comYen(s.P)}</td><td class="r pos"><b>${comYen(s.C)}</b></td><td class="r">${comYen(s.P - s.C)}</td><td><div class="com-split"><i style="width:${Math.min(100, share)}%"></i></div></td><td class="r">${comPct(share)}</td></tr>`; }).join('') : '<tr><td colspan="7" class="tk-empty">この月の記録はまだありません</td></tr>'}
       </tbody></table></div></div>`;
   } else {
-    const s = statOf[me] || { P: 0, C: 0 };
+    const mine = closing && closing.staff ? closing.staff[tkKey(me)] : null;
+    const s = mine ? { P: mine.profit || 0, C: mine.commission || 0 } : (statOf[me] || { P: 0, C: 0 });
     html += `<div class="com-tiles two">
-      <div><span>今月の利益</span><b>${comYen(s.P)}</b></div>
-      <div class="hl"><span>今月の歩合（見込み）</span><b>${comYen(s.C)}</b></div>
+      <div><span>${m}月の利益${mine ? '（確定）' : ''}</span><b>${comYen(s.P)}</b></div>
+      <div class="hl"><span>${m}月の歩合${mine ? '（確定済み）' : '（見込み）'}</span><b>${comYen(s.C)}</b></div>
     </div>
-    <div class="com-rule">歩合ルール：${comEsc(comRuleText(rule))}</div>`;
+    <div class="com-rule">${mine ? '✅ この月の歩合は確定済みです。' : '歩合ルール：' + comEsc(comRuleText(rule))}</div>`;
   }
 
-  // 明細の入力フォーム
+  // 明細の入力フォーム（Hina・代表のみ。確定済みの月は出さない）
+  const canEditMonth = owner && !closing;
   const ed = COM.editing ? comAllEntries().find(e => e.staffKey === COM.editing.staffKey && e.id === COM.editing.id) : null;
   const today = ymdKey(new Date());
   const stores = [...new Set(comAllEntries().map(e => e.store).filter(Boolean))];
   const v = (k, d) => comEsc(ed ? (ed[k] ?? d) : d);
   const selStaff = ed ? ed.email : (COM.filter || staffEmails[0] || '');
-  html += `<div class="com-card"><h3>${ed ? '明細を編集' : '仕入れ明細を追加'}</h3>
+  if (canEditMonth) html += `<div class="com-card"><h3>${ed ? '明細を編集' : '仕入れ明細を追加'}</h3>
     <form class="com-form" onsubmit="event.preventDefault();comSubmit()" autocomplete="off">
-      ${owner ? `<label>氏名<select id="com-f-staff">${staffEmails.map(e => `<option value="${comEsc(e)}" ${selStaff === e ? 'selected' : ''}>${comEsc(tkName(e))}</option>`).join('')}</select></label>` : ''}
+      <label>氏名<select id="com-f-staff">${staffEmails.map(e => `<option value="${comEsc(e)}" ${selStaff === e ? 'selected' : ''}>${comEsc(tkName(e))}</option>`).join('')}</select></label>
       <label>日付<input id="com-f-date" type="date" required value="${v('date', today)}"></label>
       <label>店舗名<input id="com-f-store" list="com-store-list" required value="${v('store', '')}"></label>
       <label>型番<input id="com-f-model" required value="${v('model', '')}"></label>
@@ -21965,26 +22001,44 @@ function renderCommission() {
       </div>
     </form>
     <datalist id="com-store-list">${stores.map(s => `<option value="${comEsc(s)}">`).join('')}</datalist>
-    ${owner && !staffEmails.length ? '<p class="com-note">先に下の「歩合の対象者」で仕入れ担当者を追加してください。</p>' : ''}
+    ${!staffEmails.length ? '<p class="com-note">先に下の「歩合の対象者」で仕入れ担当者を追加してください。</p>' : ''}
   </div>`;
 
   // 明細一覧
   const list = (owner ? (COM.filter ? monthAll.filter(e => e.email === COM.filter) : monthAll) : monthAll.filter(e => e.email === me))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   html += `<div class="com-card"><h3>仕入れ明細<small>${y}年${m}月・${list.length}件</small></h3>
-    <div class="com-scroll"><table><thead><tr><th>日付</th>${owner ? '<th>氏名</th>' : ''}<th>店舗名</th><th>型番</th><th class="r">数量</th><th class="r">仕入額</th><th class="r">売値</th><th class="r">利益</th><th class="r">歩合（目安）</th><th></th></tr></thead><tbody>
+    <div class="com-scroll"><table><thead><tr><th>日付</th>${owner ? '<th>氏名</th>' : ''}<th>店舗名</th><th>型番</th><th class="r">数量</th><th class="r">仕入額</th><th class="r">売値</th><th class="r">利益</th><th class="r">歩合（目安）</th>${canEditMonth ? '<th></th>' : ''}</tr></thead><tbody>
     ${list.length ? list.map(e => {
       const p = comProfit(e), s = statOf[e.email];
       const posP = s ? s.rs.reduce((t, x) => t + Math.max(0, comProfit(x)), 0) : 0;
-      const est = p > 0 && posP > 0 ? s.C * p / posP : 0;
+      // 確定済みの月は、確定した歩合額を利益の比率で割り振る
+      const cRow = closing && closing.staff ? Object.values(closing.staff).find(x => x.email === e.email) : null;
+      const monthC = cRow ? (cRow.commission || 0) : (s ? s.C : 0);
+      const est = p > 0 && posP > 0 ? monthC * p / posP : 0;
       return `<tr><td>${comEsc(String(e.date).slice(5).replace('-', '/'))}</td>${owner ? `<td>${comEsc(tkName(e.email))}</td>` : ''}<td>${comEsc(e.store)}</td><td>${comEsc(e.model)}</td>
         <td class="r">${Number(e.qty) || 0}</td><td class="r">${comYen(comCost(e))}</td><td class="r">${comYen(comSales(e))}</td>
         <td class="r ${p < 0 ? 'neg' : 'pos'}">${comYen(p)}</td><td class="r">${comYen(est)}</td>
-        <td><button class="com-rowbtn" onclick="comEdit('${e.staffKey}','${e.id}')">編集</button> <button class="com-rowbtn" onclick="comDelete('${e.staffKey}','${e.id}')">削除</button></td></tr>`;
-    }).join('') : `<tr><td colspan="${owner ? 10 : 9}" class="tk-empty">この月の明細はありません</td></tr>`}
+        ${canEditMonth ? `<td><button class="com-rowbtn" onclick="comEdit('${e.staffKey}','${e.id}')">編集</button> <button class="com-rowbtn" onclick="comDelete('${e.staffKey}','${e.id}')">削除</button></td>` : ''}</tr>`;
+    }).join('') : `<tr><td colspan="${(owner ? 9 : 8) + (canEditMonth ? 1 : 0)}" class="tk-empty">この月の明細はありません</td></tr>`}
     </tbody></table></div>
     <p class="com-note">仕入額・売値は単価×数量。利益＝売値−仕入額−経費。段階制・目標超過型は月の合計で決まるため、明細ごとの歩合は月の歩合を利益の比率で割り振った目安です。</p>
   </div>`;
+
+  // 確定の履歴（Hina・代表のみ）
+  if (owner) {
+    const hist = Object.entries(COM.closings || {}).filter(([, c]) => c).sort((a, b) => b[0].localeCompare(a[0]));
+    const people = [...new Set(hist.flatMap(([, c]) => Object.values(c.staff || {}).map(x => x.email)))];
+    html += `<div class="com-card"><h3>確定の履歴<small>給与明細との照合に使えます</small></h3>
+      <div class="com-scroll"><table><thead><tr><th>年月</th>${people.map(e => `<th class="r">${comEsc(tkName(e))}</th>`).join('')}<th class="r">歩合合計</th><th class="r">会社に残る額</th><th>確定日・確定者</th></tr></thead><tbody>
+      ${hist.length ? hist.map(([ym, c]) => {
+        const rows = Object.values(c.staff || {});
+        const tc = rows.reduce((t, x) => t + (x.commission || 0), 0), tp = rows.reduce((t, x) => t + (x.profit || 0), 0);
+        const [hy, hm] = ym.split('-').map(Number);
+        return `<tr><td><a href="#" onclick="event.preventDefault();COM.ym='${ym}';COM.editing=null;renderCommission()">${hy}年${hm}月</a></td>${people.map(e => { const x = rows.find(r => r.email === e); return `<td class="r">${x ? comYen(x.commission || 0) : '—'}</td>`; }).join('')}<td class="r pos"><b>${comYen(tc)}</b></td><td class="r">${comYen(tp - tc)}</td><td>${comEsc(comFmtClosedAt(c.closedAt))}・${comEsc(tkName(c.closedBy))}</td></tr>`;
+      }).join('') : `<tr><td colspan="${people.length + 4}" class="tk-empty">まだ確定した月はありません</td></tr>`}
+      </tbody></table></div></div>`;
+  }
 
   // ルール設定・3方式の比較・対象者（Hina・代表のみ）
   if (owner) {
@@ -21993,7 +22047,7 @@ function renderCommission() {
       ['tier', 'B. 段階制', '利益が増えるほど上の段の率が上乗せ（累進）。', [['t1', '〜この額まで（円）', 10000], ['r1', 'その率（%）', 0.5], ['t2', '〜この額まで（円）', 10000], ['r2', 'その率（%）', 0.5], ['r3', '超えた分の率（%）', 0.5]]],
       ['over', 'C. 目標超過型', '月の目標利益を超えた分だけに歩合。', [['base', '目標利益（円）', 10000], ['overRate', '超過分の率（%）', 0.5]]],
     ];
-    html += `<div class="com-card"><h3>歩合ルール<small>保存すると仕入れ担当者の画面にも反映されます</small></h3>
+    html += `<div class="com-card"><h3>歩合ルール<small>保存すると未確定の月に反映されます（確定済みの月は確定時のルールのまま）</small></h3>
       <div class="com-methods">${methods.map(([key, title, desc, fields]) => `<div class="com-method ${rule.method === key ? 'on' : ''}" onclick="if(event.target.tagName!=='INPUT')comPickMethod('${key}')">
         <b>${title}</b><p>${desc}</p>
         <div class="com-params">${fields.map(([f, lb, st]) => `<label>${lb}<input type="number" step="${st}" value="${rule[f]}" oninput="comRuleInput('${f}',this.value)"></label>`).join('')}</div>
@@ -22024,8 +22078,8 @@ function comPreview() {
 }
 
 async function comSubmit() {
-  const owner = comIsOwner();
-  const email = owner ? (document.getElementById('com-f-staff') || {}).value : tkMe();
+  if (!comIsOwner()) return;
+  const email = (document.getElementById('com-f-staff') || {}).value;
   if (!email) { showToast('先に歩合の対象者を追加してください'); return; }
   const rec = {
     date: document.getElementById('com-f-date').value,
@@ -22040,6 +22094,11 @@ async function comSubmit() {
     updatedAt: Date.now()
   };
   if (!rec.date || !rec.store || !rec.model || rec.qty <= 0) { showToast('日付・店舗名・型番・数量を入力してください'); return; }
+  if (comClosed(rec.date.slice(0, 7))) { showToast(rec.date.slice(0, 7).replace('-', '年') + '月分は確定済みのため追加・変更できません'); return; }
+  if (COM.editing) {
+    const old = comAllEntries().find(e => e.staffKey === COM.editing.staffKey && e.id === COM.editing.id);
+    if (old && comClosed(String(old.date).slice(0, 7))) { showToast('確定済みの月の明細は変更できません'); return; }
+  }
   const key = tkKey(email);
   try {
     if (COM.editing) {
@@ -22080,6 +22139,8 @@ function comEdit(staffKey, id) {
 }
 
 async function comDelete(staffKey, id) {
+  const tgt = (COM.entries[staffKey] || {})[id];
+  if (!comIsOwner() || (tgt && comClosed(String(tgt.date).slice(0, 7)))) { showToast('確定済みの月の明細は削除できません'); return; }
   if (!await showConfirm('この明細を削除しますか？')) return;
   const prev = (COM.entries[staffKey] || {})[id];
   delete COM.entries[staffKey][id];
@@ -22109,6 +22170,43 @@ async function comSaveRule() {
     renderCommission();
   } catch (e) { showToast('保存できませんでした'); }
 }
+// 締め：この月の担当者ごとの利益・歩合を、保存済みのルールで計算して記録する
+async function comCloseMonth() {
+  if (!comIsOwner() || comClosed(COM.ym)) return;
+  if (COM.draftRule) { showToast('歩合ルールに未保存の変更があります。保存するか元に戻してから確定してください'); return; }
+  const rule = comRule();
+  const [y, m] = COM.ym.split('-').map(Number);
+  const byStaff = {};
+  comAllEntries().filter(e => String(e.date || '').slice(0, 7) === COM.ym).forEach(e => { (byStaff[e.staffKey] = byStaff[e.staffKey] || []).push(e); });
+  const staff = {};
+  Object.entries(byStaff).forEach(([k, rs]) => {
+    const P = rs.reduce((t, e) => t + comProfit(e), 0);
+    staff[k] = { email: rs[0].email, count: rs.length, profit: P, commission: Math.round(comCommission(P, rule)), cost: rs.reduce((t, e) => t + comCost(e), 0) };
+  });
+  const total = Object.values(staff).reduce((t, x) => t + x.commission, 0);
+  const lines = Object.values(staff).map(x => `${tkName(x.email)}さん：${comYen(x.commission)}`).join('\n');
+  if (!await showConfirm(`${y}年${m}月分を確定しますか？\n${lines || '（明細なし）'}\n歩合合計：${comYen(total)}\n確定後は、解除するまでこの月の明細を変更できません。`)) return;
+  const rec = { closedAt: Date.now(), closedBy: tkMe(), rule, staff };
+  try {
+    await tkReq('commission/closings/' + COM.ym, 'PUT', rec);
+    COM.closings[COM.ym] = rec;
+    COM.editing = null;
+    showToast(`${y}年${m}月分の歩合を確定しました`);
+    renderCommission();
+  } catch (e) { showToast('確定できませんでした。通信状況をご確認ください'); }
+}
+async function comReopenMonth() {
+  if (!comIsOwner() || !comClosed(COM.ym)) return;
+  const [y, m] = COM.ym.split('-').map(Number);
+  if (!await showConfirm(`${y}年${m}月分の確定を解除しますか？\n明細を直せるようになり、歩合はその場の計算に戻ります。直し終わったら、もう一度確定してください。`)) return;
+  try {
+    await tkReq('commission/closings/' + COM.ym, 'DELETE');
+    delete COM.closings[COM.ym];
+    showToast(`${y}年${m}月分の確定を解除しました`);
+    renderCommission();
+  } catch (e) { showToast('解除できませんでした'); }
+}
+
 async function comAddStaff() {
   const sel = document.getElementById('com-add-staff');
   if (!sel || !sel.value) return;
