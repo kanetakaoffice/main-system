@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-03c">
+<meta name="app-build" content="2026-11-03d">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -2260,6 +2260,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div id="wh-consign-requests-list"></div>
       </div>
     </div>
+    <div id="wh-consign-age-bar"></div>
     <div id="wh-consign-list"></div>
     <div id="wh-consign-empty" style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">現在預けている商品はありません</div>
 
@@ -7763,7 +7764,7 @@ function renderWhConsignClientItemsList(idx) {
   const client = _whConsignClientOrder[idx];
   const root = document.getElementById('wh-consign-client-items-' + idx);
   if (!root || client == null) return;
-  const holding = (stockMoves || []).filter(m => m.type === 'consign' && m.status === 'holding' && (m.client || '（取引先未設定）') === client)
+  const holding = caFilterMoves((stockMoves || []).filter(m => m.type === 'consign' && m.status === 'holding' && (m.client || '（取引先未設定）') === client))
     .sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
   const q = (_whConsignClientSearchQuery[client] || '').trim().toLowerCase();
   const qNorm = normalizeModelStr(q);
@@ -7780,6 +7781,7 @@ function renderWhConsignClientItemsList(idx) {
   let filtered = qNorm ? holding.filter(m => normalizeModelStr(consignItemModelLive(m)).includes(qNorm)) : holding;
   if (activeSub) filtered = filtered.filter(m => (subOf(m) || '未分類') === activeSub);
   const groups = consignModelGroupsOf(filtered);
+  if (_caSort === 'age') groups.sort((a, b) => caOldestDate(a.items).localeCompare(caOldestDate(b.items)));
   // 要望「NEWが複数あると、ぱっと見でどれが最新か分からない」への対応。この取引先で一番最近
   // 委託に追加した日（同じ日に何回か追加した場合はその日の分すべて）だけ背景を緑にする。
   // それより前の「NEW」（1週間以内）は背景を白に戻し、緑の線・NEW・納品書No.だけ残す。
@@ -7816,7 +7818,7 @@ function renderWhConsignClientItemsList(idx) {
         const m = items[0];
         detail = `
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text-muted)">
-            <span>預けた日 ${fmtDateJP(m.date)}${m.memo ? '／' + escapeHtmlMain(m.memo) : ''}${m.slipNo ? `／<span style="color:#0f766e">納品書 No.${escapeHtmlMain(m.slipNo)} から</span>` : ''}</span>${costInput(m)}<span style="font-size:10px">（原価は取引先には表示されません）</span>
+            <span>預けた日 ${fmtDateJP(m.date)}${caElapsedText(m)}${m.memo ? '／' + escapeHtmlMain(m.memo) : ''}${m.slipNo ? `／<span style="color:#0f766e">納品書 No.${escapeHtmlMain(m.slipNo)} から</span>` : ''}</span>${costInput(m)}<span style="font-size:10px">（原価は取引先には表示されません）</span>
           </div>
           ${moreLink}
           ${moreOpen ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
@@ -7825,7 +7827,7 @@ function renderWhConsignClientItemsList(idx) {
       } else {
         const lines = items.map(m => `
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px ${isLatestNew(m) ? '8px' : '0'};border-top:1px dashed var(--border);font-size:12px;${isLatestNew(m) ? 'background:#d1fae5;border-radius:6px;' : ''}">
-            <span style="min-width:120px;color:var(--text)">${isConsignNew(m) ? `<span class="wh-new-tag" style="margin:0 6px 0 0">NEW ${consignAddedDayLabel(m.createdAt)}</span>` : ''}${fmtDateJP(m.date)}に預けた分　<b>${m.qty}個</b>${m.memo ? `<span style="color:var(--text-muted)">／${escapeHtmlMain(m.memo)}</span>` : ''}${m.slipNo ? `<span style="color:#0f766e">／納品書 No.${escapeHtmlMain(m.slipNo)} から</span>` : ''}</span>
+            <span style="min-width:120px;color:var(--text)">${isConsignNew(m) ? `<span class="wh-new-tag" style="margin:0 6px 0 0">NEW ${consignAddedDayLabel(m.createdAt)}</span>` : ''}${fmtDateJP(m.date)}に預けた分${caElapsedText(m)}　<b>${m.qty}個</b>${m.memo ? `<span style="color:var(--text-muted)">／${escapeHtmlMain(m.memo)}</span>` : ''}${m.slipNo ? `<span style="color:#0f766e">／納品書 No.${escapeHtmlMain(m.slipNo)} から</span>` : ''}</span>
             ${costInput(m)}
             ${moreOpen ? `<span style="display:flex;gap:6px;margin-left:auto">
               ${btn('精算', `openSettleConsign('${m._key}')`)}${btn('返却', `returnConsign('${m._key}')`)}${btn('数量を編集', `openEditConsignQty('${m._key}')`)}
@@ -7848,6 +7850,7 @@ function renderWhConsignClientItemsList(idx) {
         <div onclick="toggleWhConsignModelGroup(${idx}, '${g.gk}')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 4px 9px 8px;cursor:pointer">
           <div style="min-width:0;flex:1;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(consignItemModelLive(items[0]))}${newQty > 0 ? `<span class="wh-new-tag">NEW ${Array.from(new Set(newItems.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).map(m => consignAddedDayLabel(m.createdAt)))).join('・')}${items.length > 1 ? ' +' + newQty + '個' : ''}</span>` : ''}${newSlipNos.length ? `<span class="wh-slip-from">納品書 No.${escapeHtmlMain(newSlipNos.join('・'))} から</span>` : ''}</div>
           ${pendingQty > 0 ? `<span style="flex-shrink:0;font-size:11px;font-weight:700;color:#b8860b">⏳ ${pendingQty}個 ${pendingLabel}申請中</span>` : ''}
+          ${caChipHtml(Math.max(...items.map(caTier)), caOldestDate(items))}
           <span style="flex-shrink:0;font-size:13px;color:var(--text)">${g.qty}個</span>
           <span style="flex-shrink:0;color:var(--text-muted);font-size:14px;transition:transform .15s;${isOpen ? 'transform:rotate(90deg)' : ''}">›</span>
         </div>
@@ -7950,16 +7953,18 @@ function renderWhConsignList() {
     })();
   }
 
-  if (!holding.length) {
-    listEl.innerHTML = '';
-    if (emptyEl) emptyEl.style.display = 'block';
+  caRenderBar(holding);
+  const shown = caFilterMoves(holding);
+  if (!shown.length) {
+    listEl.innerHTML = holding.length ? '<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:13px">この期間に当てはまる委託はありません</div>' : '';
+    if (emptyEl) emptyEl.style.display = holding.length ? 'none' : 'block';
   } else {
     if (emptyEl) emptyEl.style.display = 'none';
     // 取引先ごとに何を預けているか一目で確認できるよう、取引先ごとにカードを分けてまとめる
     // （精算・返却・編集は引き続き商品単位の操作のため、カードの中に商品ごとの行を並べる）
     const groups = {};
     const order = [];
-    holding.forEach(m => {
+    shown.forEach(m => {
       const key = m.client || '（取引先未設定）';
       if (!groups[key]) { groups[key] = []; order.push(key); }
       groups[key].push(m);
@@ -7967,6 +7972,8 @@ function renderWhConsignList() {
     // 取引先内は新しい順、取引先の並び順は各取引先の最新の預け入れが新しい順
     order.forEach(key => groups[key].sort((a,b) => (b.createdAt||0) - (a.createdAt||0)));
     order.sort((a,b) => (groups[b][0].createdAt||0) - (groups[a][0].createdAt||0));
+    // 「長く預けている順」：いちばん古く預けた日が古い取引先から
+    if (_caSort === 'age') order.sort((a, b) => caOldestDate(groups[a]).localeCompare(caOldestDate(groups[b])));
 
     // 取引先が複数いる場合、それぞれの取引先カードは既定では閉じておき（取引先名と件数だけが見える状態）、
     // 取引先名の行をタップすると開いて中の商品一覧（精算・返却・数量編集の操作込み）が表示される。
@@ -7982,7 +7989,7 @@ function renderWhConsignList() {
           <div class="wh-consign-client-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer" onclick="toggleWhConsignClient(${idx})">
             <div style="display:flex;align-items:center;gap:6px;min-width:0">
               <span class="accordion-arrow${isOpen ? ' open' : ''}" style="font-size:10px;flex-shrink:0">▼</span>
-              <div style="font-size:14px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${consignModelGroupsOf(items).length}型番／合計${totalQty}個</span>${(() => { const nw = items.filter(isConsignNew); return nw.length ? `<span class="wh-new-chip">🆕 新規${nw.length}件（${nw.reduce((t, m) => t + (m.qty || 0), 0)}個）</span>` : ''; })()}</div>
+              <div style="font-size:14px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(client)}<span style="font-weight:400;color:var(--text-muted);font-size:12px">　${consignModelGroupsOf(items).length}型番／合計${totalQty}個</span>${(() => { const nw = items.filter(isConsignNew); return nw.length ? `<span class="wh-new-chip">🆕 新規${nw.length}件（${nw.reduce((t, m) => t + (m.qty || 0), 0)}個）</span>` : ''; })()}${caClientCountsHtml(items)}</div>
             </div>
             <button onclick="event.stopPropagation(); showConsignListPreview(decodeURIComponent(escape(atob('${btoa(unescape(encodeURIComponent(client)))}'))))" style="flex-shrink:0;padding:6px 10px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">📄 内容を見る</button>
           </div>
@@ -15106,6 +15113,7 @@ function renderHomeSummary() {
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px">
       ${typeof kaHomeTileHtml === 'function' ? kaHomeTileHtml() : ''}
+      ${typeof caHomeTileHtml === 'function' ? caHomeTileHtml() : ''}
       <div class="home-stat-card" onclick="goHomeToInv('inv-list')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">在庫アラート</div>
         <div style="font-size:18px;font-weight:700;color:${lowStockCount?'var(--warning)':'#4a4a4a'}">${lowStockCount}件</div>
@@ -22421,6 +22429,83 @@ function kaHomeTileHtml() {
 }
 </script>
 
+<script>
+// ── 委託リスト：長期の委託（預けてからの期間）──
+// 要望「委託リストにも長期在庫の機能を付けたい。1か月・3か月・6か月で分けたい。HOMEには1つの枠に
+// 全体の件数と段階ごとの内訳を出したい」への対応。
+// 期間は日数ではなく暦の月で数える（10/15に預けた分は 11/15 から1か月以上、1/15 から3か月以上、4/15 から6か月以上）。
+// 月末に預けた分は、翌月にその日が無ければ月末日で判定する（例：1/31 → 2/28 から1か月以上）。
+// 件数は「預けた記録」の数（同じ型番でも預けた日が違えば別に数える）。
+const CA_TIERS = [
+  { tier: 1, months: 1, label: '1か月以上', short: '1か月', color: '#a16207', bg: '#fef9c3', dot: '🟡' },
+  { tier: 2, months: 3, label: '3か月以上', short: '3か月', color: '#c2410c', bg: '#ffedd5', dot: '🟠' },
+  { tier: 3, months: 6, label: '6か月以上', short: '6か月', color: '#b91c1c', bg: '#fee2e2', dot: '🔴' },
+];
+let _caFilter = 0;      // 0=すべて、1〜3=その段階以上だけ
+let _caSort = 'new';    // 'new'=今まで通り（新しい順）、'age'=長く預けている順
+function caAddMonths(ymd, n) {
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  const last = new Date(y, m - 1 + n + 1, 0).getDate();
+  return new Date(y, m - 1 + n, Math.min(d, last));
+}
+function caTier(m) {
+  if (!m || !m.date) return 0;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  for (let i = CA_TIERS.length - 1; i >= 0; i--) if (today >= caAddMonths(m.date, CA_TIERS[i].months)) return CA_TIERS[i].tier;
+  return 0;
+}
+function caOldestDate(moves) { return (moves || []).map(m => m.date || '9999-99-99').sort()[0] || '9999-99-99'; }
+function caFilterMoves(moves) { return _caFilter ? (moves || []).filter(m => caTier(m) >= _caFilter) : (moves || []); }
+function caMonthsSince(ymd) {
+  if (!ymd) return 0;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  let n = 0; while (n < 120 && today >= caAddMonths(ymd, n + 1)) n++;
+  return n;
+}
+function caElapsedText(m) {
+  const t = caTier(m); if (!t) return '';
+  const c = CA_TIERS[t - 1];
+  return `<span style="margin-left:6px;font-size:11px;font-weight:700;color:${c.color}">（${caMonthsSince(m.date)}か月経過）</span>`;
+}
+function caChipHtml(tier, oldest) {
+  if (!tier) return '';
+  const c = CA_TIERS[tier - 1];
+  return `<span title="いちばん古い分は${oldest}に預けたもの" style="flex-shrink:0;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:${c.bg};color:${c.color};white-space:nowrap">${c.dot} ${c.short}以上</span>`;
+}
+function caCounts(moves) {
+  const n = { 1: 0, 2: 0, 3: 0 };
+  (moves || []).forEach(m => { const t = caTier(m); if (t) n[t]++; });
+  return n;
+}
+function caClientCountsHtml(moves) {
+  const n = caCounts(moves);
+  const parts = CA_TIERS.filter(c => n[c.tier]).map(c => `<span style="color:${c.color}">${c.dot}${c.short} ${n[c.tier]}</span>`);
+  return parts.length ? `<span style="margin-left:8px;font-size:11px;font-weight:700;display:inline-flex;gap:6px">${parts.join('')}</span>` : '';
+}
+function caRenderBar(holding) {
+  const el = document.getElementById('wh-consign-age-bar'); if (!el) return;
+  if (!holding.length) { el.innerHTML = ''; return; }
+  const n = caCounts(holding);
+  const atLeast = t => CA_TIERS.filter(c => c.tier >= t).reduce((s, c) => s + n[c.tier], 0);
+  const tab = (v, label) => `<span class="inv-subcat-tab${_caFilter === v ? ' active' : ''}" onclick="_caFilter=${v};renderWhConsignList()">${label}</span>`;
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+    ${tab(0, 'すべて')}${CA_TIERS.map(c => tab(c.tier, `${c.dot} ${c.label} ${atLeast(c.tier)}`)).join('')}
+    <select onchange="_caSort=this.value;renderWhConsignList()" style="margin-left:auto;width:auto;padding:4px 8px;font-size:12px">
+      <option value="new" ${_caSort === 'new' ? 'selected' : ''}>新しく預けた順</option>
+      <option value="age" ${_caSort === 'age' ? 'selected' : ''}>長く預けている順</option>
+    </select></div>`;
+}
+function caHomeTileHtml() {
+  const holding = (typeof stockMoves !== 'undefined' ? stockMoves : []).filter(m => m.type === 'consign' && m.status === 'holding');
+  const n = caCounts(holding);
+  const total = n[1] + n[2] + n[3];
+  return `<div class="home-stat-card" onclick="_caFilter=1;goHomeToInv('inv-wholesale');setTimeout(()=>{ if (typeof switchWhTab === 'function') switchWhTab('consign'); }, 200)" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">長期の委託</div>
+        <div style="font-size:18px;font-weight:700;color:${n[3] ? '#b91c1c' : n[2] ? '#c2410c' : total ? '#a16207' : '#4a4a4a'}">${total}件</div>
+        ${total ? `<div style="font-size:11px;font-weight:700;display:flex;gap:6px;justify-content:center;flex-wrap:wrap">${CA_TIERS.map(c => `<span style="color:${c.color}">${c.dot}${c.short} ${n[c.tier]}</span>`).join('')}</div>` : ''}
+      </div>`;
+}
+</script>
 <style>
 /* ── HAK 清洲在庫（株式会社HAKの在庫。KANETAKAの在庫とは別の帳簿）── */
 #hak-app { position:fixed; inset:0; z-index:190; background:var(--surface); overflow-y:auto; -webkit-overflow-scrolling:touch; display:none; }
