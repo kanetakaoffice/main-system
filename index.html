@@ -5196,6 +5196,7 @@ function renderWhDelivItems() {
           : `<button onclick="moveWhDelivItemToConsign(${idx})" style="background:none;border:none;color:var(--text-muted);font-size:11px;text-decoration:underline;cursor:pointer;padding:0">📦 委託リストへ追加</button>`}
       </div>
       <div id="wh-item-bb-${idx}">${whItemBuybackHtml(it, idx)}</div>
+      ${whItemNoteHtml(it, idx)}
       ${(!it._consignMarked && it._splitFrom != null) ? whItemDamageSectionHtml(it, idx) : ''}
     </div>`).join('');
   updateWhDelivTotalDisplay();
@@ -5294,7 +5295,7 @@ function renderWhDelivLivePreview() {
   pageEl.innerHTML = dsSlipBodyHtml(client, date, subject, '');
   const items = mergeSlipItemsForPrint(_whDelivItems.map(it => ({
     model: it.model, name: it.name, qty: it.qty, unitPrice: it.unitPrice, amount: it.amount, productKey: it.productKey,
-    isConsignNote: !!it._consignMarked, damageDetail: (it.damageMode === 'detail' ? it.damageDetail : '') || ''
+    isConsignNote: !!it._consignMarked, damageDetail: it.damageDetail || ''
   })));
   renderDeliverySlipColumns(pageEl, items);
   fitWhDelivLivePreviewScale();
@@ -5331,18 +5332,29 @@ function fitWhDelivLivePreviewScale() {
   }
 }
 
-// 傷・潰れ分の行（splitWhDelivItemで切り分けた行）にだけ表示する、写真 or 詳細を選んで記録するUI。
-// どちらか一方のみを残す（納品書には詳細のテキストだけが載り、写真は社内記録用としてのみ保持する）
+// 要望「傷・つぶれの詳細を、備考として何でも書ける欄に広げてほしい」への対応。
+// 以前は傷・潰れ分の行（splitWhDelivItemで切り分けた行）にだけ「詳細」の入力欄があったが、
+// すべての行（委託の行も含む）に「備考」の入力欄を出すようにした。入力内容は今までと同じ
+// damageDetail に保存するので、納品書の型番の下の「※〜」表示、freee用CSVの摘要、
+// 同じ型番の行をまとめない判定などは、そのまま備考として働く。
+function whItemNoteHtml(it, idx) {
+  return `
+    <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+      <span style="flex-shrink:0;font-size:11px;font-weight:700;color:var(--text-sub)">備考</span>
+      <input type="text" value="${(it.damageDetail||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" oninput="updateWhItemDamageDetail(${idx}, this.value)" placeholder="納品書の型番の下に表示されます（例：箱なし、展示品、側面に傷）" style="flex:1;min-width:0;padding:6px 8px;font-size:12px;border:1.5px solid var(--border);border-radius:6px">
+    </div>`;
+}
+
+// 傷・潰れ分の行（splitWhDelivItemで切り分けた行）にだけ表示する、写真の記録UI（社内記録用で納品書には出さない）。
+// 傷・つぶれの内容の文章は、上の「備考」欄に入力する（以前の「詳細を入力」はここから備考欄へ移した）。
 function whItemDamageSectionHtml(it, idx) {
   const modeBtnStyle = active => `flex:1;padding:6px;font-size:11px;font-weight:600;border-radius:6px;cursor:pointer;border:1.5px solid ${active?'#3a3a3a':'var(--border)'};background:${active?'#3a3a3a':'var(--white)'};color:${active?'#fff':'var(--text)'}`;
   return `
     <div style="margin-top:8px;padding:8px 10px;background:var(--gold-bg);border-radius:6px">
-      <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:6px">傷・つぶれの記録（納品書には詳細のテキストのみ反映されます。写真は社内記録用です）</div>
+      <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:6px">傷・つぶれの写真（社内記録用で、納品書には出ません。内容は上の備考に書くと納品書に載ります）</div>
       <div style="display:flex;gap:6px;margin-bottom:6px">
-        <button onclick="setWhItemDamageMode(${idx},'detail')" style="${modeBtnStyle(it.damageMode==='detail')}">📝 詳細を入力</button>
         <button onclick="setWhItemDamageMode(${idx},'photo')" style="${modeBtnStyle(it.damageMode==='photo')}">📷 写真を添付</button>
       </div>
-      ${it.damageMode === 'detail' ? `<input type="text" value="${(it.damageDetail||'').replace(/"/g,'&quot;')}" oninput="updateWhItemDamageDetail(${idx}, this.value)" placeholder="例：側面に傷、角がつぶれ" style="width:100%;padding:6px 8px;font-size:12px;border:1.5px solid var(--border);border-radius:6px">` : ''}
       ${it.damageMode === 'photo' ? `
         <input type="file" id="wh-item-damage-photo-${idx}" accept="image/*" capture="environment" style="display:none" onchange="handleWhItemDamagePhoto(${idx}, event)">
         <button onclick="document.getElementById('wh-item-damage-photo-${idx}').click()" style="padding:6px 10px;font-size:12px;border:1.5px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer">📷 写真を撮る・選択</button>
@@ -5357,8 +5369,7 @@ function setWhItemDamageMode(idx, mode) {
   const it = _whDelivItems[idx];
   if (!it) return;
   it.damageMode = (it.damageMode === mode) ? null : mode; // 同じボタンをもう一度押すと選択解除
-  // 写真・詳細のどちらか一方だけを残す（両方は持たせない）
-  if (it.damageMode !== 'detail') it.damageDetail = '';
+  // 備考（damageDetail）は写真とは別に常に残す。写真は解除したときだけ消す
   if (it.damageMode !== 'photo') it.damagePhoto = '';
   renderWhDelivItems();
   saveWhDelivDraft();
@@ -5369,6 +5380,9 @@ function updateWhItemDamageDetail(idx, value) {
   if (!it) return;
   it.damageDetail = value;
   saveWhDelivDraftDebounced();
+  // 右側（パソコン幅）の作成中プレビューにも、入力が一段落したら備考を反映する
+  clearTimeout(window._whNotePreviewTimer);
+  window._whNotePreviewTimer = setTimeout(() => { if (typeof renderWhDelivLivePreview === 'function') renderWhDelivLivePreview(); }, 400);
 }
 
 async function handleWhItemDamagePhoto(idx, event) {
@@ -5434,7 +5448,7 @@ function deliverySlipMovesToItems(slipId) {
     productKey: m.productKey, jan: deliverySlipItemJan(m), name: deliverySlipItemName(m),
     model: deliverySlipItemModel(m),
     qty: m.qty, unitPrice: m.unitPrice || 0, amount: m.amount || 0,
-    damageMode: m.damageDetail ? 'detail' : (m.damagePhoto ? 'photo' : null),
+    damageMode: m.damagePhoto ? 'photo' : null,
     damageDetail: m.damageDetail || '', damagePhoto: m.damagePhoto || '',
     _consignMarked: m.type === 'consign',
     // 出庫元の事務所（この機能を入れる前に発行した納品書は、取り消し時と同じく定位置として扱う）
@@ -5570,14 +5584,15 @@ async function submitWhDeliverySlip() {
       it._consignMarked ? {
         productKey: it.productKey, productName: it.name, jan: it.jan, model: it.model || '',
         type: 'consign', status: 'holding', client, qty: it.qty, date, memo: '', loc: it.loc || '',
+        damageDetail: it.damageDetail || '', // 備考（納品書の型番の下に表示）
         stockBefore: stockBeforeByProduct[it.productKey], stockAfter: stockBeforeByProduct[it.productKey] - newQtyByProduct[it.productKey],
         createdAt: Date.now(), slipId, slipNo, itemSeq: idx
       } : {
         productKey: it.productKey, productName: it.name, model: it.model || '', jan: it.jan,
         type: 'out', channel: '卸売', client, subject, qty: it.qty, unitPrice: it.unitPrice, amount: it.amount,
         slipId, slipNo, date, memo: '', loc: it.loc || '', stockBefore: stockBeforeByProduct[it.productKey], stockAfter: stockBeforeByProduct[it.productKey] - newQtyByProduct[it.productKey], createdAt: Date.now(), itemSeq: idx,
-        // 傷・つぶれの記録：詳細（テキスト）は納品書にも表示されるが、写真は社内記録用のみで納品書には出さない
-        damageDetail: it.damageMode === 'detail' ? (it.damageDetail || '') : '',
+        // 備考（テキスト）は納品書にも表示されるが、傷・つぶれの写真は社内記録用のみで納品書には出さない
+        damageDetail: it.damageDetail || '',
         damagePhoto: it.damageMode === 'photo' ? (it.damagePhoto || '') : ''
       }
     )})));
@@ -5784,8 +5799,8 @@ function renderDeliverySlipColumns(root, items, opts) {
     // 委託の印が付いた行は、単価がまだ確定していないため単価欄に金額の代わりに
     // 「委託」と表記する
     const priceDisp = it.isConsignNote ? '委託' : (it.unitPrice ? ('¥' + it.unitPrice.toLocaleString('ja-JP')) : '');
-    // 傷・つぶれの詳細（テキスト）が入力されている行だけ、注記として下に表示する（写真は納品書には出さない）
-    const noteHtml = it.damageDetail ? '<div class="ds-note">※' + it.damageDetail + '</div>' : '';
+    // 備考（テキスト）が入力されている行だけ、注記として下に表示する（傷・つぶれの写真は納品書には出さない）
+    const noteHtml = it.damageDetail ? '<div class="ds-note">※' + escapeHtmlMain(it.damageDetail) + '</div>' : '';
     const altClass = (idx % 2 === 1) ? ' ds-row-alt' : '';
     return '<div class="ds-row-wrap ds-measurable' + altClass + '"><div class="ds-row"><span class="ds-model">' + (it.model||'') + '</span><span class="ds-qty">' + it.qty + '</span>' + (hidePrice ? '' : '<span class="ds-price">' + priceDisp + '</span>') + '</div>' + noteHtml + '</div>';
   };
@@ -12639,6 +12654,8 @@ window._initApp = async function() {
   if (window.renderHomeScreen) renderHomeScreen();
   // タスク・予定：自分をメンバー一覧に登録し、30秒ごとに最新の状態を取り込む
   if (typeof tkInit === 'function') tkInit();
+  // 仕入歩合：仕入れ担当者に、歩合が確定したことを知らせる
+  if (typeof comStaffNotifyInit === 'function') comStaffNotifyInit();
 };
 
 function applyRoleUI() {
@@ -21953,7 +21970,7 @@ function renderCommission() {
   </div>`;
   if (owner) {
     html += closing
-      ? `<div class="com-closed"><span>✅ ${y}年${m}月分は確定済みです（${comEsc(comFmtClosedAt(closing.closedAt))}・${comEsc(tkName(closing.closedBy))}）。明細を直すときは確定を解除してください。</span><button class="cm-btn" onclick="comReopenMonth()">確定を解除</button></div>`
+      ? `<div class="com-closed"><span>✅ ${y}年${m}月分は確定済みです（${comEsc(comFmtClosedAt(closing.closedAt))}・${comEsc(tkName(closing.closedBy))}）。明細を直すときは確定を解除してください。</span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="cm-btn primary" onclick="comExportExcel('${COM.ym}')">Excel出力</button><button class="cm-btn" onclick="comReopenMonth()">確定を解除</button></span></div>`
       : `<div class="com-open"><span>${y}年${m}月分は未確定です。給与計算の前に確定すると、この月の歩合額が記録され、明細が変更できなくなります。</span><button class="cm-btn primary" onclick="comCloseMonth()">この月を確定</button></div>`;
   }
 
@@ -22030,13 +22047,13 @@ function renderCommission() {
     const hist = Object.entries(COM.closings || {}).filter(([, c]) => c).sort((a, b) => b[0].localeCompare(a[0]));
     const people = [...new Set(hist.flatMap(([, c]) => Object.values(c.staff || {}).map(x => x.email)))];
     html += `<div class="com-card"><h3>確定の履歴<small>給与明細との照合に使えます</small></h3>
-      <div class="com-scroll"><table><thead><tr><th>年月</th>${people.map(e => `<th class="r">${comEsc(tkName(e))}</th>`).join('')}<th class="r">歩合合計</th><th class="r">会社に残る額</th><th>確定日・確定者</th></tr></thead><tbody>
+      <div class="com-scroll"><table><thead><tr><th>年月</th>${people.map(e => `<th class="r">${comEsc(tkName(e))}</th>`).join('')}<th class="r">歩合合計</th><th class="r">会社に残る額</th><th>確定日・確定者</th><th></th></tr></thead><tbody>
       ${hist.length ? hist.map(([ym, c]) => {
         const rows = Object.values(c.staff || {});
         const tc = rows.reduce((t, x) => t + (x.commission || 0), 0), tp = rows.reduce((t, x) => t + (x.profit || 0), 0);
         const [hy, hm] = ym.split('-').map(Number);
-        return `<tr><td><a href="#" onclick="event.preventDefault();COM.ym='${ym}';COM.editing=null;renderCommission()">${hy}年${hm}月</a></td>${people.map(e => { const x = rows.find(r => r.email === e); return `<td class="r">${x ? comYen(x.commission || 0) : '—'}</td>`; }).join('')}<td class="r pos"><b>${comYen(tc)}</b></td><td class="r">${comYen(tp - tc)}</td><td>${comEsc(comFmtClosedAt(c.closedAt))}・${comEsc(tkName(c.closedBy))}</td></tr>`;
-      }).join('') : `<tr><td colspan="${people.length + 4}" class="tk-empty">まだ確定した月はありません</td></tr>`}
+        return `<tr><td><a href="#" onclick="event.preventDefault();COM.ym='${ym}';COM.editing=null;renderCommission()">${hy}年${hm}月</a></td>${people.map(e => { const x = rows.find(r => r.email === e); return `<td class="r">${x ? comYen(x.commission || 0) : '—'}</td>`; }).join('')}<td class="r pos"><b>${comYen(tc)}</b></td><td class="r">${comYen(tp - tc)}</td><td>${comEsc(comFmtClosedAt(c.closedAt))}・${comEsc(tkName(c.closedBy))}</td><td><button class="com-rowbtn" onclick="comExportExcel('${ym}')">Excel</button></td></tr>`;
+      }).join('') : `<tr><td colspan="${people.length + 5}" class="tk-empty">まだ確定した月はありません</td></tr>`}
       </tbody></table></div></div>`;
   }
 
@@ -22205,6 +22222,75 @@ async function comReopenMonth() {
     showToast(`${y}年${m}月分の確定を解除しました`);
     renderCommission();
   } catch (e) { showToast('解除できませんでした'); }
+}
+
+// 確定した月のExcel出力（給与計算・税理士さんへの共有用）。金額は確定時に記録した値を使う
+function comExportExcel(ym) {
+  const c = (COM.closings || {})[ym];
+  if (!comIsOwner() || !c) { showToast('確定済みの月だけ出力できます'); return; }
+  if (typeof XLSX === 'undefined') { showToast('Excel出力の準備ができていません。通信状況をご確認ください'); return; }
+  const [y, m] = ym.split('-').map(Number);
+  const rule = { ...COM_DEFAULT_RULE, ...(c.rule || {}) };
+  const rows = Object.values(c.staff || {}).sort((a, b) => (b.profit || 0) - (a.profit || 0));
+  const tot = k => rows.reduce((t, x) => t + (x[k] || 0), 0);
+  const d = new Date(c.closedAt);
+  const aoa = [
+    [`仕入歩合 確定表　${y}年${m}月分`], [],
+    ['確定日', `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`, '確定者', tkName(c.closedBy)],
+    ['歩合ルール', comRuleText(rule)], [],
+    ['担当者', '件数', '仕入額（円）', '利益（円）', '歩合（円）', '会社に残る額（円）'],
+    ...rows.map(x => [tkName(x.email), x.count || 0, x.cost || 0, x.profit || 0, x.commission || 0, (x.profit || 0) - (x.commission || 0)]),
+    ['合計', tot('count'), tot('cost'), tot('profit'), tot('commission'), tot('profit') - tot('commission')],
+    [], ['明細'],
+    ['日付', '担当者', '店舗名', '型番', '数量', '仕入単価（円）', '仕入額（円）', '売単価（円）', '売値（円）', '経費（円）', '利益（円）']
+  ];
+  comAllEntries().filter(e => String(e.date || '').slice(0, 7) === ym)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .forEach(e => aoa.push([e.date, tkName(e.email), e.store, e.model, Number(e.qty) || 0, Number(e.cost) || 0, comCost(e), Number(e.price) || 0, comSales(e), Number(e.expense) || 0, comProfit(e)]));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 12 }, { wch: 14 }, { wch: 18 }, { wch: 16 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 14 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, `${m}月歩合`);
+  XLSX.writeFile(wb, `仕入歩合確定表_${y}年${m}月.xlsx`);
+  showToast('Excelを出力しました');
+}
+
+// 仕入れ担当者への「歩合が確定しました」のお知らせ（アプリを開いている間）。
+// ログイン後と1分ごとに、今月と先月の自分の確定状況を確認し、まだ知らせていない確定があれば音とメッセージで知らせる。
+// 知らせた月はこの端末に記録して、同じ月を何度も知らせないようにする。
+// （アプリを閉じている間のプッシュ通知はサーバー側（Cloud Functions）の追加が必要なため、ここでは扱わない）
+async function comStaffNotifyCheck() {
+  const me = tkMe();
+  if (!me || comIsOwner()) return;
+  if (COM.isStaff === null || COM.isStaffFor !== me) {
+    COM.isStaffFor = me;
+    try { COM.isStaff = !!(await tkReq('commission/settings/staff/' + tkKey(me))); } catch (e) { COM.isStaff = false; }
+  }
+  if (!COM.isStaff) return;
+  const seenKey = 'kanetaka_com_notified_' + tkKey(me);
+  let seen = [];
+  try { seen = JSON.parse(localStorage.getItem(seenKey) || '[]'); } catch (e) {}
+  const now = new Date();
+  const yms = [0, -1].map(k => { const d = new Date(now.getFullYear(), now.getMonth() + k, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); });
+  for (const ym of yms) {
+    if (seen.includes(ym)) continue;
+    let mine = null;
+    try { mine = await tkReq('commission/closings/' + ym + '/staff/' + tkKey(me)); } catch (e) { continue; }
+    if (!mine) continue;
+    seen.push(ym);
+    try { localStorage.setItem(seenKey, JSON.stringify(seen.slice(-24))); } catch (e) {}
+    if (COM.closings) COM.closings[ym] = { staff: { [tkKey(me)]: mine } };
+    const [y, m] = ym.split('-').map(Number);
+    if (typeof playConsignNotifySound === 'function') playConsignNotifySound();
+    showToast(`💰 ${y}年${m}月分の歩合が確定しました（${comYen(mine.commission || 0)}）`);
+    if (document.getElementById('screen-commission')?.classList.contains('active') && COM.ym === ym) renderCommission();
+    break;
+  }
+}
+function comStaffNotifyInit() {
+  if (COM._notifyTimer) return;
+  setTimeout(comStaffNotifyCheck, 3000);
+  COM._notifyTimer = setInterval(comStaffNotifyCheck, 60000);
 }
 
 async function comAddStaff() {
