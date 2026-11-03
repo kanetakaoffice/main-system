@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-03b">
+<meta name="app-build" content="2026-11-03c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -20842,7 +20842,7 @@ async function renderHomeTodayCard(noFetch) {
   html += `<div class="tk-today-sec"><div class="h">✅ 今日のタスク</div>${myToday.length ? myToday.map(row).join('') : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">今日が期限のタスクはありません</div>'}</div>`;
   if (myOverdue.length) {
     const opened = !!TK._homeOverdueOpen;
-    html += `<div class="tk-today-sec"><div class="h danger" onclick="TK._homeOverdueOpen=!TK._homeOverdueOpen;renderHomeTodayCard(true)" style="cursor:pointer;display:flex;align-items:center;gap:6px;padding:8px 10px;border:1.5px solid #fecaca;background:#fef2f2;border-radius:10px;margin:6px 0">⚠️ 期限切れ ${myOverdue.length}件<span style="margin-left:auto;font-weight:400;font-size:11.5px">${opened ? '閉じる ▲' : 'タップして表示 ▼'}</span></div>${opened ? myOverdue.map(row).join('') : ''}</div>`;
+    html += `<div class="tk-today-sec"><div class="h danger" onclick="TK._homeOverdueOpen=!TK._homeOverdueOpen;renderHomeTodayCard(true)" style="cursor:pointer;display:flex;align-items:center;gap:6px;padding:8px 10px;border:1px solid #fecaca;background:#fef2f2;border-radius:10px;margin:6px 0 0">⚠️ 期限切れ ${myOverdue.length}件<span style="margin-left:auto;font-weight:400;font-size:11.5px">${opened ? '閉じる ▲' : 'タップして表示 ▼'}</span></div>${opened ? myOverdue.map(row).join('') : ''}</div>`;
   }
   {
     const n = typeof isOpenCount === 'function' ? isOpenCount() : 0, nn = n ? isUnseenCount() : 0;
@@ -21550,7 +21550,9 @@ function cmExcel() {
 .is-seen b { color:#065f46; }
 .is-btns { flex-wrap:wrap; }
 .is-btns button { flex:1 1 40% !important; min-width:120px; }
-.home-is-line { display:flex; align-items:center; gap:8px; padding:9px 12px; margin:8px 0 0; background:#eff6ff; border:1px solid #bfdbfe; color:#1e3a8a; border-radius:10px; font-size:12.5px; cursor:pointer; }
+.home-is-line { display:flex; align-items:center; gap:8px; padding:8px 10px; margin:0 16px 10px; background:#eff6ff; border:1px solid #bfdbfe; color:#1e3a8a; border-radius:10px; font-size:12px; cursor:pointer; }
+/* 要望「みんなの課題（青）を、期限切れ（赤）・ほかの人の期限切れ（黄）と同じ大きさにそろえてほしい」への対応：
+   3つとも左右の余白16px・内側の余白8px 10px・文字12px・枠線1pxにそろえた */
 </style>
 <script>
 // ── みんなの課題 ──
