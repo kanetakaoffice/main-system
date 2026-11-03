@@ -22916,6 +22916,67 @@ async function hkKanetakaReceive(transfer, tid, recordPurchase) {
   transfer.kanetakaDone = true; transfer.purchaseKey = purchaseKey;
   try { if (typeof loadAll === 'function') loadAll(); } catch (e) {}
 }
+// ── 移動の取り消し ──
+// 間違えて確定した移動を取り消す（KANETAKAのアカウントのみ）。HAKの在庫を戻し、KANETAKAの港区の在庫を減らし、
+// 自動で作った入荷記録と仕入の記録を削除する。納品書は「取消」として履歴に残す（番号の飛びが分かるように）。
+async function hkCancelTransfer(tid) {
+  const t = HK.transfers[tid];
+  if (!t || t.canceled || !hkIsKanetaka()) return;
+  try { if (typeof loadInventory === 'function') await loadInventory(); } catch (e) {}
+  const loc = (typeof stockLocations !== 'undefined' && stockLocations.some(l => l.id === HK_DEST_LOC)) ? HK_DEST_LOC : defaultHomeLoc();
+  // KANETAKA側：港区の在庫が、取り消す数より少なくなっていないか（すでに売った・動かした場合）
+  const plan = [];
+  if (t.kanetakaDone) {
+    for (const l of (t.items || [])) {
+      const prod = (products || []).find(p => l.jan && String(p.jan || '') === String(l.jan));
+      const have = prod ? (computeLocBreakdown(prod).byLoc[loc] || 0) : 0;
+      plan.push({ l, prod, have });
+    }
+    const short = plan.filter(x => !x.prod || x.have < x.l.qty);
+    if (short.length) {
+      showToast(`港区の在庫が足りないため取り消せません（${short.map(x => x.l.name + '：港区に' + x.have + '個').join('、')}）。すでに出荷・移動した分を確認してください`);
+      return;
+    }
+  }
+  const qty = (t.items || []).reduce((s, l) => s + (l.qty || 0), 0);
+  if (!await showConfirm(`納品書${t.no}（${qty}点・${hkYen(t.total)}）の移動を取り消しますか？\n・HAKの清洲在庫に戻します${t.kanetakaDone ? '\n・KANETAKAの港区の在庫を減らします' : ''}${t.purchaseKey ? '\n・KANETAKAの仕入の記録を削除します' : ''}\n納品書は「取消」として履歴に残ります。`)) return;
+  const now = Date.now(), by = currentSessionEmail();
+  try {
+    // 1) KANETAKA側：港区の在庫を減らし、この移動で作った入荷記録と仕入を削除
+    if (t.kanetakaDone) {
+      for (const x of plan) {
+        const ls = locStateAfterDelta(x.prod, loc, -x.l.qty);
+        await saveProductLocState(x.prod, ls.stock, ls.locQty);
+      }
+      const moves = (stockMoves || []).filter(m => m.hakTransferNo === t.no && m.type === 'in');
+      for (const m of moves) await fetch(authedUrl('/stockMoves/' + m._key + '.json'), { method: 'DELETE' });
+      if (t.purchaseKey) await fetch(authedUrl('/purchases/' + t.purchaseKey + '.json'), { method: 'DELETE' });
+    }
+    // 2) HAK側：在庫を戻し、取消の履歴を残す
+    const upd = {};
+    (t.items || []).forEach(l => {
+      const k = hkJanKey(l.jan); const it = HK.items[k] || { jan: l.jan, name: l.name, qty: 0, avgCost: 0 };
+      const before = Number(it.qty) || 0;
+      upd['items/' + k] = { ...it, qty: before + l.qty, updatedAt: now };
+      upd['moves/' + hkNewId()] = { type: 'cancel', jan: l.jan, name: l.name, qty: l.qty, before, after: before + l.qty, ref: t.no, memo: '港区への移動を取消', date: todayStr(), at: now, by };
+    });
+    upd['transfers/' + tid + '/canceled'] = true; upd['transfers/' + tid + '/canceledAt'] = now; upd['transfers/' + tid + '/canceledBy'] = by;
+    await hkReq('hak', 'PATCH', upd);
+    Object.keys(upd).forEach(p => {
+      if (p.startsWith('items/')) HK.items[p.slice(6)] = upd[p];
+      else if (p.startsWith('moves/')) HK.moves[p.slice(6)] = upd[p];
+    });
+    t.canceled = true; t.canceledAt = now; t.canceledBy = by;
+    try { if (typeof loadInventory === 'function') loadInventory(); if (typeof loadAll === 'function') loadAll(); } catch (e) {}
+    showToast(`納品書${t.no}の移動を取り消しました`);
+    hkRender();
+  } catch (e) {
+    console.error(e);
+    showToast('取り消しの途中で通信エラーになりました。在庫と仕入の記録を確認してください');
+    await hkLoad(); hkRender();
+  }
+}
+
 async function hkRetryReceive(tid) {
   const t = HK.transfers[tid]; if (!t || t.kanetakaDone) return;
   if (!await showConfirm(`納品書${t.no}の商品を、KANETAKAの港区の在庫と仕入に記録し直しますか？`)) return;
@@ -22924,7 +22985,7 @@ async function hkRetryReceive(tid) {
 }
 
 // ── 履歴・書類 ──
-const HK_MOVE_LABEL = { gild: ['GILD検品', 'in'], stocktake: ['棚卸し', 'st'], out: ['出庫', 'out'], transfer: ['港区へ移動', 'tr'] };
+const HK_MOVE_LABEL = { gild: ['GILD検品', 'in'], stocktake: ['棚卸し', 'st'], out: ['出庫', 'out'], transfer: ['港区へ移動', 'tr'], cancel: ['移動の取消', 'in'] };
 function hkHistoryHtml() {
   const trs = Object.entries(HK.transfers || {}).map(([id, t]) => ({ ...t, _id: id })).sort((a, b) => String(b.date).localeCompare(String(a.date)) || (b.at || 0) - (a.at || 0));
   const months = [...new Set(trs.map(t => String(t.date).slice(0, 7)))];
@@ -22933,8 +22994,8 @@ function hkHistoryHtml() {
   return `<div class="hk-card"><h3>HAK→KANETAKAの納品書<small>清洲→港区の移動ごとに1枚</small></h3>
     ${!HK.settings.companyName ? '<div class="hk-warn">納品書・請求書に載せるHAKの会社情報がまだ入っていません。「会社情報」タブで入力してください。</div>' : ''}
     <div class="hk-scroll"><table><thead><tr><th>日付</th><th>納品書No.</th><th class="r">点数</th><th class="r">合計</th><th></th></tr></thead><tbody>
-    ${trs.length ? trs.map(t => `<tr><td>${hkEsc(t.date)}</td><td>${hkEsc(t.no)}${t.kanetakaDone === false ? '<br><span class="hk-chip out">KANETAKAへの入荷が未記録</span>' : ''}</td><td class="r">${(t.items || []).reduce((s, l) => s + (l.qty || 0), 0)}</td><td class="r">${hkYen(t.total)}</td>
-      <td class="r"><button class="hk-btn" onclick="hkPrintDelivery('${t._id}')">納品書</button>${t.kanetakaDone === false && hkIsKanetaka() ? ` <button class="hk-btn" onclick="hkRetryReceive('${t._id}')">KANETAKAへの入荷をやり直す</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="5" class="tk-empty">まだ移動はありません</td></tr>'}
+    ${trs.length ? trs.map(t => `<tr style="${t.canceled ? 'color:var(--text-muted)' : ''}"><td>${hkEsc(t.date)}</td><td>${t.canceled ? `<s>${hkEsc(t.no)}</s> <span class="hk-chip out">取消</span>` : hkEsc(t.no)}${!t.canceled && t.kanetakaDone === false ? '<br><span class="hk-chip out">KANETAKAへの入荷が未記録</span>' : ''}</td><td class="r">${(t.items || []).reduce((s, l) => s + (l.qty || 0), 0)}</td><td class="r">${t.canceled ? `<s>${hkYen(t.total)}</s>` : hkYen(t.total)}</td>
+      <td class="r">${t.canceled ? `<span class="hk-note">${t.canceledAt ? new Date(t.canceledAt).toLocaleDateString('ja-JP') + 'に取消' : '取消済み'}</span>` : `<button class="hk-btn" onclick="hkPrintDelivery('${t._id}')">納品書</button>${t.kanetakaDone === false && hkIsKanetaka() ? ` <button class="hk-btn" onclick="hkRetryReceive('${t._id}')">KANETAKAへの入荷をやり直す</button>` : ''}${hkIsKanetaka() ? ` <button class="hk-btn" onclick="hkCancelTransfer('${t._id}')" style="color:var(--danger)">取り消す</button>` : ''}`}</td></tr>`).join('') : '<tr><td colspan="5" class="tk-empty">まだ移動はありません</td></tr>'}
     </tbody></table></div>
     <div class="hk-row" style="align-items:center"><label style="flex:0 0 170px">請求書の対象月<input type="month" value="${hkEsc(curMonth)}" onchange="HK._invMonth=this.value;hkRender()"></label>
       <button class="cm-btn primary" onclick="hkPrintInvoice('${hkEsc(curMonth)}')" style="flex:0 0 auto">この月の請求書</button>
@@ -22979,6 +23040,7 @@ function hkPrintDoc(fileName, html) {
 }
 function hkPrintDelivery(tid) {
   const t = HK.transfers[tid]; if (!t) return;
+  if (t.canceled) { showToast('取り消した納品書です'); return; }
   const incl = t.taxMode === 'incl';
   const rows = (t.items || []).map(l => `<tr><td>${hkEsc(l.name)}</td><td>${hkEsc(l.jan)}</td><td class="r">${l.qty}</td><td class="r">${hkYen(l.unitPrice)}</td><td class="r">${hkYen(l.amount)}</td></tr>`).join('');
   hkPrintDoc(`納品書_${t.no}_株式会社KANETAKA`, `<div class="hd"><h1>納 品 書</h1>
@@ -22989,7 +23051,7 @@ function hkPrintDelivery(tid) {
     <div class="note">納品先：株式会社KANETAKA 港区事務所（清洲事務所より移動）</div></div>`);
 }
 function hkPrintInvoice(ym) {
-  const trs = Object.values(HK.transfers || {}).filter(t => String(t.date).slice(0, 7) === ym).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const trs = Object.values(HK.transfers || {}).filter(t => !t.canceled && String(t.date).slice(0, 7) === ym).sort((a, b) => String(a.date).localeCompare(String(b.date)));
   if (!trs.length) { showToast('この月の納品書はありません'); return; }
   const s = HK.settings || {};
   const modes = [...new Set(trs.map(t => t.taxMode === 'incl' ? 'incl' : 'excl'))];
