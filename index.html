@@ -22392,7 +22392,11 @@ body.hak-only > *:not(#hak-app):not(#toast):not(#scan-overlay):not(#confirm-moda
 //   /hak/meta                      {gildBaselineAt, lastImportAt}
 // ============================================================
 const HK_INSPECTED = ['検品済', '検品済(要確認)'];
+// GILDの「金額確定待ち」は、検品のあと（お客様に支払う金額を確定する段階）
 const HK_PAST_INSPECTED = ['金額確定待ち', '振込待ち', '振込済'];
+// 基準の取り込みで「取り込み済み」として記録する状態。商品が清洲に届いている（届いた後の）状態だけにする。
+// 受付・入荷待ちの依頼はまだ届いていないので記録せず、後で検品済になったときに在庫に足す
+const HK_BASELINE_SEEN = ['検品済', '検品済(要確認)', '金額確定待ち', '振込待ち', '振込済', 'キャンセル'];
 const HK_DEST_LOC = 'minato';
 const HK_SUPPLIER = '（株）HAK';
 const HK = { role: null, open: false, tab: 'stock', items: {}, moves: {}, transfers: {}, settings: {}, meta: {}, janNames: null,
@@ -22630,8 +22634,9 @@ function hkGildHtml() {
   if (g.loading) return html + '<div class="hk-card"><div class="tk-empty">読み込み中…</div></div>';
   if (g.baseline) {
     const names = new Set(g.recs.filter(r => r.jan).map(r => r.jan)).size;
+    const marked = g.recs.filter(r => HK_BASELINE_SEEN.includes(r.st)).length;
     return html + `<div class="hk-card"><h3>初回：基準の取り込み<small>${hkEsc(g.fileName)}</small></h3>
-      <div class="hk-warn">はじめての取り込みです。このCSVにある<b>${g.recs.length.toLocaleString()}件</b>の依頼を「取り込み済み」として記録します。<b>在庫は増えません</b>。今清洲にあるHAKの商品は、このあと「棚卸し」で数えて在庫にします。<br>あわせて、${names.toLocaleString()}種類の商品名を覚えておき、棚卸しでJANを読み取ったときに名前が出るようにします。</div>
+      <div class="hk-warn">はじめての取り込みです。このCSVにある${g.recs.length.toLocaleString()}件のうち、検品済・金額確定待ち・振込待ち・振込済・キャンセルの<b>${marked.toLocaleString()}件</b>を「取り込み済み」として記録します。<b>在庫は増えません</b>。今清洲にあるHAKの商品は、このあと「棚卸し」で数えて在庫にします。<br>受付・入荷待ちの${(g.recs.length - marked).toLocaleString()}件はまだ記録しないので、届いて検品済になったときに在庫に足されます。<br>あわせて、${names.toLocaleString()}種類の商品名を覚えておき、棚卸しでJANを読み取ったときに名前が出るようにします。</div>
       <div class="hk-row" style="justify-content:flex-end"><button class="cm-btn" onclick="HK.gild=null;hkRender()" style="flex:0 0 auto">やめる</button><button class="cm-btn primary" onclick="hkCommitGild()" style="flex:0 0 auto">基準の取り込みを行う</button></div></div>`;
   }
   const rowsHtml = (arr, key) => arr.map((r, i) => `<tr><td><input type="checkbox" ${r.on ? 'checked' : ''} onchange="HK.gild.${key}[${i}].on=this.checked;hkRender()"></td><td>${hkEsc(r.name)}</td><td class="jan">${hkEsc(r.jan)}</td><td class="r">${r.qty}</td><td class="r">${hkYen(r.cost)}</td><td><span class="hk-chip">${hkEsc(r.st)}</span></td><td class="jan">${hkEsc(r.id)}</td></tr>`).join('');
@@ -22639,13 +22644,14 @@ function hkGildHtml() {
   const selQty = sel.reduce((s, r) => s + r.qty, 0);
   html += `<div class="hk-card"><h3>在庫に足す商品<small>${hkEsc(g.fileName)}</small></h3>
     ${g.add.length ? `<div class="hk-scroll"><table><thead><tr><th></th><th>商品名</th><th>JAN</th><th class="r">数量</th><th class="r">買取単価</th><th>状態</th><th>依頼ID</th></tr></thead><tbody>${rowsHtml(g.add, 'add')}</tbody></table></div>` : '<p class="hk-note">新しく検品済みになったHAKの商品はありません。</p>'}
-    ${g.past.length ? `<h3 style="margin-top:6px">検品済みを過ぎていた商品<small>前回の取り込みのあとに、金額確定・振込まで進んでいた依頼です</small></h3>
-      <p class="hk-note">清洲に届いていて、まだ在庫に入れていないものだけチェックを入れてください。チェックしなかったものは、次の取り込みでもまたここに出ます。</p>
+    ${g.past.length ? `<h3 style="margin-top:6px">検品済みを過ぎていた商品<small>前回の取り込みのあとに、検品済から金額確定待ち・振込まで進んでいた依頼です</small></h3>
+      <p class="hk-note">清洲に届いていて、まだ在庫に入れていないものだけチェックを入れてください。棚卸しですでに数えた商品など、足さないものはチェックを外したままにします。</p>
+      <label style="flex-direction:row;align-items:center;gap:6px;font-size:12.5px;color:var(--text)"><input type="checkbox" ${g.dismiss ? 'checked' : ''} onchange="HK.gild.dismiss=this.checked;hkRender()"> チェックしなかった商品は、次回から表示しない（足さないことを確定する）</label>
       <div class="hk-scroll"><table><thead><tr><th></th><th>商品名</th><th>JAN</th><th class="r">数量</th><th class="r">買取単価</th><th>状態</th><th>依頼ID</th></tr></thead><tbody>${rowsHtml(g.past, 'past')}</tbody></table></div>` : ''}
     ${g.waitingUnsorted ? `<p class="hk-note">検品済みでも担当会社が「未仕分け」の依頼が${g.waitingUnsorted}件あります。GILDでHAKに仕分けされたあとの取り込みで足されます。</p>` : ''}
     ${g.noJan ? `<p class="hk-note">JANコードのないHAKの検品済み依頼が${g.noJan}件あります。在庫に入れられないため、棚卸しで追加してください。</p>` : ''}
     ${g.canceledAfter ? `<div class="hk-warn">取り込み済みの依頼のうち${g.canceledAfter}件が、そのあとキャンセルになっています。商品が清洲にない場合は、棚卸しで数を直してください。</div>` : ''}
-    <div class="hk-row" style="justify-content:flex-end;align-items:center"><span class="hk-note" style="flex:1 1 auto">選択中：${sel.length}件・${selQty}点</span><button class="cm-btn" onclick="HK.gild=null;hkRender()" style="flex:0 0 auto">やめる</button><button class="cm-btn primary" onclick="hkCommitGild()" style="flex:0 0 auto" ${sel.length ? '' : 'disabled'}>在庫に足す</button></div></div>`;
+    <div class="hk-row" style="justify-content:flex-end;align-items:center"><span class="hk-note" style="flex:1 1 auto">選択中：${sel.length}件・${selQty}点</span><button class="cm-btn" onclick="HK.gild=null;hkRender()" style="flex:0 0 auto">やめる</button><button class="cm-btn primary" onclick="hkCommitGild()" style="flex:0 0 auto" ${sel.length || (g.dismiss && g.past.some(r => !r.on)) ? '' : 'disabled'}>${sel.length ? '在庫に足す' : '確定する'}</button></div></div>`;
   return html;
 }
 async function hkCommitGild() {
@@ -22657,7 +22663,7 @@ async function hkCommitGild() {
   g.recs.forEach(r => { if (r.jan) { const k = hkJanKey(r.jan); if (!names[k] || r.cost > 0) names[k] = { n: r.name || (names[k] && names[k].n) || '', c: r.cost > 0 ? r.cost : (names[k] ? names[k].c : 0) }; } });
   Object.entries(names).forEach(([k, v]) => { upd['janNames/' + k] = v; });
   if (g.baseline) {
-    g.recs.forEach(r => { upd['gildSeen/' + r.id] = { s: r.st, q: r.qty, a: false, at: now }; });
+    g.recs.filter(r => HK_BASELINE_SEEN.includes(r.st)).forEach(r => { upd['gildSeen/' + r.id] = { s: r.st, q: r.qty, a: false, at: now }; });
     upd['meta/gildBaselineAt'] = now; upd['meta/lastImportAt'] = now;
     try {
       await hkReq('hak', 'PATCH', upd);
@@ -22669,7 +22675,9 @@ async function hkCommitGild() {
     return;
   }
   const sel = g.add.concat(g.past).filter(r => r.on);
-  if (!sel.length) return;
+  const dismissed = g.dismiss ? g.past.filter(r => !r.on) : [];
+  if (!sel.length && !dismissed.length) return;
+  dismissed.forEach(r => { upd['gildSeen/' + r.id] = { s: r.st, q: r.qty, a: false, dismissed: true, at: now }; });
   const byJan = {};
   sel.forEach(r => { const k = hkJanKey(r.jan); (byJan[k] = byJan[k] || []).push(r); });
   const newItems = {};
@@ -22693,7 +22701,7 @@ async function hkCommitGild() {
     Object.assign(HK.items, newItems); HK.meta.lastImportAt = now;
     Object.keys(upd).filter(p => p.startsWith('moves/')).forEach(p => { HK.moves[p.slice(6)] = upd[p]; });
     HK.gild = null;
-    showToast(`${sel.length}件・${sel.reduce((s, r) => s + r.qty, 0)}点を清洲の在庫に足しました`);
+    showToast(sel.length ? `${sel.length}件・${sel.reduce((s, r) => s + r.qty, 0)}点を清洲の在庫に足しました` : `${dismissed.length}件を、在庫に足さない依頼として記録しました`);
     hkSetTab('stock');
   } catch (e) { showToast('取り込めませんでした。通信状況をご確認ください'); }
 }
