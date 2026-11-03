@@ -869,16 +869,14 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div class="card">
       <div class="card-title">Quick Menu</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 16px 16px">
-        <button class="home-action-btn" onclick="goHomeToInv('inv-move')"><span class="home-icon">🔄</span><span class="home-label">入出庫</span></button>
-        <button class="home-action-btn" onclick="goHomeToInv('inv-packec')"><span class="home-icon">🚚</span><span class="home-label">出荷管理</span></button>
+        <!-- 要望「Quick Menuの項目が多すぎて見にくい。よく使う卸売管理・タスク・予定・みんなの状況・HAK在庫に絞りたい」への対応。
+             入出庫・出荷管理は在庫モードの下のメニュー、仕入・経費・出張は業務モードの下のメニューから開ける -->
         <button class="home-action-btn" onclick="goHomeToInv('inv-wholesale')"><span class="home-icon">📦</span><span class="home-label">卸売管理</span></button>
-        <button class="home-action-btn" onclick="showScreen('purchase')"><span class="home-icon">🛒</span><span class="home-label">仕入</span></button>
-        <button class="home-action-btn" onclick="showScreen('expense')"><span class="home-icon">💴</span><span class="home-label">経費</span></button>
-        <button class="home-action-btn" onclick="showScreen('form')"><span class="home-icon">✈️</span><span class="home-label">出張</span></button>
+        <button class="home-action-btn" onclick="openHakApp('stock')"><span class="home-icon">🏷️</span><span class="home-label">HAK在庫</span></button>
+        <button class="home-action-btn" onclick="goHomeToInv('inv-list')"><span class="home-icon">📋</span><span class="home-label">在庫一覧</span></button>
         <button class="home-action-btn" onclick="TK.filter='mine';openTasksScreen('tasks')" style="position:relative"><span class="home-icon">✅</span><span class="home-label">タスク</span><span class="tk-tile-badge" id="home-tk-badge"></span></button>
         <button class="home-action-btn" onclick="openTasksScreen('cal')"><span class="home-icon">📅</span><span class="home-label">予定</span></button>
         <button class="home-action-btn" onclick="TK.filter='people';openTasksScreen('tasks')"><span class="home-icon">👥</span><span class="home-label">みんなの状況</span></button>
-        <button class="home-action-btn" onclick="openHakApp('stock')"><span class="home-icon">🏷️</span><span class="home-label">HAK在庫</span></button>
       </div>
     </div>
     <div id="home-notify-prompt" style="display:none;align-items:center;justify-content:space-between;gap:8px;background:var(--surface);border:1.2px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:var(--text-muted)">
@@ -1714,7 +1712,9 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
             <option value="cost">仕入値が高い順</option>
             <option value="value">在庫金額が高い順</option>
             <option value="new">登録日が新しい順</option>
+            <option value="age">経過日数が長い順</option>
           </select>
+          <select id="inv-aging-days" onchange="kaSetAgingDays(this.value)" title="長期在庫とみなす日数" style="width:auto;padding:4px 8px;font-size:12px"></select>
           <!-- 保管場所ごとの在庫：事務所での絞り込み（選ぶと、その事務所に在庫のある商品だけを、その事務所の個数で表示） -->
           <select id="inv-loc-filter" onchange="renderInventoryList()" style="width:auto;padding:4px 8px;font-size:12px"><option value="">すべての事務所</option></select>
         </div>
@@ -4069,6 +4069,7 @@ async function loadInventory() {
       fetch(authedUrl('/stockLocations.json')).then(r => r.json()).catch(() => null)
     ]);
     setStockLocationsFromDb(locs);
+    if (typeof kaLoadAgingSetting === 'function') kaLoadAgingSetting();
     products   = objToArr(p);
     stockMoves = objToArr(m);
     wholesaleClients = objToArr(c);
@@ -11493,6 +11494,7 @@ function buildInvRow(p) {
         ${p.location ? `<div><span class="inv-row-detail-label">置き場所</span>${p.location}</div>` : ''}
         ${p.cost ? `<div><span class="inv-row-detail-label">仕入値</span>¥${p.cost.toLocaleString('ja-JP')}</div>` : ''}
         ${totalVal > 0 ? `<div><span class="inv-row-detail-label">在庫金額</span>¥${totalVal.toLocaleString('ja-JP')}</div>` : ''}
+        ${kaAgeDetailHtml(p)}
         ${forecastHtml}
         ${editBtns}
       </div>` : '';
@@ -11505,6 +11507,7 @@ function buildInvRow(p) {
           ${missingBadgeHtml}
         </div>
         <div style="text-align:right;flex-shrink:0;display:flex;align-items:center;gap:8px">
+          ${kaAgedChipHtml(p)}
           ${invRowLocChipHtml(p)}
           <span style="font-size:14px;font-weight:700;color:${p.stock<=threshold?'var(--danger)':'var(--text)'}">${invRowStockLabel(p)}</span>
           <span class="stock-badge ${stockClass}">${stockLabel}</span>
@@ -11579,7 +11582,7 @@ function clearInvSearch() {
 
 // 在庫一覧の並び順（在庫が少ない順／型番・名前順／仕入値順／在庫金額順／登録日順）は
 // 端末ごとに記憶しておき、次回開いたときも同じ並びにする
-const INV_SORT_ORDER_VALUES = ['stock', 'name', 'cost', 'value', 'new'];
+const INV_SORT_ORDER_VALUES = ['stock', 'name', 'cost', 'value', 'new', 'age'];
 function initInvSortOrderSelect() {
   const sel = document.getElementById('inv-sort-order');
   if (!sel) return;
@@ -11599,6 +11602,7 @@ const INV_STATUS_FILTERS = [
   { value: 'ok', label: '在庫あり' },
   { value: 'low', label: '残りわずか' },
   { value: 'zero', label: '在庫切れ' },
+  { value: 'aged', label: '長期在庫' },
 ];
 function buildInvStatusFilterBar() {
   return INV_STATUS_FILTERS.map(f =>
@@ -11658,6 +11662,7 @@ function renderInventoryList() {
 
   const statusFilterBar = document.getElementById('inv-status-filter-bar');
   if (statusFilterBar) statusFilterBar.innerHTML = buildInvStatusFilterBar();
+  kaRenderAgingSelect();
   updateInvViewModeButtons();
 
   const searching = !!q;
@@ -11665,7 +11670,8 @@ function renderInventoryList() {
   const qModelNorm = normalizeModelStr(q);
   let matched = products.filter(p => !q || p.name?.toLowerCase().includes(q) || (qModelNorm && normalizeModelStr(p.model).includes(qModelNorm)) || (p.maker||'').toLowerCase().includes(q));
   // 在庫状態（在庫あり／残りわずか／在庫切れ）での絞り込み
-  if (_invStatusFilter) matched = matched.filter(p => getInvStockStatus(p) === _invStatusFilter);
+  if (_invStatusFilter === 'aged') matched = matched.filter(p => kaIsAged(p));
+  else if (_invStatusFilter) matched = matched.filter(p => getInvStockStatus(p) === _invStatusFilter);
   // 要望：「型番とJANコードのみで登録し、後でメーカー・商品名をまとめて入力したい」への対応。
   // メーカーまたは商品名が未入力の商品だけを一括で抽出できるようにする。
   if (_invMissingInfoFilter) matched = matched.filter(p => !p.name || !p.maker);
@@ -11692,6 +11698,7 @@ function renderInventoryList() {
       case 'cost': return (b.cost || 0) - (a.cost || 0);
       case 'value': return ((b.cost || 0) * b.stock) - ((a.cost || 0) * a.stock);
       case 'new': return (b.createdAt || 0) - (a.createdAt || 0);
+      case 'age': { const da = kaAgeDays(a), db = kaAgeDays(b); return (db == null ? -1 : db) - (da == null ? -1 : da); }
       default: return a.stock - b.stock;
     }
   }
@@ -15097,7 +15104,8 @@ function renderHomeSummary() {
         ${(overdueCount||dueSoonCount) ? `<div style="margin-top:6px;display:flex;gap:10px;flex-wrap:wrap;font-size:11px">${overdueCount?`<span style="color:var(--danger);font-weight:700">期日超過 ${overdueCount}件</span>`:''}${dueSoonCount?`<span style="color:var(--warning);font-weight:700">7日以内に期日 ${dueSoonCount}件</span>`:''}</div>` : ''}
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px">
+      ${typeof kaHomeTileHtml === 'function' ? kaHomeTileHtml() : ''}
       <div class="home-stat-card" onclick="goHomeToInv('inv-list')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">在庫アラート</div>
         <div style="font-size:18px;font-weight:700;color:${lowStockCount?'var(--warning)':'#4a4a4a'}">${lowStockCount}件</div>
@@ -22321,6 +22329,90 @@ async function comRemoveStaff(email) {
 }
 </script>
 
+<script>
+// ── KANETAKAの在庫：長期在庫（経過日数）──
+// 要望「HAKの在庫と同じ長期在庫の機能を、KANETAKAの在庫管理にも付けてほしい」への対応。
+// 経過日数＝今ある在庫のうち、いちばん古い1個を入荷してからの日数。ロットは持たないため、
+// 入荷の記録（入出庫の「入荷」・新規登録時の初期在庫・HAKからの移動）を新しい順にたどり、
+// 今の在庫数に届いた入荷の日を「いちばん古い1個の入荷日」とみなす（古いものから出ていく前提）。
+// 入荷の記録が足りない商品（記録を始める前からある在庫）は、いちばん古い入荷日か商品の登録日を使う。
+// 基準の日数は /appSettings/inventory/agingDays に保存し、全員で共通にする（既定は90日）。
+const KA = { agingDays: 90, loaded: false, idx: null, src: null, len: -1 };
+async function kaLoadAgingSetting() {
+  if (KA.loaded) return;
+  KA.loaded = true;
+  try {
+    const v = await fetch(authedUrl('/appSettings/inventory.json')).then(r => r.json());
+    if (v && Number(v.agingDays) > 0) KA.agingDays = Number(v.agingDays);
+  } catch (e) {}
+  kaRenderAgingSelect();
+  if (document.getElementById('screen-inv-list')?.classList.contains('active') && typeof renderInventoryList === 'function') renderInventoryList();
+}
+function kaRenderAgingSelect() {
+  const sel = document.getElementById('inv-aging-days'); if (!sel) return;
+  const opts = [30, 60, 90, 120, 180, 365];
+  if (!opts.includes(KA.agingDays)) opts.push(KA.agingDays);
+  sel.innerHTML = opts.sort((a, b) => a - b).map(d => `<option value="${d}" ${d === KA.agingDays ? 'selected' : ''}>長期在庫：${d}日以上</option>`).join('');
+  sel.disabled = !(typeof isAdmin === 'function' && isAdmin());
+}
+async function kaSetAgingDays(v) {
+  const d = parseInt(v) || 90;
+  KA.agingDays = d;
+  try { await fetch(authedUrl('/appSettings/inventory/agingDays.json'), { method: 'PUT', body: JSON.stringify(d) }); } catch (e) {}
+  renderInventoryList();
+  showToast(`長期在庫の基準を${d}日以上にしました`);
+}
+function kaInIndex() {
+  const arr = (typeof stockMoves !== 'undefined' && stockMoves) || [];
+  if (KA.idx && KA.src === arr && KA.len === arr.length) return KA.idx;
+  const idx = {};
+  arr.forEach(m => {
+    if (!m || m.type !== 'in' || !(Number(m.qty) > 0) || !m.productKey) return;
+    const t = m.date ? new Date(m.date + 'T00:00:00').getTime() : (m.createdAt || 0);
+    (idx[m.productKey] = idx[m.productKey] || []).push({ t, qty: Number(m.qty) });
+  });
+  Object.values(idx).forEach(a => a.sort((x, y) => y.t - x.t));
+  KA.idx = idx; KA.src = arr; KA.len = arr.length;
+  return idx;
+}
+// いちばん古い1個の入荷日（ミリ秒）。在庫が無ければ null
+function kaOldestInAt(p) {
+  const stock = Number(p && p.stock) || 0;
+  if (stock <= 0) return null;
+  const ins = kaInIndex()[p._key] || [];
+  if (!ins.length) return p.createdAt || null;
+  let need = stock;
+  for (const m of ins) { need -= m.qty; if (need <= 0) return m.t; }
+  // 入荷の記録より在庫が多い（記録を始める前からある在庫）：いちばん古い入荷日と登録日の古い方
+  const oldest = ins[ins.length - 1].t;
+  return p.createdAt ? Math.min(oldest, p.createdAt) : oldest;
+}
+function kaAgeDays(p) {
+  const t = kaOldestInAt(p); if (!t) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 86400000));
+}
+function kaIsAged(p) { const d = kaAgeDays(p); return d != null && d >= KA.agingDays; }
+function kaAgedChipHtml(p) {
+  const d = kaAgeDays(p);
+  if (d == null || d < KA.agingDays) return '';
+  return `<span title="いちばん古い1個を入荷してから${d}日" style="font-size:10px;padding:2px 7px;border-radius:10px;background:#fee2e2;color:#991b1b;font-weight:700;white-space:nowrap">長期 ${d}日</span>`;
+}
+function kaAgeDetailHtml(p) {
+  const t = kaOldestInAt(p); if (!t) return '';
+  const d = kaAgeDays(p); const dt = new Date(t);
+  return `<div><span class="inv-row-detail-label">経過</span><span style="${d >= KA.agingDays ? 'color:var(--danger);font-weight:700' : ''}">${d}日</span><span style="color:var(--text-muted);margin-left:8px">（いちばん古い入荷 ${dt.getFullYear()}/${dt.getMonth() + 1}/${dt.getDate()}）</span></div>`;
+}
+function kaHomeTileHtml() {
+  const list = (typeof products !== 'undefined' ? products : []).filter(kaIsAged);
+  const value = list.reduce((s, p) => s + (p.cost || 0) * (Number(p.stock) || 0), 0);
+  return `<div class="home-stat-card" onclick="_invStatusFilter='aged';goHomeToInv('inv-list')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">長期在庫（${KA.agingDays}日以上）</div>
+        <div style="font-size:18px;font-weight:700;color:${list.length ? 'var(--danger)' : '#4a4a4a'}">${list.length}件</div>
+        ${value ? `<div style="font-size:11px;color:var(--text-muted)">¥${value.toLocaleString('ja-JP')}</div>` : ''}
+      </div>`;
+}
+</script>
+
 <style>
 /* ── HAK 清洲在庫（株式会社HAKの在庫。KANETAKAの在庫とは別の帳簿）── */
 #hak-app { position:fixed; inset:0; z-index:190; background:var(--surface); overflow-y:auto; -webkit-overflow-scrolling:touch; display:none; }
@@ -22342,7 +22434,7 @@ body.hak-only > *:not(#hak-app):not(#toast):not(#scan-overlay):not(#confirm-moda
 #hak-app label { display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--text-muted); font-weight:700; }
 #hak-app .hk-row { display:flex; gap:8px; flex-wrap:wrap; align-items:end; }
 #hak-app .hk-row > * { flex:1 1 140px; }
-#hak-app .hk-tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+#hak-app .hk-tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
 #hak-app .hk-tiles div { background:var(--white); padding:10px 12px; min-width:0; }
 #hak-app .hk-tiles span { display:block; font-size:11px; color:var(--text-muted); font-weight:700; }
 #hak-app .hk-tiles b { font-size:18px; font-variant-numeric:tabular-nums; }
@@ -22386,7 +22478,7 @@ body.hak-only > *:not(#hak-app):not(#toast):not(#scan-overlay):not(#confirm-moda
 //   /hak/items/{JAN}               HAKの清洲在庫 {jan, name, qty, avgCost, updatedAt}
 //   /hak/moves/{id}                在庫の増減の履歴 {type:gild|stocktake|out|transfer, jan, name, qty(増減), before, after, ...}
 //   /hak/gildSeen/{依頼ID}         GILDのCSVで取り込み済み（または基準取り込みで見た）依頼 {s:状態, q:数量, a:在庫に足したか}
-//   /hak/janNames/{JAN}            GILDのCSVから覚えた商品名と直近の買取単価 {n, c}（棚卸しで名前を出すため）
+//   /hak/janNames/{JAN}            GILDのCSVから覚えた商品名・型番と直近の買取単価 {n, m, c}（棚卸しで型番を出すため）
 //   /hak/transfers/{id}            清洲→港区（HAK→KANETAKA）の移動 = 納品書1枚分
 //   /hak/settings                  HAKの会社情報（納品書・請求書に載せる）と消費税の扱い
 //   /hak/meta                      {gildBaselineAt, lastImportAt}
@@ -22441,6 +22533,9 @@ async function openHakApp(tab) {
   if (!HK.loaded) app.innerHTML = '<div class="hk-body"><div class="tk-empty">読み込み中…</div></div>';
   await hkLoad();
   hkRender();
+  await hkLoadJanNames();
+  await hkSyncModelsFromKanetaka();
+  hkRender();
 }
 function closeHakApp() {
   HK.open = false;
@@ -22475,11 +22570,120 @@ function hkNameOf(jan) {
   return '';
 }
 
+// ── 型番 ──
+// 要望「商品名ではなく型番でやり取りしているので、商品名のところを全部型番にしてほしい」への対応。
+// GILDのCSVの「型番」列は空のことが多いため、型番は次の順で決める：
+//   1) この画面で入力・修正した型番（items.model）  2) GILDのCSVの型番列（入っていれば）
+//   3) KANETAKAの商品マスタにある同じJANの商品の型番（KANETAKAのアカウントで開いたときに写しておく）
+//   4) 商品名から読み取った型番（英字と数字を両方含む語。例「REGZA 55Z890S」→「55Z890S」）
+// どれも無いときは商品名を薄く表示し、型番の入力を促す。
+const HK_UNIT_RE = /^\d+(\.\d+)?(GB|TB|MB|W|V|MM|CM|KG|G|ML|L|ST|ND|RD|TH|インチ|型|枚|個|本|号)$/i;
+function hkGuessModel(name) {
+  const toks = String(name || '').replace(/[［\[（(【].*?[］\]）)】]/g, ' ').match(/[A-Za-z0-9][A-Za-z0-9\-\/.]*[A-Za-z0-9]/g) || [];
+  const cands = toks.filter(t => /[A-Za-z]/.test(t) && /\d/.test(t) && t.length >= 3 && !HK_UNIT_RE.test(t) && !/^JAN/i.test(t));
+  if (!cands.length) return '';
+  cands.sort((a, b) => (b.includes('-') - a.includes('-')) || (b.length - a.length));
+  return cands[0];
+}
+function hkKanetakaModel(jan) {
+  if (!hkIsKanetaka() || typeof products === 'undefined' || !jan) return '';
+  const p = (products || []).find(p => String(p.jan || '') === String(jan) && p.model);
+  return p ? String(p.model) : '';
+}
+// 型番を返す（{model, guessed}）。guessed=true は商品名から読み取ったもの
+function hkModelInfo(jan, name, explicit) {
+  const k = hkJanKey(jan);
+  const m = explicit || (HK.items[k] && HK.items[k].model) || (HK.janNames && HK.janNames[k] && HK.janNames[k].m) || hkKanetakaModel(jan);
+  if (m) return { model: m, guessed: false };
+  const g = hkGuessModel(name || hkNameOf(jan));
+  return { model: g, guessed: !!g };
+}
+function hkModelOf(jan, name, explicit) { const i = hkModelInfo(jan, name, explicit); return i.model || name || hkNameOf(jan) || ''; }
+// 一覧の「型番」セル。型番が無いときは商品名を薄く表示する。editKey を渡すと修正ボタンを付ける
+function hkModelCell(jan, name, explicit, editKey) {
+  const info = hkModelInfo(jan, name, explicit);
+  const edit = editKey ? ` <button class="hk-btn" style="padding:2px 6px" onclick="hkOpenModelEdit('${hkEsc(editKey)}')" title="型番を修正">✎</button>` : '';
+  if (info.model) return `<b>${hkEsc(info.model)}</b>${edit}`;
+  return `<span style="color:var(--text-muted)">${hkEsc(name || hkNameOf(jan) || '（型番未登録）')}</span> <span class="hk-chip out">型番未登録</span>${edit}`;
+}
+function hkOpenModelEdit(k) { HK.modelEdit = k; hkRender(); setTimeout(() => { const e = document.getElementById('hk-model-input'); if (e) { e.focus(); e.select(); } }, 30); }
+function hkModelModalHtml() {
+  const k = HK.modelEdit; const it = HK.items[k] || {};
+  const st = HK.st && HK.st.counts[k];
+  const jan = it.jan || (st && st.jan) || k; const name = it.name || (st && st.name) || hkNameOf(jan);
+  const cur = (st && st.model) || hkModelInfo(jan, name).model;
+  return `<div class="hk-modal" onclick="if(event.target===this){HK.modelEdit=null;hkRender()}"><div>
+    <b>型番・在庫少の基準</b><span class="hk-note">JAN ${hkEsc(jan)}${name ? '<br>' + hkEsc(name) : ''}</span>
+    <label>型番<input id="hk-model-input" value="${hkEsc(cur)}" placeholder="例：KJ-55X85L" onkeydown="if(event.key==='Enter'){event.preventDefault();hkSaveModel()}"></label>
+    ${HK.items[k] ? `<label>在庫少の基準（この商品だけ変える場合）<input id="hk-low-input" type="number" min="0" value="${typeof it.lowStock === 'number' ? it.lowStock : ''}" placeholder="空欄なら共通の${hkLowDefault()}個以下"></label>` : ''}
+    <div class="hk-row" style="justify-content:flex-end"><button class="cm-btn" onclick="HK.modelEdit=null;hkRender()" style="flex:0 0 auto">キャンセル</button><button class="cm-btn primary" onclick="hkSaveModel()" style="flex:0 0 auto">保存</button></div></div></div>`;
+}
+async function hkSaveModel() {
+  const k = HK.modelEdit; if (!k) return;
+  const model = (document.getElementById('hk-model-input').value || '').trim();
+  const st = HK.st && HK.st.counts[k];
+  if (st) { st.model = model; hkStSave(); }
+  if (HK.items[k]) {
+    const lowEl = document.getElementById('hk-low-input');
+    const low = lowEl && lowEl.value !== '' ? Math.max(0, parseInt(lowEl.value) || 0) : null;
+    try { await hkReq('hak', 'PATCH', { ['items/' + k + '/model']: model || null, ['items/' + k + '/lowStock']: low, ['janNames/' + k + '/m']: model || null }); HK.items[k].model = model; if (low == null) delete HK.items[k].lowStock; else HK.items[k].lowStock = low; if (HK.janNames && HK.janNames[k]) HK.janNames[k].m = model; }
+    catch (e) { showToast('保存できませんでした'); return; }
+  } else if (model) {
+    try { await hkReq('hak/janNames/' + k + '/m', 'PUT', model); HK.janNames = HK.janNames || {}; HK.janNames[k] = { ...(HK.janNames[k] || {}), m: model }; } catch (e) {}
+  }
+  HK.modelEdit = null; showToast('保存しました'); hkRender();
+}
+// KANETAKAのアカウントで開いたとき、KANETAKAの商品マスタの型番を、型番が未登録のHAKの商品に写しておく
+// （HAKのアカウントはKANETAKAの商品マスタを読めないため、HAK側にも型番を持たせる）
+async function hkSyncModelsFromKanetaka() {
+  if (!hkIsKanetaka()) return;
+  try { if (typeof products !== 'undefined' && !(products || []).length && typeof loadInventory === 'function') await loadInventory(); } catch (e) {}
+  const upd = {};
+  Object.entries(HK.items || {}).forEach(([k, it]) => {
+    if (it.model) return;
+    const m = hkKanetakaModel(it.jan);
+    if (m) { upd['items/' + k + '/model'] = m; it.model = m; }
+  });
+  if (Object.keys(upd).length) { try { await hkReq('hak', 'PATCH', upd); } catch (e) {} }
+}
+
+// ── 在庫が少ない・長く置いている商品の色分け ──
+// 要望「KANETAKAの在庫のように、数量が少なくなったら色が変わるような機能はあるか」への対応。
+// ・在庫少：在庫が基準の個数以下（KANETAKAと同じく既定は3個。商品ごとにも変えられる）
+// ・長期在庫：いちばん古い1個を入庫してからの日数が基準以上（既定は90日）。
+//   ロットは持たないため、入庫の記録（GILDから入庫・棚卸しで増えた分・移動の取消）を新しい順にたどり、
+//   今の在庫数に届いた入庫の日を「いちばん古い1個の入庫日」とみなす（古いものから出ていく前提）。
+//   棚卸しより前の分は、棚卸しの日が入庫日になる。
+const HK_DEFAULT_LOW = 3, HK_DEFAULT_AGE = 90;
+function hkLowDefault() { const v = Number(HK.settings.lowStockDefault); return HK.settings.lowStockDefault != null && !isNaN(v) ? v : HK_DEFAULT_LOW; }
+function hkAgeLimit() { const v = Number(HK.settings.agingDays); return v > 0 ? v : HK_DEFAULT_AGE; }
+function hkLowOf(it) { return typeof it.lowStock === 'number' ? it.lowStock : hkLowDefault(); }
+function hkIsLow(it) { const q = Number(it.qty) || 0; return q > 0 && q <= hkLowOf(it); }
+function hkAgeDays(it) {
+  const qty = Number(it.qty) || 0; if (qty <= 0) return null;
+  if (!HK._inMoves) {
+    HK._inMoves = {};
+    Object.values(HK.moves || {}).forEach(m => {
+      if (!m || !(m.qty > 0) || !['gild', 'stocktake', 'cancel'].includes(m.type)) return;
+      (HK._inMoves[hkJanKey(m.jan)] = HK._inMoves[hkJanKey(m.jan)] || []).push(m);
+    });
+    Object.values(HK._inMoves).forEach(a => a.sort((x, y) => (y.at || 0) - (x.at || 0)));
+  }
+  const ins = HK._inMoves[hkJanKey(it.jan)] || [];
+  if (!ins.length) return null;
+  let need = qty, pick = ins[ins.length - 1];
+  for (const m of ins) { need -= m.qty; if (need <= 0) { pick = m; break; } }
+  const d = pick.date ? new Date(pick.date + 'T00:00:00') : new Date(pick.at);
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+}
+function hkIsAged(it) { const d = hkAgeDays(it); return d != null && d >= hkAgeLimit(); }
+
 function hkSetTab(t) { HK.tab = t; hkRender(); document.getElementById('hak-app').scrollTop = 0; }
 
 function hkRender() {
   const app = document.getElementById('hak-app');
   if (!app || !HK.open) return;
+  HK._inMoves = null;
   const tabs = [['stock', '在庫'], ['gild', 'GILD取り込み'], ['stocktake', '棚卸し'], ...(hkIsKanetaka() ? [['transfer', '港区へ移動']] : []), ['history', '履歴・書類'], ['company', '会社情報']];
   let body = '';
   if (HK.tab === 'stock') body = hkStockHtml();
@@ -22495,7 +22699,7 @@ function hkRender() {
     </div>
     <div class="hk-tabs">${tabs.map(([k, l]) => `<button class="${HK.tab === k ? 'on' : ''}" onclick="hkSetTab('${k}')">${l}</button>`).join('')}</div>
     <div class="hk-body">${body}</div>
-    ${HK.outJan ? hkOutModalHtml() : ''}`;
+    ${HK.outJan ? hkOutModalHtml() : ''}${HK.modelEdit ? hkModelModalHtml() : ''}`;
   if (HK.tab === 'stocktake') setTimeout(() => document.getElementById('hk-st-jan')?.focus(), 30);
 }
 
@@ -22507,22 +22711,28 @@ function hkStockHtml() {
   const all = hkItemList();
   const inStock = all.filter(i => i.qty > 0);
   const q = HK.q.trim().toLowerCase();
-  const list = (HK.showZero ? all : inStock).filter(i => !q || String(i.name || '').toLowerCase().includes(q) || String(i.jan || '').includes(q))
-    .sort((a, b) => b.qty - a.qty || String(a.name).localeCompare(String(b.name), 'ja'));
+  const lowCount = inStock.filter(hkIsLow).length, agedCount = inStock.filter(hkIsAged).length;
+  const f = HK.stockFilter || 'all';
+  const list = (HK.showZero ? all : inStock).filter(i => (f === 'low' ? hkIsLow(i) : f === 'aged' ? hkIsAged(i) : true))
+    .filter(i => !q || String(i.name || '').toLowerCase().includes(q) || String(i.jan || '').includes(q) || hkModelOf(i.jan, i.name).toLowerCase().includes(q))
+    .sort((a, b) => b.qty - a.qty || hkModelOf(a.jan, a.name).localeCompare(hkModelOf(b.jan, b.name), 'ja'));
   const units = inStock.reduce((s, i) => s + i.qty, 0);
   const value = inStock.reduce((s, i) => s + i.qty * i.avgCost, 0);
   const noBaseline = !HK.meta.gildBaselineAt;
   return `
     ${noBaseline ? `<div class="hk-warn">はじめに「GILD取り込み」で基準の取り込みをしてから、「棚卸し」で清洲にあるHAKの商品を数えてください。そのあと検品した分は、GILDのCSVを取り込むたびに在庫に足されます。</div>` : ''}
-    <div class="hk-tiles"><div><span>銘柄</span><b>${inStock.length.toLocaleString()}</b></div><div><span>在庫点数</span><b>${units.toLocaleString()}</b></div><div><span>在庫金額（平均仕入）</span><b>${hkYen(value)}</b></div></div>
+    <div class="hk-tiles"><div><span>銘柄</span><b>${inStock.length.toLocaleString()}</b></div><div><span>在庫点数</span><b>${units.toLocaleString()}</b></div><div><span>在庫金額（平均仕入）</span><b>${hkYen(value)}</b></div>
+      <div><span>在庫少（${hkLowDefault()}個以下）</span><b style="color:${lowCount ? 'var(--warning,#b45309)' : 'inherit'}">${lowCount}</b></div><div><span>長期在庫（${hkAgeLimit()}日以上）</span><b style="color:${agedCount ? '#b91c1c' : 'inherit'}">${agedCount}</b></div></div>
     <div class="hk-card">
-      <div class="hk-row"><input id="hk-q" placeholder="🔍 商品名・JANで検索" value="${hkEsc(HK.q)}" oninput="HK.q=this.value;clearTimeout(HK._qt);HK._qt=setTimeout(()=>{hkRender();const e=document.getElementById('hk-q');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},300)" style="flex:3 1 220px">
+      <div class="hk-row"><input id="hk-q" placeholder="🔍 型番・JAN・商品名で検索" value="${hkEsc(HK.q)}" oninput="HK.q=this.value;clearTimeout(HK._qt);HK._qt=setTimeout(()=>{hkRender();const e=document.getElementById('hk-q');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},300)" style="flex:3 1 220px">
         <label style="flex:0 0 auto;flex-direction:row;align-items:center;gap:6px;font-size:12px"><input type="checkbox" ${HK.showZero ? 'checked' : ''} onchange="HK.showZero=this.checked;hkRender()"> 在庫0も表示</label></div>
-      <div class="hk-scroll"><table><thead><tr><th>商品名</th><th>JAN</th><th class="r">在庫</th><th class="r">平均仕入</th><th class="r">金額</th><th></th></tr></thead><tbody>
-      ${list.length ? list.slice(0, 500).map(i => `<tr><td>${hkEsc(i.name || '（名前未登録）')}</td><td class="jan">${hkEsc(i.jan)}</td><td class="r"><b>${i.qty}</b></td><td class="r">${hkYen(i.avgCost)}</td><td class="r">${hkYen(i.qty * i.avgCost)}</td>
-        <td class="r">${i.qty > 0 ? `<button class="hk-btn" onclick="hkOpenOut('${hkEsc(i._k)}')">出庫</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="6" class="tk-empty">在庫はありません</td></tr>'}
+      <div class="hk-tabs" style="padding:0;margin:0">${[['all', 'すべて'], ['low', `在庫少 ${lowCount}`], ['aged', `長期在庫 ${agedCount}`]].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" onclick="HK.stockFilter='${k}';hkRender()">${l}</button>`).join('')}</div>
+      <div class="hk-scroll"><table><thead><tr><th>型番</th><th>JAN</th><th class="r">在庫</th><th class="r">経過</th><th class="r">平均仕入</th><th class="r">金額</th><th></th></tr></thead><tbody>
+      ${list.length ? list.slice(0, 500).map(i => { const low = hkIsLow(i), age = hkAgeDays(i), aged = age != null && age >= hkAgeLimit(); return `<tr style="${low ? 'background:#fffbeb' : ''}"><td>${hkModelCell(i.jan, i.name, i.model, i._k)}${low ? ' <span class="hk-chip st">残りわずか</span>' : ''}</td><td class="jan">${hkEsc(i.jan)}</td><td class="r"><b style="${low ? 'color:#b45309' : ''}">${i.qty}</b></td><td class="r" style="${aged ? 'color:#b91c1c;font-weight:700' : ''}">${age == null ? '—' : age + '日'}</td><td class="r">${hkYen(i.avgCost)}</td><td class="r">${hkYen(i.qty * i.avgCost)}</td>
+        <td class="r">${i.qty > 0 ? `<button class="hk-btn" onclick="hkOpenOut('${hkEsc(i._k)}')">出庫</button>` : ''}</td></tr>`; }).join('') : '<tr><td colspan="7" class="tk-empty">該当する在庫はありません</td></tr>'}
       </tbody></table></div>
       ${list.length > 500 ? `<p class="hk-note">先頭の500件を表示しています。検索で絞り込んでください。</p>` : ''}
+      <p class="hk-note">黄色の行は在庫が少ない商品、赤い経過日数は${hkAgeLimit()}日以上置いている商品です。経過はいちばん古い1個を入庫してからの日数で、棚卸しより前の分は棚卸しの日から数えます。基準は「会社情報」タブで変えられます。</p>
     </div>`;
 }
 
@@ -22533,7 +22743,7 @@ function hkOutModalHtml() {
   const dests = [...new Set(Object.values(HK.moves || {}).filter(m => m.type === 'out' && m.dest).map(m => m.dest))];
   if (!dests.includes('Amazon（HAK）')) dests.unshift('Amazon（HAK）');
   return `<div class="hk-modal" onclick="if(event.target===this){HK.outJan=null;hkRender()}"><div>
-    <b>出庫：${hkEsc(it.name)}</b><span class="hk-note">清洲の在庫：${Number(it.qty) || 0}個。KANETAKA（港区）へ移すときは「港区へ移動」から行ってください。</span>
+    <b>出庫：${hkEsc(hkModelOf(it.jan, it.name, it.model))}</b><span class="hk-note">清洲の在庫：${Number(it.qty) || 0}個。KANETAKA（港区）へ移すときは「港区へ移動」から行ってください。</span>
     <label>出庫先<input id="hk-out-dest" list="hk-out-dests" value="Amazon（HAK）"></label><datalist id="hk-out-dests">${dests.map(d => `<option value="${hkEsc(d)}">`).join('')}</datalist>
     <div class="hk-row"><label>個数<input id="hk-out-qty" type="number" min="1" value="1"></label><label>卸単価（任意）<input id="hk-out-price" type="number" min="0"></label></div>
     <div class="hk-row"><label>日付<input id="hk-out-date" type="date" value="${todayStr()}"></label></div>
@@ -22555,13 +22765,13 @@ async function hkSubmitOut() {
   const id = hkNewId();
   const upd = {
     ['items/' + k + '/qty']: have - qty, ['items/' + k + '/updatedAt']: Date.now(),
-    ['moves/' + id]: { type: 'out', jan: it.jan, name: it.name, qty: -qty, before: have, after: have - qty, dest, unitPrice: price || null, memo, date, at: Date.now(), by: currentSessionEmail() }
+    ['moves/' + id]: { type: 'out', jan: it.jan, name: it.name, model: hkModelOf(it.jan, it.name, it.model), qty: -qty, before: have, after: have - qty, dest, unitPrice: price || null, memo, date, at: Date.now(), by: currentSessionEmail() }
   };
   try {
     await hkReq('hak', 'PATCH', upd);
     it.qty = have - qty; HK.moves[id] = upd['moves/' + id];
     HK.outJan = null;
-    showToast(`${dest}へ${qty}個の出庫を記録しました（在庫${it.qty}個）`);
+    showToast(`${hkModelOf(it.jan, it.name, it.model)}を${dest}へ${qty}個出庫しました（在庫${it.qty}個）`);
     hkRender();
   } catch (e) { showToast('記録できませんでした。通信状況をご確認ください'); }
 }
@@ -22599,10 +22809,10 @@ async function hkReadGildFile(input) {
   const need = ['依頼ID', '商品名', 'JAN', '有効数量', '担当会社', '状態'];
   const missing = need.filter(n => col(n) < 0);
   if (missing.length) { showToast('GILDの申請一覧のCSVではないようです（' + missing.join('・') + 'の列がありません）'); input.value = ''; return; }
-  const ix = { id: col('依頼ID'), name: col('商品名'), jan: col('JAN'), qty: col('有効数量'), co: col('担当会社'), st: col('状態'), ap: col('申請単価'), fp: col('確定単価'), at: col('受付日時') };
+  const ix = { id: col('依頼ID'), name: col('商品名'), model: col('型番'), jan: col('JAN'), qty: col('有効数量'), co: col('担当会社'), st: col('状態'), ap: col('申請単価'), fp: col('確定単価'), at: col('受付日時') };
   const recs = rows.slice(1).map(r => {
     const fixed = hkNum(r[ix.fp]); const applied = hkNum(r[ix.ap]);
-    return { id: (r[ix.id] || '').trim(), name: (r[ix.name] || '').trim(), jan: hkCleanJan(r[ix.jan]), qty: parseInt(r[ix.qty]) || 0,
+    return { id: (r[ix.id] || '').trim(), name: (r[ix.name] || '').trim(), model: ix.model >= 0 ? (r[ix.model] || '').trim() : '', jan: hkCleanJan(r[ix.jan]), qty: parseInt(r[ix.qty]) || 0,
       co: (r[ix.co] || '').trim(), st: (r[ix.st] || '').trim(), cost: fixed > 0 ? fixed : applied, at: ix.at >= 0 ? (r[ix.at] || '') : '' };
   }).filter(r => r.id);
   HK.gild = { fileName: file.name, recs, loading: true };
@@ -22636,18 +22846,18 @@ function hkGildHtml() {
     const names = new Set(g.recs.filter(r => r.jan).map(r => r.jan)).size;
     const marked = g.recs.filter(r => HK_BASELINE_SEEN.includes(r.st)).length;
     return html + `<div class="hk-card"><h3>初回：基準の取り込み<small>${hkEsc(g.fileName)}</small></h3>
-      <div class="hk-warn">はじめての取り込みです。このCSVにある${g.recs.length.toLocaleString()}件のうち、検品済・金額確定待ち・振込待ち・振込済・キャンセルの<b>${marked.toLocaleString()}件</b>を「取り込み済み」として記録します。<b>在庫は増えません</b>。今清洲にあるHAKの商品は、このあと「棚卸し」で数えて在庫にします。<br>受付・入荷待ちの${(g.recs.length - marked).toLocaleString()}件はまだ記録しないので、届いて検品済になったときに在庫に足されます。<br>あわせて、${names.toLocaleString()}種類の商品名を覚えておき、棚卸しでJANを読み取ったときに名前が出るようにします。</div>
+      <div class="hk-warn">はじめての取り込みです。このCSVにある${g.recs.length.toLocaleString()}件のうち、検品済・金額確定待ち・振込待ち・振込済・キャンセルの<b>${marked.toLocaleString()}件</b>を「取り込み済み」として記録します。<b>在庫は増えません</b>。今清洲にあるHAKの商品は、このあと「棚卸し」で数えて在庫にします。<br>受付・入荷待ちの${(g.recs.length - marked).toLocaleString()}件はまだ記録しないので、届いて検品済になったときに在庫に足されます。<br>あわせて、${names.toLocaleString()}種類の商品名を覚えておき、棚卸しでJANを読み取ったときに型番（商品名から読み取ったもの）が出るようにします。</div>
       <div class="hk-row" style="justify-content:flex-end"><button class="cm-btn" onclick="HK.gild=null;hkRender()" style="flex:0 0 auto">やめる</button><button class="cm-btn primary" onclick="hkCommitGild()" style="flex:0 0 auto">基準の取り込みを行う</button></div></div>`;
   }
-  const rowsHtml = (arr, key) => arr.map((r, i) => `<tr><td><input type="checkbox" ${r.on ? 'checked' : ''} onchange="HK.gild.${key}[${i}].on=this.checked;hkRender()"></td><td>${hkEsc(r.name)}</td><td class="jan">${hkEsc(r.jan)}</td><td class="r">${r.qty}</td><td class="r">${hkYen(r.cost)}</td><td><span class="hk-chip">${hkEsc(r.st)}</span></td><td class="jan">${hkEsc(r.id)}</td></tr>`).join('');
+  const rowsHtml = (arr, key) => arr.map((r, i) => `<tr><td><input type="checkbox" ${r.on ? 'checked' : ''} onchange="HK.gild.${key}[${i}].on=this.checked;hkRender()"></td><td>${hkModelCell(r.jan, r.name, r.model)}</td><td class="jan">${hkEsc(r.jan)}</td><td class="r">${r.qty}</td><td class="r">${hkYen(r.cost)}</td><td><span class="hk-chip">${hkEsc(r.st)}</span></td><td class="jan">${hkEsc(r.id)}</td></tr>`).join('');
   const sel = g.add.concat(g.past).filter(r => r.on);
   const selQty = sel.reduce((s, r) => s + r.qty, 0);
   html += `<div class="hk-card"><h3>在庫に足す商品<small>${hkEsc(g.fileName)}</small></h3>
-    ${g.add.length ? `<div class="hk-scroll"><table><thead><tr><th></th><th>商品名</th><th>JAN</th><th class="r">数量</th><th class="r">買取単価</th><th>状態</th><th>依頼ID</th></tr></thead><tbody>${rowsHtml(g.add, 'add')}</tbody></table></div>` : '<p class="hk-note">新しく検品済みになったHAKの商品はありません。</p>'}
+    ${g.add.length ? `<div class="hk-scroll"><table><thead><tr><th></th><th>型番</th><th>JAN</th><th class="r">数量</th><th class="r">買取単価</th><th>状態</th><th>依頼ID</th></tr></thead><tbody>${rowsHtml(g.add, 'add')}</tbody></table></div>` : '<p class="hk-note">新しく検品済みになったHAKの商品はありません。</p>'}
     ${g.past.length ? `<h3 style="margin-top:6px">検品済みを過ぎていた商品<small>前回の取り込みのあとに、検品済から金額確定待ち・振込まで進んでいた依頼です</small></h3>
       <p class="hk-note">清洲に届いていて、まだ在庫に入れていないものだけチェックを入れてください。棚卸しですでに数えた商品など、足さないものはチェックを外したままにします。</p>
       <label style="flex-direction:row;align-items:center;gap:6px;font-size:12.5px;color:var(--text)"><input type="checkbox" ${g.dismiss ? 'checked' : ''} onchange="HK.gild.dismiss=this.checked;hkRender()"> チェックしなかった商品は、次回から表示しない（足さないことを確定する）</label>
-      <div class="hk-scroll"><table><thead><tr><th></th><th>商品名</th><th>JAN</th><th class="r">数量</th><th class="r">買取単価</th><th>状態</th><th>依頼ID</th></tr></thead><tbody>${rowsHtml(g.past, 'past')}</tbody></table></div>` : ''}
+      <div class="hk-scroll"><table><thead><tr><th></th><th>型番</th><th>JAN</th><th class="r">数量</th><th class="r">買取単価</th><th>状態</th><th>依頼ID</th></tr></thead><tbody>${rowsHtml(g.past, 'past')}</tbody></table></div>` : ''}
     ${g.waitingUnsorted ? `<p class="hk-note">検品済みでも担当会社が「未仕分け」の依頼が${g.waitingUnsorted}件あります。GILDでHAKに仕分けされたあとの取り込みで足されます。</p>` : ''}
     ${g.noJan ? `<p class="hk-note">JANコードのないHAKの検品済み依頼が${g.noJan}件あります。在庫に入れられないため、棚卸しで追加してください。</p>` : ''}
     ${g.canceledAfter ? `<div class="hk-warn">取り込み済みの依頼のうち${g.canceledAfter}件が、そのあとキャンセルになっています。商品が清洲にない場合は、棚卸しで数を直してください。</div>` : ''}
@@ -22660,7 +22870,7 @@ async function hkCommitGild() {
   const upd = {};
   // 商品名と直近の買取単価を覚えておく（棚卸しで名前を出す・棚卸しで新しく入れた商品の仕入額の目安にする）
   const names = {};
-  g.recs.forEach(r => { if (r.jan) { const k = hkJanKey(r.jan); if (!names[k] || r.cost > 0) names[k] = { n: r.name || (names[k] && names[k].n) || '', c: r.cost > 0 ? r.cost : (names[k] ? names[k].c : 0) }; } });
+  g.recs.forEach(r => { if (r.jan) { const k = hkJanKey(r.jan); const prev = names[k] || (HK.janNames && HK.janNames[k]) || {}; names[k] = { n: r.name || prev.n || '', c: r.cost > 0 ? r.cost : (prev.c || 0), ...((r.model || prev.m) ? { m: r.model || prev.m } : {}) }; } });
   Object.entries(names).forEach(([k, v]) => { upd['janNames/' + k] = v; });
   if (g.baseline) {
     g.recs.filter(r => HK_BASELINE_SEEN.includes(r.st)).forEach(r => { upd['gildSeen/' + r.id] = { s: r.st, q: r.qty, a: false, at: now }; });
@@ -22682,17 +22892,17 @@ async function hkCommitGild() {
   sel.forEach(r => { const k = hkJanKey(r.jan); (byJan[k] = byJan[k] || []).push(r); });
   const newItems = {};
   Object.entries(byJan).forEach(([k, rs]) => {
-    const cur = HK.items[k] || { jan: rs[0].jan, name: rs[0].name, qty: 0, avgCost: 0 };
+    const cur = HK.items[k] || { jan: rs[0].jan, name: rs[0].name, model: rs[0].model || '', qty: 0, avgCost: 0 };
     let qty = Number(cur.qty) || 0, avg = Number(cur.avgCost) || 0;
     rs.forEach(r => {
       const before = qty;
       const base = Math.max(qty, 0);
       avg = base + r.qty > 0 ? (base * avg + r.qty * (r.cost || avg)) / (base + r.qty) : avg;
       qty += r.qty;
-      upd['moves/' + hkNewId()] = { type: 'gild', jan: r.jan, name: r.name, qty: r.qty, before, after: qty, unitCost: r.cost || null, ref: r.id, date: todayStr(), at: now, by };
+      upd['moves/' + hkNewId()] = { type: 'gild', jan: r.jan, name: r.name, model: hkModelOf(r.jan, r.name, cur.model || r.model), qty: r.qty, before, after: qty, unitCost: r.cost || null, ref: r.id, date: todayStr(), at: now, by };
       upd['gildSeen/' + r.id] = { s: r.st, q: r.qty, a: true, at: now };
     });
-    newItems[k] = { jan: cur.jan || rs[0].jan, name: cur.name || rs[0].name, qty, avgCost: Math.round(avg), updatedAt: now };
+    newItems[k] = { jan: cur.jan || rs[0].jan, name: cur.name || rs[0].name, ...((cur.model || rs.find(r => r.model)?.model) ? { model: cur.model || rs.find(r => r.model).model } : {}), qty, avgCost: Math.round(avg), updatedAt: now };
     upd['items/' + k] = newItems[k];
   });
   upd['meta/lastImportAt'] = now;
@@ -22722,18 +22932,18 @@ function hkStocktakeHtml() {
   hkLoadJanNames().then(() => { if (HK.tab === 'stocktake' && !HK._namesRendered) { HK._namesRendered = true; hkRender(); } });
   const rows = st.order.map(k => {
     const c = st.counts[k]; const sys = HK.items[k] ? Number(HK.items[k].qty) || 0 : 0;
-    return { k, jan: c.jan, name: c.name || hkNameOf(c.jan), n: c.n, sys, diff: c.n - sys };
+    return { k, jan: c.jan, name: c.name || hkNameOf(c.jan), model: c.model, n: c.n, sys, diff: c.n - sys };
   });
   const others = hkItemList().filter(i => i.qty > 0 && !st.counts[i._k]);
   const total = rows.reduce((s, r) => s + r.n, 0);
   return `<div class="hk-card"><h3>棚卸し<small>清洲にあるHAKの商品を数えます</small></h3>
-    <p class="hk-note">JANコードをバーコードリーダーで読むか、カメラで読み取るか、入力してEnterを押すと、1個ずつ数えます。数は表の中で直せます。全部数え終わったら「棚卸しを確定」を押すと、在庫数が数えた数に変わります。</p>
+    <p class="hk-note">JANコードをバーコードリーダーで読むか、カメラで読み取るか、入力してEnterを押すと、1個ずつ数えます。数は表の中で直せます。型番が出ない・違う場合は、✎で入力・修正してください。全部数え終わったら「棚卸しを確定」を押すと、在庫数が数えた数に変わります。</p>
     <div class="hk-row"><input id="hk-st-jan" inputmode="numeric" placeholder="JANコード" onkeydown="if(event.key==='Enter'){event.preventDefault();hkStAdd(this.value)}" style="flex:3 1 200px">
       <button class="cm-btn" onclick="startScan('hk-st-jan')" style="flex:0 0 auto">📷 カメラで読み取る</button>
       <button class="cm-btn" onclick="hkStAdd(document.getElementById('hk-st-jan').value)" style="flex:0 0 auto">＋1</button></div></div>
   <div class="hk-card"><h3>数えた商品<small>${rows.length}種類・${total}点</small></h3>
-    <div class="hk-scroll"><table><thead><tr><th>商品名</th><th>JAN</th><th class="r">今の在庫</th><th class="r">数えた数</th><th class="r">差</th><th></th></tr></thead><tbody>
-    ${rows.length ? rows.map(r => `<tr><td>${r.name ? hkEsc(r.name) : `<input placeholder="商品名を入力" value="" onchange="hkStSetName('${hkEsc(r.k)}',this.value)" style="width:100%">`}</td><td class="jan">${hkEsc(r.jan)}</td><td class="r">${r.sys}</td>
+    <div class="hk-scroll"><table><thead><tr><th>型番</th><th>JAN</th><th class="r">今の在庫</th><th class="r">数えた数</th><th class="r">差</th><th></th></tr></thead><tbody>
+    ${rows.length ? rows.map(r => `<tr><td>${(r.model || hkModelInfo(r.jan, r.name).model) ? hkModelCell(r.jan, r.name, r.model, r.k) : `<input placeholder="型番を入力" value="" onchange="hkStSetModel('${hkEsc(r.k)}',this.value)" style="width:100%">${r.name ? `<br><span class="hk-note">${hkEsc(r.name)}</span>` : ''}`}</td><td class="jan">${hkEsc(r.jan)}</td><td class="r">${r.sys}</td>
       <td class="r"><input class="hk-qty" type="number" min="0" value="${r.n}" onchange="hkStSetCount('${hkEsc(r.k)}',this.value)"></td>
       <td class="r ${r.diff > 0 ? 'hk-pos' : r.diff < 0 ? 'hk-neg' : ''}">${r.diff > 0 ? '+' : ''}${r.diff}</td><td class="r"><button class="hk-btn" onclick="hkStRemove('${hkEsc(r.k)}')">✕</button></td></tr>`).join('') : '<tr><td colspan="6" class="tk-empty">まだ数えていません</td></tr>'}
     </tbody></table></div>
@@ -22756,15 +22966,16 @@ function hkStAdd(raw) {
 }
 function hkStSetCount(k, v) { const st = hkStLoad(); if (st.counts[k]) { st.counts[k].n = Math.max(0, parseInt(v) || 0); hkStSave(); hkRender(); } }
 function hkStSetName(k, v) { const st = hkStLoad(); if (st.counts[k]) { st.counts[k].name = v.trim(); hkStSave(); } }
+function hkStSetModel(k, v) { const st = hkStLoad(); if (st.counts[k]) { st.counts[k].model = v.trim(); hkStSave(); hkRender(); } }
 function hkStRemove(k) { const st = hkStLoad(); delete st.counts[k]; st.order = st.order.filter(x => x !== k); hkStSave(); hkRender(); }
 async function hkStClear() { if (!await showConfirm('数えた内容をすべて消しますか？')) return; HK.st = { counts: {}, order: [], zeroOthers: false }; hkStSave(); hkRender(); }
 async function hkStCommit() {
   const st = hkStLoad();
   const changes = [];
-  st.order.forEach(k => { const c = st.counts[k]; const sys = HK.items[k] ? Number(HK.items[k].qty) || 0 : 0; changes.push({ k, jan: c.jan, name: c.name || hkNameOf(c.jan), from: sys, to: c.n }); });
-  if (st.zeroOthers) hkItemList().filter(i => i.qty > 0 && !st.counts[i._k]).forEach(i => changes.push({ k: i._k, jan: i.jan, name: i.name, from: i.qty, to: 0 }));
-  const unnamed = changes.filter(c => !c.name);
-  if (unnamed.length) { showToast(`商品名が入っていない商品が${unnamed.length}件あります。表で入力してください`); return; }
+  st.order.forEach(k => { const c = st.counts[k]; const sys = HK.items[k] ? Number(HK.items[k].qty) || 0 : 0; const name = c.name || hkNameOf(c.jan); changes.push({ k, jan: c.jan, name, model: c.model || (HK.items[k] && HK.items[k].model) || '', label: c.model || hkModelInfo(c.jan, name).model, from: sys, to: c.n }); });
+  if (st.zeroOthers) hkItemList().filter(i => i.qty > 0 && !st.counts[i._k]).forEach(i => changes.push({ k: i._k, jan: i.jan, name: i.name, model: i.model || '', label: hkModelOf(i.jan, i.name, i.model), from: i.qty, to: 0 }));
+  const unnamed = changes.filter(c => !c.label && !c.name);
+  if (unnamed.length) { showToast(`型番が入っていない商品が${unnamed.length}件あります。表で入力してください`); return; }
   const diffs = changes.filter(c => c.from !== c.to);
   if (!await showConfirm(`棚卸しを確定しますか？\n${changes.length}種類のうち、${diffs.length}種類の在庫数が変わります。`)) return;
   const now = Date.now(), by = currentSessionEmail(), upd = {}, newItems = {};
@@ -22772,9 +22983,9 @@ async function hkStCommit() {
   changes.forEach(c => {
     const cur = HK.items[c.k];
     const avgCost = cur ? Number(cur.avgCost) || 0 : ((HK.janNames[c.k] && HK.janNames[c.k].c) || 0);
-    newItems[c.k] = { jan: c.jan, name: (cur && cur.name) || c.name, qty: c.to, avgCost, updatedAt: now };
+    newItems[c.k] = { jan: c.jan, name: (cur && cur.name) || c.name || '', ...((c.model || (cur && cur.model)) ? { model: c.model || cur.model } : {}), qty: c.to, avgCost, updatedAt: now };
     upd['items/' + c.k] = newItems[c.k];
-    if (c.from !== c.to) upd['moves/' + hkNewId()] = { type: 'stocktake', jan: c.jan, name: c.name, qty: c.to - c.from, before: c.from, after: c.to, date: todayStr(), at: now, by };
+    if (c.from !== c.to) upd['moves/' + hkNewId()] = { type: 'stocktake', jan: c.jan, name: c.name || '', model: c.label || '', qty: c.to - c.from, before: c.from, after: c.to, date: todayStr(), at: now, by };
   });
   upd['meta/lastStocktakeAt'] = now;
   try {
@@ -22804,17 +23015,17 @@ function hkTransferHtml() {
   const mode = hkTaxMode();
   const t = hkTotals(tr.lines, mode);
   const q = tr.q.trim().toLowerCase();
-  const cands = q ? hkItemList().filter(i => i.qty > 0 && (String(i.name).toLowerCase().includes(q) || String(i.jan).includes(q)) && !tr.lines.some(l => l.k === i._k)).slice(0, 8) : [];
+  const cands = q ? hkItemList().filter(i => i.qty > 0 && (String(i.name).toLowerCase().includes(q) || String(i.jan).includes(q) || hkModelOf(i.jan, i.name, i.model).toLowerCase().includes(q)) && !tr.lines.some(l => l.k === i._k)).slice(0, 8) : [];
   return `<div class="hk-card"><h3>清洲（HAK）→ 港区（KANETAKA）へ移動<small>HAKからKANETAKAへの販売として記録します</small></h3>
     <p class="hk-note">移動する商品を選び、個数と卸単価を入れて確定してください。確定すると、HAKの在庫が減り、KANETAKAの港区の在庫が増え、HAK→KANETAKAの納品書ができます。卸単価は<b>${mode === 'incl' ? '税込' : '税抜'}</b>で入力します（会社情報タブで変更できます）。</p>
     <div class="hk-row"><label style="flex:0 0 160px">日付<input id="hk-tr-date" type="date" value="${hkEsc(tr.date)}" onchange="HK.tr.date=this.value"></label>
-      <label style="flex:3 1 220px">商品を追加（JAN・商品名で検索）<input id="hk-tr-jan" value="${hkEsc(tr.q)}" placeholder="JANを読み取るか、名前を入力" oninput="HK.tr.q=this.value;clearTimeout(HK._tq);HK._tq=setTimeout(()=>{hkRender();const e=document.getElementById('hk-tr-jan');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},300)" onkeydown="if(event.key==='Enter'){event.preventDefault();hkTrAddByJan(this.value)}"></label>
+      <label style="flex:3 1 220px">商品を追加（型番・JANで検索）<input id="hk-tr-jan" value="${hkEsc(tr.q)}" placeholder="JANを読み取るか、型番を入力" oninput="HK.tr.q=this.value;clearTimeout(HK._tq);HK._tq=setTimeout(()=>{hkRender();const e=document.getElementById('hk-tr-jan');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},300)" onkeydown="if(event.key==='Enter'){event.preventDefault();hkTrAddByJan(this.value)}"></label>
       <button class="cm-btn" onclick="startScan('hk-tr-jan')" style="flex:0 0 auto">📷</button></div>
-    ${cands.length ? `<div class="hk-scroll"><table><tbody>${cands.map(i => `<tr><td>${hkEsc(i.name)}</td><td class="jan">${hkEsc(i.jan)}</td><td class="r">在庫${i.qty}</td><td class="r"><button class="hk-btn" onclick="hkTrAdd('${hkEsc(i._k)}')">追加</button></td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${cands.length ? `<div class="hk-scroll"><table><tbody>${cands.map(i => `<tr><td>${hkModelCell(i.jan, i.name, i.model)}</td><td class="jan">${hkEsc(i.jan)}</td><td class="r">在庫${i.qty}</td><td class="r"><button class="hk-btn" onclick="hkTrAdd('${hkEsc(i._k)}')">追加</button></td></tr>`).join('')}</tbody></table></div>` : ''}
   </div>
   <div class="hk-card"><h3>移動する商品<small>${tr.lines.length}種類・${tr.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0)}点</small></h3>
-    <div class="hk-scroll"><table><thead><tr><th>商品名</th><th>JAN</th><th class="r">清洲の在庫</th><th class="r">個数</th><th class="r">卸単価</th><th class="r">金額</th><th></th></tr></thead><tbody>
-    ${tr.lines.length ? tr.lines.map((l, i) => { const it = HK.items[l.k] || {}; return `<tr><td>${hkEsc(it.name || l.name)}</td><td class="jan">${hkEsc(it.jan || l.jan)}</td><td class="r">${Number(it.qty) || 0}<br><span class="hk-note">平均仕入${hkYen(it.avgCost)}</span></td>
+    <div class="hk-scroll"><table><thead><tr><th>型番</th><th>JAN</th><th class="r">清洲の在庫</th><th class="r">個数</th><th class="r">卸単価</th><th class="r">金額</th><th></th></tr></thead><tbody>
+    ${tr.lines.length ? tr.lines.map((l, i) => { const it = HK.items[l.k] || {}; return `<tr><td>${hkModelCell(it.jan || l.jan, it.name || l.name, it.model, l.k)}</td><td class="jan">${hkEsc(it.jan || l.jan)}</td><td class="r">${Number(it.qty) || 0}<br><span class="hk-note">平均仕入${hkYen(it.avgCost)}</span></td>
       <td class="r"><input class="hk-qty" type="number" min="1" value="${l.qty}" onchange="HK.tr.lines[${i}].qty=parseInt(this.value)||0;hkRender()"></td>
       <td class="r"><input class="hk-price" type="number" min="0" value="${l.unitPrice ?? ''}" placeholder="例：28000" onchange="HK.tr.lines[${i}].unitPrice=this.value===''?null:Number(this.value);hkRender()"></td>
       <td class="r">${hkYen((Number(l.qty) || 0) * (Number(l.unitPrice) || 0))}</td><td class="r"><button class="hk-btn" onclick="HK.tr.lines.splice(${i},1);hkRender()">✕</button></td></tr>`; }).join('') : '<tr><td colspan="7" class="tk-empty">上で商品を追加してください</td></tr>'}
@@ -22841,7 +23052,9 @@ async function hkTrCommit() {
   const noPrice = lines.filter(l => l.unitPrice == null || l.unitPrice === '' || isNaN(Number(l.unitPrice)));
   if (noPrice.length) { showToast('卸単価が入っていない商品があります'); return; }
   const short = lines.filter(l => (Number((HK.items[l.k] || {}).qty) || 0) < l.qty);
-  if (short.length) { showToast(`清洲の在庫が足りない商品があります（${short.map(l => l.name).join('、')}）`); return; }
+  if (short.length) { showToast(`清洲の在庫が足りない商品があります（${short.map(l => hkModelOf(l.jan, l.name)).join('、')}）`); return; }
+  const noModel = lines.filter(l => { const it = HK.items[l.k]; return !hkModelInfo(it.jan, it.name, it.model).model; });
+  if (noModel.length) { showToast('型番が未登録の商品があります。✎で型番を入力してください（納品書に型番が載るため）'); return; }
   const date = tr.date || todayStr();
   const mode = hkTaxMode();
   const t = hkTotals(lines, mode);
@@ -22853,13 +23066,13 @@ async function hkTrCommit() {
   const sameDay = Object.values(HK.transfers || {}).filter(x => x.date === date).length;
   const no = `H${ymd}-${String(sameDay + 1).padStart(2, '0')}`;
   const tid = hkNewId();
-  const docLines = lines.map(l => { const it = HK.items[l.k]; return { jan: it.jan, name: it.name, qty: l.qty, unitPrice: Number(l.unitPrice), amount: l.qty * Number(l.unitPrice) }; });
+  const docLines = lines.map(l => { const it = HK.items[l.k]; return { jan: it.jan, name: it.name, model: hkModelOf(it.jan, it.name, it.model), qty: l.qty, unitPrice: Number(l.unitPrice), amount: l.qty * Number(l.unitPrice) }; });
   const upd = {}, newQty = {};
   lines.forEach((l, i) => {
     const it = HK.items[l.k]; const before = Number(it.qty) || 0;
     newQty[l.k] = before - l.qty;
     upd['items/' + l.k + '/qty'] = newQty[l.k]; upd['items/' + l.k + '/updatedAt'] = now;
-    upd['moves/' + hkNewId()] = { type: 'transfer', jan: it.jan, name: it.name, qty: -l.qty, before, after: newQty[l.k], unitPrice: Number(l.unitPrice), unitCost: Number(it.avgCost) || 0, dest: '株式会社KANETAKA（港区）', ref: no, date, at: now, by };
+    upd['moves/' + hkNewId()] = { type: 'transfer', jan: it.jan, name: it.name, model: hkModelOf(it.jan, it.name, it.model), qty: -l.qty, before, after: newQty[l.k], unitPrice: Number(l.unitPrice), unitCost: Number(it.avgCost) || 0, dest: '株式会社KANETAKA（港区）', ref: no, date, at: now, by };
   });
   const transfer = { no, date, items: docLines, subtotal: t.sub, tax: t.tax, total: t.total, taxMode: mode, at: now, by, purchaseKey: null, kanetakaDone: false };
   upd['transfers/' + tid] = transfer;
@@ -22888,7 +23101,7 @@ async function hkKanetakaReceive(transfer, tid, recordPurchase) {
   for (const l of transfer.items) {
     let prod = (products || []).find(p => l.jan && String(p.jan || '') === String(l.jan));
     if (!prod) {
-      const data = { maker: '', name: l.name, model: '', jan: l.jan, stock: 0, lowStock: null, cost: l.unitPrice, category: '家電', subcategory: '', location: '', memo: 'HAKからの移動で自動登録', image: '', homeLoc: loc, createdAt: Date.now() };
+      const data = { maker: '', name: l.name || l.model, model: l.model || '', jan: l.jan, stock: 0, lowStock: null, cost: l.unitPrice, category: '家電', subcategory: '', location: '', memo: 'HAKからの移動で自動登録', image: '', homeLoc: loc, createdAt: Date.now() };
       const res = await fetch(authedUrl('/products.json'), { method: 'POST', body: JSON.stringify(data) });
       if (!res.ok) throw new Error('product create failed');
       const key = (await res.json()).name;
@@ -22934,7 +23147,7 @@ async function hkCancelTransfer(tid) {
     }
     const short = plan.filter(x => !x.prod || x.have < x.l.qty);
     if (short.length) {
-      showToast(`港区の在庫が足りないため取り消せません（${short.map(x => x.l.name + '：港区に' + x.have + '個').join('、')}）。すでに出荷・移動した分を確認してください`);
+      showToast(`港区の在庫が足りないため取り消せません（${short.map(x => (x.l.model || x.l.name) + '：港区に' + x.have + '個').join('、')}）。すでに出荷・移動した分を確認してください`);
       return;
     }
   }
@@ -22958,7 +23171,7 @@ async function hkCancelTransfer(tid) {
       const k = hkJanKey(l.jan); const it = HK.items[k] || { jan: l.jan, name: l.name, qty: 0, avgCost: 0 };
       const before = Number(it.qty) || 0;
       upd['items/' + k] = { ...it, qty: before + l.qty, updatedAt: now };
-      upd['moves/' + hkNewId()] = { type: 'cancel', jan: l.jan, name: l.name, qty: l.qty, before, after: before + l.qty, ref: t.no, memo: '港区への移動を取消', date: todayStr(), at: now, by };
+      upd['moves/' + hkNewId()] = { type: 'cancel', jan: l.jan, name: l.name, model: l.model || '', qty: l.qty, before, after: before + l.qty, ref: t.no, memo: '港区への移動を取消', date: todayStr(), at: now, by };
     });
     upd['transfers/' + tid + '/canceled'] = true; upd['transfers/' + tid + '/canceledAt'] = now; upd['transfers/' + tid + '/canceledBy'] = by;
     await hkReq('hak', 'PATCH', upd);
@@ -22985,7 +23198,7 @@ async function hkRetryReceive(tid) {
 }
 
 // ── 履歴・書類 ──
-const HK_MOVE_LABEL = { gild: ['GILD検品', 'in'], stocktake: ['棚卸し', 'st'], out: ['出庫', 'out'], transfer: ['港区へ移動', 'tr'], cancel: ['移動の取消', 'in'] };
+const HK_MOVE_LABEL = { gild: ['GILDから入庫', 'in'], stocktake: ['棚卸し', 'st'], out: ['出庫', 'out'], transfer: ['港区へ移動', 'tr'], cancel: ['移動の取消', 'in'] };
 function hkHistoryHtml() {
   const trs = Object.entries(HK.transfers || {}).map(([id, t]) => ({ ...t, _id: id })).sort((a, b) => String(b.date).localeCompare(String(a.date)) || (b.at || 0) - (a.at || 0));
   const months = [...new Set(trs.map(t => String(t.date).slice(0, 7)))];
@@ -22998,11 +23211,12 @@ function hkHistoryHtml() {
       <td class="r">${t.canceled ? `<span class="hk-note">${t.canceledAt ? new Date(t.canceledAt).toLocaleDateString('ja-JP') + 'に取消' : '取消済み'}</span>` : `<button class="hk-btn" onclick="hkPrintDelivery('${t._id}')">納品書</button>${t.kanetakaDone === false && hkIsKanetaka() ? ` <button class="hk-btn" onclick="hkRetryReceive('${t._id}')">KANETAKAへの入荷をやり直す</button>` : ''}${hkIsKanetaka() ? ` <button class="hk-btn" onclick="hkCancelTransfer('${t._id}')" style="color:var(--danger)">取り消す</button>` : ''}`}</td></tr>`).join('') : '<tr><td colspan="5" class="tk-empty">まだ移動はありません</td></tr>'}
     </tbody></table></div>
     <div class="hk-row" style="align-items:center"><label style="flex:0 0 170px">請求書の対象月<input type="month" value="${hkEsc(curMonth)}" onchange="HK._invMonth=this.value;hkRender()"></label>
+      <label style="flex:0 0 220px">請求書の形式<select onchange="hkSetInvoiceStyle(this.value)"><option value="summary" ${hkInvoiceStyle() === 'summary' ? 'selected' : ''}>まとめ（納品書ごとに1行）</option><option value="detail" ${hkInvoiceStyle() === 'detail' ? 'selected' : ''}>明細（型番ごとにすべて）</option></select></label>
       <button class="cm-btn primary" onclick="hkPrintInvoice('${hkEsc(curMonth)}')" style="flex:0 0 auto">この月の請求書</button>
-      <span class="hk-note" style="flex:1 1 200px">その月の納品書をまとめた、HAKからKANETAKAへの請求書を作ります。</span></div></div>
+      <span class="hk-note" style="flex:1 1 200px">その月の納品書をまとめた、HAKからKANETAKAへの請求書を作ります。「まとめ」は納品書ごとの合計、「明細」は型番・数量・単価まですべて載せます。</span></div></div>
   <div class="hk-card"><h3>在庫の増減の履歴<small>新しい順に最大300件</small></h3>
-    <div class="hk-scroll"><table><thead><tr><th>日付</th><th>種類</th><th>商品</th><th class="r">増減</th><th class="r">在庫</th><th>内容</th></tr></thead><tbody>
-    ${moves.length ? moves.map(m => { const [lb, cl] = HK_MOVE_LABEL[m.type] || [m.type, '']; return `<tr><td style="white-space:nowrap">${hkEsc(m.date || '')}</td><td><span class="hk-chip ${cl}">${lb}</span></td><td>${hkEsc(m.name)}<br><span class="hk-note">${hkEsc(m.jan)}</span></td>
+    <div class="hk-scroll"><table><thead><tr><th>日付</th><th>種類</th><th>型番</th><th class="r">増減</th><th class="r">在庫</th><th>内容</th></tr></thead><tbody>
+    ${moves.length ? moves.map(m => { const [lb, cl] = HK_MOVE_LABEL[m.type] || [m.type, '']; return `<tr><td style="white-space:nowrap">${hkEsc(m.date || '')}</td><td><span class="hk-chip ${cl}">${lb}</span></td><td><b>${hkEsc(m.model || hkModelOf(m.jan, m.name))}</b><br><span class="hk-note">${hkEsc(m.jan)}</span></td>
       <td class="r ${m.qty > 0 ? 'hk-pos' : 'hk-neg'}">${m.qty > 0 ? '+' : ''}${m.qty}</td><td class="r">${m.before}→${m.after}</td>
       <td style="font-size:12px">${hkEsc([m.dest, m.ref ? (m.type === 'gild' ? '依頼' + m.ref : m.ref) : '', m.unitPrice ? '単価' + hkYen(m.unitPrice) : '', m.memo].filter(Boolean).join('・'))}</td></tr>`; }).join('') : '<tr><td colspan="6" class="tk-empty">まだ履歴はありません</td></tr>'}
     </tbody></table></div></div>`;
@@ -23042,13 +23256,18 @@ function hkPrintDelivery(tid) {
   const t = HK.transfers[tid]; if (!t) return;
   if (t.canceled) { showToast('取り消した納品書です'); return; }
   const incl = t.taxMode === 'incl';
-  const rows = (t.items || []).map(l => `<tr><td>${hkEsc(l.name)}</td><td>${hkEsc(l.jan)}</td><td class="r">${l.qty}</td><td class="r">${hkYen(l.unitPrice)}</td><td class="r">${hkYen(l.amount)}</td></tr>`).join('');
+  const rows = (t.items || []).map(l => `<tr><td>${hkEsc(l.model || hkModelOf(l.jan, l.name))}</td><td>${hkEsc(l.jan)}</td><td class="r">${l.qty}</td><td class="r">${hkYen(l.unitPrice)}</td><td class="r">${hkYen(l.amount)}</td></tr>`).join('');
   hkPrintDoc(`納品書_${t.no}_株式会社KANETAKA`, `<div class="hd"><h1>納 品 書</h1>
     <div class="top"><div><div class="to">株式会社KANETAKA 御中</div><div style="margin-top:8px">下記のとおり納品いたします。</div><div class="big">合計金額 ${hkYen(t.total)}（税込）</div></div>
       <div><div class="meta">納品日 ${hkEsc(fmtDateJPLong(t.date))}<br>納品書No. ${hkEsc(t.no)}</div>${hkFromHtml()}</div></div>
-    <table><thead><tr><th>品名</th><th>JANコード</th><th>数量</th><th>単価（${incl ? '税込' : '税抜'}）</th><th>金額</th></tr></thead><tbody>${rows}</tbody></table>
+    <table><thead><tr><th>型番</th><th>JANコード</th><th>数量</th><th>単価（${incl ? '税込' : '税抜'}）</th><th>金額</th></tr></thead><tbody>${rows}</tbody></table>
     <table class="sum"><tr><th>小計（10%対象）</th><td class="r">${hkYen(t.subtotal)}</td></tr><tr><th>消費税（10%${incl ? '・内税' : ''}）</th><td class="r">${hkYen(t.tax)}</td></tr><tr><th>合計</th><td class="r"><b>${hkYen(t.total)}</b></td></tr></table>
     <div class="note">納品先：株式会社KANETAKA 港区事務所（清洲事務所より移動）</div></div>`);
+}
+function hkInvoiceStyle() { return HK.settings.invoiceStyle === 'detail' ? 'detail' : 'summary'; }
+async function hkSetInvoiceStyle(v) {
+  HK.settings.invoiceStyle = v === 'detail' ? 'detail' : 'summary';
+  try { await hkReq('hak/settings/invoiceStyle', 'PUT', HK.settings.invoiceStyle); } catch (e) {}
 }
 function hkPrintInvoice(ym) {
   const trs = Object.values(HK.transfers || {}).filter(t => !t.canceled && String(t.date).slice(0, 7) === ym).sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -23059,13 +23278,20 @@ function hkPrintInvoice(ym) {
   const tax = trs.reduce((a, t) => a + (t.tax || 0), 0);
   const [y, m] = ym.split('-').map(Number);
   const issue = new Date(y, m, 0); const issueStr = `${issue.getFullYear()}-${String(issue.getMonth() + 1).padStart(2, '0')}-${String(issue.getDate()).padStart(2, '0')}`;
-  const rows = trs.map(t => `<tr><td>${hkEsc(fmtDateJPLong(t.date))}</td><td>${hkEsc(t.no)}</td><td class="r">${(t.items || []).reduce((a, l) => a + (l.qty || 0), 0)}</td><td class="r">${hkYen(t.total - t.tax)}</td><td class="r">${hkYen(t.tax)}</td><td class="r">${hkYen(t.total)}</td></tr>`).join('');
+  const detail = hkInvoiceStyle() === 'detail';
+  const rows = detail
+    ? trs.map(t => (t.items || []).map((l, i) => `<tr><td>${i === 0 ? hkEsc(fmtDateJPLong(t.date)) : ''}</td><td>${i === 0 ? hkEsc(t.no) : ''}</td><td>${hkEsc(l.model || hkModelOf(l.jan, l.name))}</td><td>${hkEsc(l.jan)}</td><td class="r">${l.qty}</td><td class="r">${hkYen(l.unitPrice)}</td><td class="r">${hkYen(l.amount)}</td></tr>`).join('')
+        + `<tr><td colspan="6" class="r" style="background:#f7f7f7">納品書${hkEsc(t.no)} 小計（${t.taxMode === 'incl' ? '税込' : '税抜'}）／消費税</td><td class="r" style="background:#f7f7f7">${hkYen(t.subtotal)}／${hkYen(t.tax)}</td></tr>`).join('')
+    : trs.map(t => `<tr><td>${hkEsc(fmtDateJPLong(t.date))}</td><td>${hkEsc(t.no)}</td><td class="r">${(t.items || []).reduce((a, l) => a + (l.qty || 0), 0)}</td><td class="r">${hkYen(t.total - t.tax)}</td><td class="r">${hkYen(t.tax)}</td><td class="r">${hkYen(t.total)}</td></tr>`).join('');
+  const head = detail
+    ? `<tr><th>納品日</th><th>納品書No.</th><th>型番</th><th>JANコード</th><th>数量</th><th>単価（${modes.length > 1 ? '税抜/税込' : modes[0] === 'incl' ? '税込' : '税抜'}）</th><th>金額</th></tr>`
+    : `<tr><th>納品日</th><th>納品書No.</th><th>点数</th><th>税抜金額</th><th>消費税（10%）</th><th>税込金額</th></tr>`;
   hkPrintDoc(`請求書_${ym}_株式会社KANETAKA`, `<div class="hd"><h1>請 求 書</h1>
     <div class="top"><div><div class="to">株式会社KANETAKA 御中</div><div style="margin-top:8px">${y}年${m}月分として、下記のとおりご請求申し上げます。</div><div class="big">ご請求金額 ${hkYen(total)}（税込）</div></div>
       <div><div class="meta">請求日 ${hkEsc(fmtDateJPLong(issueStr))}<br>請求書No. HI${String(y).slice(2)}${String(m).padStart(2, '0')}</div>${hkFromHtml()}</div></div>
-    <table><thead><tr><th>納品日</th><th>納品書No.</th><th>点数</th><th>税抜金額</th><th>消費税（10%）</th><th>税込金額</th></tr></thead><tbody>${rows}</tbody></table>
+    <table><thead>${head}</thead><tbody>${rows}</tbody></table>
     <table class="sum"><tr><th>10%対象（税抜）</th><td class="r">${hkYen(total - tax)}</td></tr><tr><th>消費税（10%）</th><td class="r">${hkYen(tax)}</td></tr><tr><th>ご請求金額</th><td class="r"><b>${hkYen(total)}</b></td></tr></table>
-    <div class="note">${s.bank ? 'お振込先：' + hkEsc(s.bank).replace(/\n/g, '<br>') + '<br>' : ''}${s.payTerms ? 'お支払期限：' + hkEsc(s.payTerms) + '<br>' : ''}${modes.length > 1 ? '※税抜・税込の単価の納品書が混在しています。消費税額は納品書ごとの合計です。' : ''}明細は各納品書のとおりです。</div></div>`);
+    ${(() => { const note = `${s.bank ? 'お振込先：' + hkEsc(s.bank).replace(/\n/g, '<br>') + '<br>' : ''}${s.payTerms ? 'お支払期限：' + hkEsc(s.payTerms) + '<br>' : ''}${modes.length > 1 ? '※税抜・税込の単価の納品書が混在しています。消費税額は納品書ごとの合計です。' : ''}${detail ? '' : '明細は各納品書のとおりです。'}`; return note ? `<div class="note">${note}</div>` : ''; })()}</div>`);
 }
 
 // ── 会社情報（納品書・請求書に載せるHAKの情報）──
@@ -23079,11 +23305,16 @@ function hkCompanyHtml() {
     <label>振込先（請求書に載ります）<textarea id="hk-co-bank" rows="3" placeholder="○○銀行 ○○支店 普通 1234567 カ）ハク">${hkEsc(s.bank || '')}</textarea></label>
     ${f('terms', 'お支払期限（請求書に載ります・任意）', s.payTerms, '翌月末日')}
     <label>卸単価の消費税<select id="hk-co-tax"><option value="excl" ${hkTaxMode() === 'excl' ? 'selected' : ''}>税抜で入力（消費税10%を上乗せ）</option><option value="incl" ${hkTaxMode() === 'incl' ? 'selected' : ''}>税込で入力</option></select></label>
+    <div class="hk-row" style="justify-content:flex-end"><button class="cm-btn primary" onclick="hkSaveCompany()" style="flex:0 0 auto">保存</button></div></div>
+  <div class="hk-card"><h3>在庫の表示<small>在庫の一覧の色分けの基準</small></h3>
+    <div class="hk-row"><label>在庫少の基準（この個数以下で黄色）<input id="hk-co-low" type="number" min="0" value="${hkLowDefault()}"></label><label>長期在庫の基準（この日数以上で赤）<input id="hk-co-age" type="number" min="1" value="${hkAgeLimit()}"></label></div>
+    <p class="hk-note">商品ごとに在庫少の基準を変えたいときは、在庫の一覧の✎から設定できます。</p>
     <div class="hk-row" style="justify-content:flex-end"><button class="cm-btn primary" onclick="hkSaveCompany()" style="flex:0 0 auto">保存</button></div></div>`;
 }
 async function hkSaveCompany() {
   const v = id => document.getElementById('hk-co-' + id).value.trim();
-  const s = { companyName: v('name'), address: v('address'), tel: v('tel'), regNo: v('regno'), bank: document.getElementById('hk-co-bank').value.trim(), payTerms: v('terms'), taxMode: document.getElementById('hk-co-tax').value, updatedAt: Date.now() };
+  const s = { ...HK.settings, companyName: v('name'), address: v('address'), tel: v('tel'), regNo: v('regno'), bank: document.getElementById('hk-co-bank').value.trim(), payTerms: v('terms'), taxMode: document.getElementById('hk-co-tax').value,
+    lowStockDefault: Math.max(0, parseInt(v('low')) || 0), agingDays: Math.max(1, parseInt(v('age')) || HK_DEFAULT_AGE), updatedAt: Date.now() };
   try { await hkReq('hak/settings', 'PUT', s); HK.settings = s; showToast('会社情報を保存しました'); hkRender(); }
   catch (e) { showToast('保存できませんでした'); }
 }
@@ -23125,6 +23356,7 @@ async function hkRemoveHakUser(email) {
   catch (e) { showToast('削除できませんでした'); }
 }
 </script>
+
 
 </body>
 </html>
