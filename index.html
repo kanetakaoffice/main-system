@@ -878,6 +878,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <button class="home-action-btn" onclick="TK.filter='mine';openTasksScreen('tasks')" style="position:relative"><span class="home-icon">✅</span><span class="home-label">タスク</span><span class="tk-tile-badge" id="home-tk-badge"></span></button>
         <button class="home-action-btn" onclick="openTasksScreen('cal')"><span class="home-icon">📅</span><span class="home-label">予定</span></button>
         <button class="home-action-btn" onclick="TK.filter='people';openTasksScreen('tasks')"><span class="home-icon">👥</span><span class="home-label">みんなの状況</span></button>
+        <button class="home-action-btn" onclick="openHakApp('stock')"><span class="home-icon">🏷️</span><span class="home-label">HAK在庫</span></button>
       </div>
     </div>
     <div id="home-notify-prompt" style="display:none;align-items:center;justify-content:space-between;gap:8px;background:var(--surface);border:1.2px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:var(--text-muted)">
@@ -12429,6 +12430,7 @@ function isValidJanCode(text) {
 function handleScanResult(text) {
   document.getElementById(scanTarget).value = text;
   stopScan();
+  if (scanTarget && scanTarget.startsWith('hk-') && typeof hkOnScan === 'function') { hkOnScan(scanTarget, text); return; }
   if (scanTarget === 'move-jan') { lookupProduct(); toggleFieldClearBtn('move-jan','move-jan-clear'); }
   if (scanTarget === 'inv-jan') { lookupJan(); toggleInvJanClearBtn(); }
   if (scanTarget === 'pack-jan-sp') { lookupPackJan(); toggleFieldClearBtn('pack-jan-sp','pack-jan-sp-clear'); }
@@ -12636,6 +12638,11 @@ function stopScan() {
 }
 
 window._initApp = async function() {
+  // HAKのアカウントなら、HAKの清洲在庫の画面だけを開き、KANETAKAの画面・データは一切読み込まない。
+  // ページを開いた直後（保存済みのログイン情報で自動ログインする場合）は、HAK用の処理を書いた
+  // 後ろの<script>がまだ読み込まれていないことがあるため、ページ全体の読み込みを待ってから判定する
+  if (document.readyState === 'loading') await new Promise(r => document.addEventListener('DOMContentLoaded', r, { once: true }));
+  if (typeof hkInitRole === 'function' && await hkInitRole()) return;
   initYearSelect();
   initInvSortOrderSelect();
   applyRoleUI();
@@ -16079,7 +16086,7 @@ function showScreen(name) {
   if (name === 'list')        { renderList(); markListSeen(); }
   if (name === 'export')      renderMonthGrid();
   if (name === 'receivable')  renderReceivable();
-  if (name === 'settings')    initSettingsScreen();
+  if (name === 'settings')    { initSettingsScreen(); if (typeof hkRenderSettingsCard === 'function') hkRenderSettingsCard(); }
   if (name === 'myhistory')   renderMyHistory();
   if (name === 'tasks')       renderTasksScreen();
   if (name === 'purchase' && typeof comUpdateSwitch === 'function') comUpdateSwitch();
@@ -22311,6 +22318,741 @@ async function comRemoveStaff(email) {
     delete COM.settings.staff[tkKey(email)];
     renderCommission();
   } catch (e) { showToast('保存できませんでした'); }
+}
+</script>
+
+<style>
+/* ── HAK 清洲在庫（株式会社HAKの在庫。KANETAKAの在庫とは別の帳簿）── */
+#hak-app { position:fixed; inset:0; z-index:190; background:var(--surface); overflow-y:auto; -webkit-overflow-scrolling:touch; display:none; }
+body.hak-only > *:not(#hak-app):not(#toast):not(#scan-overlay):not(#confirm-modal):not(script):not(style):not(link) { display:none !important; }
+#hak-app .hk-head { position:sticky; top:0; z-index:2; background:var(--white); border-bottom:1px solid var(--border); padding:calc(env(safe-area-inset-top,0px) + 10px) max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px)); display:flex; align-items:center; gap:10px; }
+#hak-app .hk-head h2 { margin:0; font-size:17px; flex:1; }
+#hak-app .hk-head small { display:block; font-size:11px; color:var(--text-muted); font-weight:400; }
+#hak-app .hk-tabs { display:flex; gap:4px; overflow-x:auto; padding:10px max(16px,env(safe-area-inset-left,0px)) 0; max-width:1100px; margin:0 auto; }
+#hak-app .hk-tabs button { flex-shrink:0; padding:8px 12px; font-size:13px; font-weight:700; border:1.5px solid var(--border); background:var(--white); color:var(--text-sub); border-radius:20px; cursor:pointer; font-family:inherit; }
+#hak-app .hk-tabs button.on { background:var(--teal); border-color:var(--teal); color:#fff; }
+#hak-app .hk-body { max-width:1100px; margin:0 auto; padding:12px max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 40px) max(16px,env(safe-area-inset-left,0px)); display:flex; flex-direction:column; gap:12px; }
+#hak-app .hk-card { background:var(--white); border:1px solid var(--border); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:10px; }
+#hak-app .hk-card h3 { margin:0; font-size:14px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+#hak-app .hk-card h3 small { font-size:11px; font-weight:400; color:var(--text-muted); }
+#hak-app .hk-note { font-size:12px; color:var(--text-sub); line-height:1.6; margin:0; }
+#hak-app .hk-warn { font-size:12.5px; padding:10px 12px; border-radius:10px; background:#fffbeb; border:1.5px solid #fde68a; color:#92400e; line-height:1.6; }
+#hak-app .hk-ok { font-size:12.5px; padding:10px 12px; border-radius:10px; background:#ecfdf5; border:1.5px solid #a7f3d0; color:#065f46; line-height:1.6; }
+#hak-app input, #hak-app select, #hak-app textarea { font:inherit; font-size:14px; padding:8px 10px; border:1.5px solid var(--border); border-radius:8px; background:var(--white); color:var(--text); min-width:0; box-sizing:border-box; }
+#hak-app label { display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--text-muted); font-weight:700; }
+#hak-app .hk-row { display:flex; gap:8px; flex-wrap:wrap; align-items:end; }
+#hak-app .hk-row > * { flex:1 1 140px; }
+#hak-app .hk-tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+#hak-app .hk-tiles div { background:var(--white); padding:10px 12px; min-width:0; }
+#hak-app .hk-tiles span { display:block; font-size:11px; color:var(--text-muted); font-weight:700; }
+#hak-app .hk-tiles b { font-size:18px; font-variant-numeric:tabular-nums; }
+#hak-app .hk-scroll { overflow-x:auto; }
+#hak-app table { border-collapse:collapse; width:100%; font-size:13px; font-variant-numeric:tabular-nums; }
+#hak-app th, #hak-app td { padding:7px 8px; border-bottom:1px solid var(--border); text-align:left; vertical-align:middle; }
+#hak-app th { font-size:11px; color:var(--text-muted); background:var(--surface); font-weight:700; white-space:nowrap; }
+#hak-app td.r, #hak-app th.r { text-align:right; white-space:nowrap; }
+#hak-app td.jan { font-size:11px; color:var(--text-muted); white-space:nowrap; }
+#hak-app .hk-pos { color:#0f766e; } #hak-app .hk-neg { color:#b91c1c; }
+#hak-app .hk-btn { padding:5px 10px; font-size:12px; border-radius:6px; border:1px solid var(--border); background:var(--white); cursor:pointer; font-family:inherit; white-space:nowrap; }
+#hak-app .hk-qty { width:72px; text-align:right; }
+#hak-app .hk-price { width:100px; text-align:right; }
+#hak-app .hk-chip { display:inline-block; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:10px; background:var(--surface); color:var(--text-sub); white-space:nowrap; }
+#hak-app .hk-chip.in { background:#ecfdf5; color:#065f46; } #hak-app .hk-chip.out { background:#fef2f2; color:#991b1b; } #hak-app .hk-chip.tr { background:#eff6ff; color:#1e40af; } #hak-app .hk-chip.st { background:#fffbeb; color:#92400e; }
+#hak-app .hk-modal { position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:195; display:flex; align-items:center; justify-content:center; padding:24px 16px; }
+#hak-app .hk-modal > div { background:var(--white); border-radius:14px; padding:18px; width:100%; max-width:420px; display:flex; flex-direction:column; gap:10px; max-height:90vh; overflow-y:auto; }
+</style>
+<div id="hak-app"></div>
+
+<script>
+// ============================================================
+// HAK 清洲在庫
+// 要望「GILD（株式会社HAKのオンラインサロン）の買取システムで検品した商品の在庫を管理したい。
+// KANETAKAでは清洲と港区の両方の在庫を管理し、HAKは清洲の在庫だけ管理できるようにしたい。
+// 清洲（HAK）から港区（KANETAKA）へ移した商品の納品書・請求書もここから作りたい」への対応。
+//
+// ■ 会社ごとに帳簿を分ける
+//   清洲にはHAKの商品とKANETAKA自身の商品の両方がある。HAKの在庫はKANETAKAの資産ではないので、
+//   KANETAKAの在庫（products）には混ぜず、/hak 以下に別の帳簿として持つ。
+//   そうすることで、KANETAKAの在庫金額・月次集計などの既存の処理には一切影響しない。
+//
+// ■ 見える範囲
+//   ・HAKのアカウント（/hakUsers に登録されたメールアドレス）：ログインするとこのHAK用の画面だけが出る。
+//     Firebaseのルールで、/hak 以外（KANETAKAの売上・在庫など）は読み書きできない。
+//   ・KANETAKAのアカウント：今まで通り全部見える。ホームの「HAK在庫」からこの画面を開ける。
+//     清洲→港区の移動（HAKからKANETAKAへの販売）はKANETAKAの仕入れ記録も作るため、KANETAKAのアカウントだけが行う。
+//
+// ■ データ
+//   /hakUsers/{メールキー}          HAKのアカウント {email}
+//   /hak/items/{JAN}               HAKの清洲在庫 {jan, name, qty, avgCost, updatedAt}
+//   /hak/moves/{id}                在庫の増減の履歴 {type:gild|stocktake|out|transfer, jan, name, qty(増減), before, after, ...}
+//   /hak/gildSeen/{依頼ID}         GILDのCSVで取り込み済み（または基準取り込みで見た）依頼 {s:状態, q:数量, a:在庫に足したか}
+//   /hak/janNames/{JAN}            GILDのCSVから覚えた商品名と直近の買取単価 {n, c}（棚卸しで名前を出すため）
+//   /hak/transfers/{id}            清洲→港区（HAK→KANETAKA）の移動 = 納品書1枚分
+//   /hak/settings                  HAKの会社情報（納品書・請求書に載せる）と消費税の扱い
+//   /hak/meta                      {gildBaselineAt, lastImportAt}
+// ============================================================
+const HK_INSPECTED = ['検品済', '検品済(要確認)'];
+const HK_PAST_INSPECTED = ['金額確定待ち', '振込待ち', '振込済'];
+const HK_DEST_LOC = 'minato';
+const HK_SUPPLIER = '（株）HAK';
+const HK = { role: null, open: false, tab: 'stock', items: {}, moves: {}, transfers: {}, settings: {}, meta: {}, janNames: null,
+  q: '', showZero: false, gild: null, st: null, tr: null, outJan: null, loaded: false };
+
+const hkEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const hkYen = n => (n < 0 ? '−¥' : '¥') + Math.abs(Math.round(n || 0)).toLocaleString('ja-JP');
+const hkNum = v => { const n = parseFloat(String(v ?? '').replace(/[,¥円\s]/g, '')); return isNaN(n) ? 0 : n; };
+const hkJanKey = jan => String(jan || '').trim().replace(/[.#$\[\]\/]/g, '_');
+const hkNewId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const hkIsKanetaka = () => HK.role === 'kanetaka';
+
+async function hkReq(path, method, body) {
+  const opt = { method: method || 'GET' };
+  if (body !== undefined) { opt.headers = { 'Content-Type': 'application/json' }; opt.body = JSON.stringify(body); }
+  let r = await fetch(authedUrl('/' + path + '.json'), opt);
+  if (r.status === 401 && typeof refreshIdToken === 'function') { await refreshIdToken(); r = await fetch(authedUrl('/' + path + '.json'), opt); }
+  if (!r.ok) throw new Error('通信エラー（' + r.status + '）');
+  return r.json();
+}
+
+// ログイン直後に呼ぶ。HAKのアカウントなら、HAK用の画面だけを開いて true を返す（他の初期化は行わない）
+async function hkInitRole() {
+  const me = (typeof currentSessionEmail === 'function') ? currentSessionEmail() : '';
+  if (!me) return false;
+  let isHak = false;
+  try { isHak = !!(await hkReq('hakUsers/' + tkKey(me))); } catch (e) { isHak = false; }
+  if (!isHak) { HK.role = 'kanetaka'; return false; }
+  HK.role = 'hak';
+  document.body.classList.add('hak-only');
+  openHakApp();
+  return true;
+}
+
+async function openHakApp(tab) {
+  if (!HK.role) HK.role = 'kanetaka';
+  if (tab) HK.tab = tab;
+  if (HK.tab === 'transfer' && !hkIsKanetaka()) HK.tab = 'stock';
+  HK.open = true;
+  const app = document.getElementById('hak-app');
+  app.style.display = 'block';
+  if (!HK.loaded) app.innerHTML = '<div class="hk-body"><div class="tk-empty">読み込み中…</div></div>';
+  await hkLoad();
+  hkRender();
+}
+function closeHakApp() {
+  HK.open = false;
+  document.getElementById('hak-app').style.display = 'none';
+}
+
+async function hkLoad() {
+  try {
+    const [items, moves, transfers, settings, meta] = await Promise.all([
+      hkReq('hak/items'), hkReq('hak/moves'), hkReq('hak/transfers'), hkReq('hak/settings'), hkReq('hak/meta')
+    ]);
+    HK.items = items || {}; HK.moves = moves || {}; HK.transfers = transfers || {}; HK.settings = settings || {}; HK.meta = meta || {};
+    HK.loaded = true;
+  } catch (e) {
+    console.error('HAK在庫の読み込みエラー', e);
+    showToast('HAKの在庫を読み込めませんでした。通信状況をご確認ください');
+  }
+}
+async function hkLoadJanNames() {
+  if (HK.janNames) return HK.janNames;
+  try { HK.janNames = (await hkReq('hak/janNames')) || {}; } catch (e) { HK.janNames = {}; }
+  return HK.janNames;
+}
+function hkNameOf(jan) {
+  const k = hkJanKey(jan);
+  if (HK.items[k] && HK.items[k].name) return HK.items[k].name;
+  if (HK.janNames && HK.janNames[k] && HK.janNames[k].n) return HK.janNames[k].n;
+  if (hkIsKanetaka() && typeof products !== 'undefined') {
+    const p = (products || []).find(p => String(p.jan || '') === String(jan));
+    if (p) return p.name;
+  }
+  return '';
+}
+
+function hkSetTab(t) { HK.tab = t; hkRender(); document.getElementById('hak-app').scrollTop = 0; }
+
+function hkRender() {
+  const app = document.getElementById('hak-app');
+  if (!app || !HK.open) return;
+  const tabs = [['stock', '在庫'], ['gild', 'GILD取り込み'], ['stocktake', '棚卸し'], ...(hkIsKanetaka() ? [['transfer', '港区へ移動']] : []), ['history', '履歴・書類'], ['company', '会社情報']];
+  let body = '';
+  if (HK.tab === 'stock') body = hkStockHtml();
+  else if (HK.tab === 'gild') body = hkGildHtml();
+  else if (HK.tab === 'stocktake') body = hkStocktakeHtml();
+  else if (HK.tab === 'transfer') body = hkTransferHtml();
+  else if (HK.tab === 'history') body = hkHistoryHtml();
+  else body = hkCompanyHtml();
+  app.innerHTML = `
+    <div class="hk-head">
+      <h2>HAK 清洲在庫<small>株式会社HAKの在庫（KANETAKAの在庫とは別に管理しています）</small></h2>
+      ${hkIsKanetaka() ? '<button class="cm-btn" onclick="closeHakApp()">✕ 閉じる</button>' : '<button class="cm-btn" onclick="doLogout()">ログアウト</button>'}
+    </div>
+    <div class="hk-tabs">${tabs.map(([k, l]) => `<button class="${HK.tab === k ? 'on' : ''}" onclick="hkSetTab('${k}')">${l}</button>`).join('')}</div>
+    <div class="hk-body">${body}</div>
+    ${HK.outJan ? hkOutModalHtml() : ''}`;
+  if (HK.tab === 'stocktake') setTimeout(() => document.getElementById('hk-st-jan')?.focus(), 30);
+}
+
+// ── 在庫 ──
+function hkItemList() {
+  return Object.entries(HK.items || {}).map(([k, v]) => ({ ...v, _k: k, qty: Number(v.qty) || 0, avgCost: Number(v.avgCost) || 0 }));
+}
+function hkStockHtml() {
+  const all = hkItemList();
+  const inStock = all.filter(i => i.qty > 0);
+  const q = HK.q.trim().toLowerCase();
+  const list = (HK.showZero ? all : inStock).filter(i => !q || String(i.name || '').toLowerCase().includes(q) || String(i.jan || '').includes(q))
+    .sort((a, b) => b.qty - a.qty || String(a.name).localeCompare(String(b.name), 'ja'));
+  const units = inStock.reduce((s, i) => s + i.qty, 0);
+  const value = inStock.reduce((s, i) => s + i.qty * i.avgCost, 0);
+  const noBaseline = !HK.meta.gildBaselineAt;
+  return `
+    ${noBaseline ? `<div class="hk-warn">はじめに「GILD取り込み」で基準の取り込みをしてから、「棚卸し」で清洲にあるHAKの商品を数えてください。そのあと検品した分は、GILDのCSVを取り込むたびに在庫に足されます。</div>` : ''}
+    <div class="hk-tiles"><div><span>銘柄</span><b>${inStock.length.toLocaleString()}</b></div><div><span>在庫点数</span><b>${units.toLocaleString()}</b></div><div><span>在庫金額（平均仕入）</span><b>${hkYen(value)}</b></div></div>
+    <div class="hk-card">
+      <div class="hk-row"><input id="hk-q" placeholder="🔍 商品名・JANで検索" value="${hkEsc(HK.q)}" oninput="HK.q=this.value;clearTimeout(HK._qt);HK._qt=setTimeout(()=>{hkRender();const e=document.getElementById('hk-q');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},300)" style="flex:3 1 220px">
+        <label style="flex:0 0 auto;flex-direction:row;align-items:center;gap:6px;font-size:12px"><input type="checkbox" ${HK.showZero ? 'checked' : ''} onchange="HK.showZero=this.checked;hkRender()"> 在庫0も表示</label></div>
+      <div class="hk-scroll"><table><thead><tr><th>商品名</th><th>JAN</th><th class="r">在庫</th><th class="r">平均仕入</th><th class="r">金額</th><th></th></tr></thead><tbody>
+      ${list.length ? list.slice(0, 500).map(i => `<tr><td>${hkEsc(i.name || '（名前未登録）')}</td><td class="jan">${hkEsc(i.jan)}</td><td class="r"><b>${i.qty}</b></td><td class="r">${hkYen(i.avgCost)}</td><td class="r">${hkYen(i.qty * i.avgCost)}</td>
+        <td class="r">${i.qty > 0 ? `<button class="hk-btn" onclick="hkOpenOut('${hkEsc(i._k)}')">出庫</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="6" class="tk-empty">在庫はありません</td></tr>'}
+      </tbody></table></div>
+      ${list.length > 500 ? `<p class="hk-note">先頭の500件を表示しています。検索で絞り込んでください。</p>` : ''}
+    </div>`;
+}
+
+// ── 出庫（Amazonなど、KANETAKA以外への販売・持ち出し）──
+function hkOpenOut(k) { HK.outJan = k; hkRender(); setTimeout(() => document.getElementById('hk-out-qty')?.focus(), 30); }
+function hkOutModalHtml() {
+  const it = HK.items[HK.outJan]; if (!it) return '';
+  const dests = [...new Set(Object.values(HK.moves || {}).filter(m => m.type === 'out' && m.dest).map(m => m.dest))];
+  if (!dests.includes('Amazon（HAK）')) dests.unshift('Amazon（HAK）');
+  return `<div class="hk-modal" onclick="if(event.target===this){HK.outJan=null;hkRender()}"><div>
+    <b>出庫：${hkEsc(it.name)}</b><span class="hk-note">清洲の在庫：${Number(it.qty) || 0}個。KANETAKA（港区）へ移すときは「港区へ移動」から行ってください。</span>
+    <label>出庫先<input id="hk-out-dest" list="hk-out-dests" value="Amazon（HAK）"></label><datalist id="hk-out-dests">${dests.map(d => `<option value="${hkEsc(d)}">`).join('')}</datalist>
+    <div class="hk-row"><label>個数<input id="hk-out-qty" type="number" min="1" value="1"></label><label>卸単価（任意）<input id="hk-out-price" type="number" min="0"></label></div>
+    <div class="hk-row"><label>日付<input id="hk-out-date" type="date" value="${todayStr()}"></label></div>
+    <label>メモ（任意）<input id="hk-out-memo"></label>
+    <div class="hk-row" style="justify-content:flex-end"><button class="cm-btn" onclick="HK.outJan=null;hkRender()" style="flex:0 0 auto">キャンセル</button><button class="cm-btn primary" onclick="hkSubmitOut()" style="flex:0 0 auto">出庫を確定</button></div>
+  </div></div>`;
+}
+async function hkSubmitOut() {
+  const k = HK.outJan, it = HK.items[k]; if (!it) return;
+  const qty = parseInt(document.getElementById('hk-out-qty').value) || 0;
+  const dest = document.getElementById('hk-out-dest').value.trim();
+  const price = hkNum(document.getElementById('hk-out-price').value);
+  const date = document.getElementById('hk-out-date').value || todayStr();
+  const memo = document.getElementById('hk-out-memo').value.trim();
+  const have = Number(it.qty) || 0;
+  if (qty <= 0) { showToast('個数を入力してください'); return; }
+  if (!dest) { showToast('出庫先を入力してください'); return; }
+  if (qty > have) { showToast(`在庫は${have}個です。個数を確認してください`); return; }
+  const id = hkNewId();
+  const upd = {
+    ['items/' + k + '/qty']: have - qty, ['items/' + k + '/updatedAt']: Date.now(),
+    ['moves/' + id]: { type: 'out', jan: it.jan, name: it.name, qty: -qty, before: have, after: have - qty, dest, unitPrice: price || null, memo, date, at: Date.now(), by: currentSessionEmail() }
+  };
+  try {
+    await hkReq('hak', 'PATCH', upd);
+    it.qty = have - qty; HK.moves[id] = upd['moves/' + id];
+    HK.outJan = null;
+    showToast(`${dest}へ${qty}個の出庫を記録しました（在庫${it.qty}個）`);
+    hkRender();
+  } catch (e) { showToast('記録できませんでした。通信状況をご確認ください'); }
+}
+
+// ── GILDのCSV取り込み ──
+// GILDの「申請一覧」から書き出したCSVを読み込む。初回は「基準の取り込み」として、CSVにある依頼を
+// すべて「見た」ことにするだけで在庫は増やさない（それまでの在庫は棚卸しで数えるため）。
+// 2回目以降は、まだ取り込んでいない依頼のうち、担当会社がHAKで状態が「検品済」のものを在庫に足す。
+function hkParseCsv(text) {
+  const rows = []; let row = [], f = '', q = false;
+  text = text.replace(/^﻿/, '');
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; }
+      else f += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(f); f = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
+    else f += c;
+  }
+  if (f !== '' || row.length) { row.push(f); rows.push(row); }
+  return rows.filter(r => r.some(v => v !== ''));
+}
+function hkCleanJan(v) { return String(v || '').replace(/^="?/, '').replace(/"$/, '').replace(/[^0-9A-Za-z]/g, ''); }
+async function hkReadGildFile(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const buf = await file.arrayBuffer();
+  let text = new TextDecoder('utf-8').decode(buf);
+  if (!text.includes('依頼ID')) { try { text = new TextDecoder('shift_jis').decode(buf); } catch (e) {} }
+  const rows = hkParseCsv(text);
+  const head = rows[0] || [];
+  const col = name => head.indexOf(name);
+  const need = ['依頼ID', '商品名', 'JAN', '有効数量', '担当会社', '状態'];
+  const missing = need.filter(n => col(n) < 0);
+  if (missing.length) { showToast('GILDの申請一覧のCSVではないようです（' + missing.join('・') + 'の列がありません）'); input.value = ''; return; }
+  const ix = { id: col('依頼ID'), name: col('商品名'), jan: col('JAN'), qty: col('有効数量'), co: col('担当会社'), st: col('状態'), ap: col('申請単価'), fp: col('確定単価'), at: col('受付日時') };
+  const recs = rows.slice(1).map(r => {
+    const fixed = hkNum(r[ix.fp]); const applied = hkNum(r[ix.ap]);
+    return { id: (r[ix.id] || '').trim(), name: (r[ix.name] || '').trim(), jan: hkCleanJan(r[ix.jan]), qty: parseInt(r[ix.qty]) || 0,
+      co: (r[ix.co] || '').trim(), st: (r[ix.st] || '').trim(), cost: fixed > 0 ? fixed : applied, at: ix.at >= 0 ? (r[ix.at] || '') : '' };
+  }).filter(r => r.id);
+  HK.gild = { fileName: file.name, recs, loading: true };
+  hkRender();
+  let seen = {};
+  try { seen = (await hkReq('hak/gildSeen')) || {}; } catch (e) { showToast('取り込み済みの記録を読み込めませんでした'); HK.gild = null; hkRender(); return; }
+  await hkLoadJanNames();
+  const baseline = !HK.meta.gildBaselineAt;
+  const fresh = recs.filter(r => !seen[r.id]);
+  const hak = fresh.filter(r => r.co === 'HAK' && r.qty > 0 && r.jan);
+  HK.gild = {
+    fileName: file.name, recs, seen, baseline, loading: false,
+    add: hak.filter(r => HK_INSPECTED.includes(r.st)).map(r => ({ ...r, on: true })),
+    past: hak.filter(r => HK_PAST_INSPECTED.includes(r.st)).map(r => ({ ...r, on: false })),
+    waitingUnsorted: fresh.filter(r => r.co === '未仕分け' && HK_INSPECTED.includes(r.st)).length,
+    canceledAfter: recs.filter(r => seen[r.id] && seen[r.id].a && r.st === 'キャンセル').length,
+    noJan: fresh.filter(r => r.co === 'HAK' && HK_INSPECTED.includes(r.st) && !r.jan).length
+  };
+  input.value = '';
+  hkRender();
+}
+function hkGildHtml() {
+  const g = HK.gild;
+  const lastAt = HK.meta.lastImportAt ? new Date(HK.meta.lastImportAt).toLocaleString('ja-JP') : 'まだありません';
+  let html = `<div class="hk-card"><h3>GILDの申請一覧CSVを取り込む<small>前回の取り込み：${hkEsc(lastAt)}</small></h3>
+    <p class="hk-note">GILDの管理画面の「申請一覧」で「CSVダウンロード」を押し、そのファイルを選んでください。担当会社が<b>HAK</b>で、状態が<b>検品済</b>になった依頼が、清洲の在庫に足されます。一度取り込んだ依頼は、同じCSVをもう一度読み込んでも二重には足されません。</p>
+    <input type="file" accept=".csv,text/csv" onchange="hkReadGildFile(this)"></div>`;
+  if (!g) return html;
+  if (g.loading) return html + '<div class="hk-card"><div class="tk-empty">読み込み中…</div></div>';
+  if (g.baseline) {
+    const names = new Set(g.recs.filter(r => r.jan).map(r => r.jan)).size;
+    return html + `<div class="hk-card"><h3>初回：基準の取り込み<small>${hkEsc(g.fileName)}</small></h3>
+      <div class="hk-warn">はじめての取り込みです。このCSVにある<b>${g.recs.length.toLocaleString()}件</b>の依頼を「取り込み済み」として記録します。<b>在庫は増えません</b>。今清洲にあるHAKの商品は、このあと「棚卸し」で数えて在庫にします。<br>あわせて、${names.toLocaleString()}種類の商品名を覚えておき、棚卸しでJANを読み取ったときに名前が出るようにします。</div>
+      <div class="hk-row" style="justify-content:flex-end"><button class="cm-btn" onclick="HK.gild=null;hkRender()" style="flex:0 0 auto">やめる</button><button class="cm-btn primary" onclick="hkCommitGild()" style="flex:0 0 auto">基準の取り込みを行う</button></div></div>`;
+  }
+  const rowsHtml = (arr, key) => arr.map((r, i) => `<tr><td><input type="checkbox" ${r.on ? 'checked' : ''} onchange="HK.gild.${key}[${i}].on=this.checked;hkRender()"></td><td>${hkEsc(r.name)}</td><td class="jan">${hkEsc(r.jan)}</td><td class="r">${r.qty}</td><td class="r">${hkYen(r.cost)}</td><td><span class="hk-chip">${hkEsc(r.st)}</span></td><td class="jan">${hkEsc(r.id)}</td></tr>`).join('');
+  const sel = g.add.concat(g.past).filter(r => r.on);
+  const selQty = sel.reduce((s, r) => s + r.qty, 0);
+  html += `<div class="hk-card"><h3>在庫に足す商品<small>${hkEsc(g.fileName)}</small></h3>
+    ${g.add.length ? `<div class="hk-scroll"><table><thead><tr><th></th><th>商品名</th><th>JAN</th><th class="r">数量</th><th class="r">買取単価</th><th>状態</th><th>依頼ID</th></tr></thead><tbody>${rowsHtml(g.add, 'add')}</tbody></table></div>` : '<p class="hk-note">新しく検品済みになったHAKの商品はありません。</p>'}
+    ${g.past.length ? `<h3 style="margin-top:6px">検品済みを過ぎていた商品<small>前回の取り込みのあとに、金額確定・振込まで進んでいた依頼です</small></h3>
+      <p class="hk-note">清洲に届いていて、まだ在庫に入れていないものだけチェックを入れてください。チェックしなかったものは、次の取り込みでもまたここに出ます。</p>
+      <div class="hk-scroll"><table><thead><tr><th></th><th>商品名</th><th>JAN</th><th class="r">数量</th><th class="r">買取単価</th><th>状態</th><th>依頼ID</th></tr></thead><tbody>${rowsHtml(g.past, 'past')}</tbody></table></div>` : ''}
+    ${g.waitingUnsorted ? `<p class="hk-note">検品済みでも担当会社が「未仕分け」の依頼が${g.waitingUnsorted}件あります。GILDでHAKに仕分けされたあとの取り込みで足されます。</p>` : ''}
+    ${g.noJan ? `<p class="hk-note">JANコードのないHAKの検品済み依頼が${g.noJan}件あります。在庫に入れられないため、棚卸しで追加してください。</p>` : ''}
+    ${g.canceledAfter ? `<div class="hk-warn">取り込み済みの依頼のうち${g.canceledAfter}件が、そのあとキャンセルになっています。商品が清洲にない場合は、棚卸しで数を直してください。</div>` : ''}
+    <div class="hk-row" style="justify-content:flex-end;align-items:center"><span class="hk-note" style="flex:1 1 auto">選択中：${sel.length}件・${selQty}点</span><button class="cm-btn" onclick="HK.gild=null;hkRender()" style="flex:0 0 auto">やめる</button><button class="cm-btn primary" onclick="hkCommitGild()" style="flex:0 0 auto" ${sel.length ? '' : 'disabled'}>在庫に足す</button></div></div>`;
+  return html;
+}
+async function hkCommitGild() {
+  const g = HK.gild; if (!g) return;
+  const now = Date.now(), by = currentSessionEmail();
+  const upd = {};
+  // 商品名と直近の買取単価を覚えておく（棚卸しで名前を出す・棚卸しで新しく入れた商品の仕入額の目安にする）
+  const names = {};
+  g.recs.forEach(r => { if (r.jan) { const k = hkJanKey(r.jan); if (!names[k] || r.cost > 0) names[k] = { n: r.name || (names[k] && names[k].n) || '', c: r.cost > 0 ? r.cost : (names[k] ? names[k].c : 0) }; } });
+  Object.entries(names).forEach(([k, v]) => { upd['janNames/' + k] = v; });
+  if (g.baseline) {
+    g.recs.forEach(r => { upd['gildSeen/' + r.id] = { s: r.st, q: r.qty, a: false, at: now }; });
+    upd['meta/gildBaselineAt'] = now; upd['meta/lastImportAt'] = now;
+    try {
+      await hkReq('hak', 'PATCH', upd);
+      HK.meta.gildBaselineAt = now; HK.meta.lastImportAt = now; HK.janNames = { ...(HK.janNames || {}), ...names };
+      HK.gild = null;
+      showToast('基準の取り込みが終わりました。次に「棚卸し」で清洲のHAKの商品を数えてください');
+      hkSetTab('stocktake');
+    } catch (e) { showToast('取り込めませんでした。通信状況をご確認ください'); }
+    return;
+  }
+  const sel = g.add.concat(g.past).filter(r => r.on);
+  if (!sel.length) return;
+  const byJan = {};
+  sel.forEach(r => { const k = hkJanKey(r.jan); (byJan[k] = byJan[k] || []).push(r); });
+  const newItems = {};
+  Object.entries(byJan).forEach(([k, rs]) => {
+    const cur = HK.items[k] || { jan: rs[0].jan, name: rs[0].name, qty: 0, avgCost: 0 };
+    let qty = Number(cur.qty) || 0, avg = Number(cur.avgCost) || 0;
+    rs.forEach(r => {
+      const before = qty;
+      const base = Math.max(qty, 0);
+      avg = base + r.qty > 0 ? (base * avg + r.qty * (r.cost || avg)) / (base + r.qty) : avg;
+      qty += r.qty;
+      upd['moves/' + hkNewId()] = { type: 'gild', jan: r.jan, name: r.name, qty: r.qty, before, after: qty, unitCost: r.cost || null, ref: r.id, date: todayStr(), at: now, by };
+      upd['gildSeen/' + r.id] = { s: r.st, q: r.qty, a: true, at: now };
+    });
+    newItems[k] = { jan: cur.jan || rs[0].jan, name: cur.name || rs[0].name, qty, avgCost: Math.round(avg), updatedAt: now };
+    upd['items/' + k] = newItems[k];
+  });
+  upd['meta/lastImportAt'] = now;
+  try {
+    await hkReq('hak', 'PATCH', upd);
+    Object.assign(HK.items, newItems); HK.meta.lastImportAt = now;
+    Object.keys(upd).filter(p => p.startsWith('moves/')).forEach(p => { HK.moves[p.slice(6)] = upd[p]; });
+    HK.gild = null;
+    showToast(`${sel.length}件・${sel.reduce((s, r) => s + r.qty, 0)}点を清洲の在庫に足しました`);
+    hkSetTab('stock');
+  } catch (e) { showToast('取り込めませんでした。通信状況をご確認ください'); }
+}
+
+// ── 棚卸し ──
+// JANを読み取る（バーコードリーダー・カメラ・手入力）たびに1個ずつ数え、最後に確定すると在庫数を数えた数に合わせる。
+// 数えている途中の内容はこの端末に保存しておく（途中で画面を閉じても続きから数えられる）。
+function hkStKey() { return 'kanetaka_hak_stocktake_' + tkKey(currentSessionEmail() || ''); }
+function hkStLoad() {
+  if (HK.st) return HK.st;
+  try { HK.st = JSON.parse(localStorage.getItem(hkStKey()) || 'null'); } catch (e) {}
+  if (!HK.st || !HK.st.counts) HK.st = { counts: {}, order: [], zeroOthers: false };
+  return HK.st;
+}
+function hkStSave() { try { localStorage.setItem(hkStKey(), JSON.stringify(HK.st)); } catch (e) {} }
+function hkStocktakeHtml() {
+  const st = hkStLoad();
+  hkLoadJanNames().then(() => { if (HK.tab === 'stocktake' && !HK._namesRendered) { HK._namesRendered = true; hkRender(); } });
+  const rows = st.order.map(k => {
+    const c = st.counts[k]; const sys = HK.items[k] ? Number(HK.items[k].qty) || 0 : 0;
+    return { k, jan: c.jan, name: c.name || hkNameOf(c.jan), n: c.n, sys, diff: c.n - sys };
+  });
+  const others = hkItemList().filter(i => i.qty > 0 && !st.counts[i._k]);
+  const total = rows.reduce((s, r) => s + r.n, 0);
+  return `<div class="hk-card"><h3>棚卸し<small>清洲にあるHAKの商品を数えます</small></h3>
+    <p class="hk-note">JANコードをバーコードリーダーで読むか、カメラで読み取るか、入力してEnterを押すと、1個ずつ数えます。数は表の中で直せます。全部数え終わったら「棚卸しを確定」を押すと、在庫数が数えた数に変わります。</p>
+    <div class="hk-row"><input id="hk-st-jan" inputmode="numeric" placeholder="JANコード" onkeydown="if(event.key==='Enter'){event.preventDefault();hkStAdd(this.value)}" style="flex:3 1 200px">
+      <button class="cm-btn" onclick="startScan('hk-st-jan')" style="flex:0 0 auto">📷 カメラで読み取る</button>
+      <button class="cm-btn" onclick="hkStAdd(document.getElementById('hk-st-jan').value)" style="flex:0 0 auto">＋1</button></div></div>
+  <div class="hk-card"><h3>数えた商品<small>${rows.length}種類・${total}点</small></h3>
+    <div class="hk-scroll"><table><thead><tr><th>商品名</th><th>JAN</th><th class="r">今の在庫</th><th class="r">数えた数</th><th class="r">差</th><th></th></tr></thead><tbody>
+    ${rows.length ? rows.map(r => `<tr><td>${r.name ? hkEsc(r.name) : `<input placeholder="商品名を入力" value="" onchange="hkStSetName('${hkEsc(r.k)}',this.value)" style="width:100%">`}</td><td class="jan">${hkEsc(r.jan)}</td><td class="r">${r.sys}</td>
+      <td class="r"><input class="hk-qty" type="number" min="0" value="${r.n}" onchange="hkStSetCount('${hkEsc(r.k)}',this.value)"></td>
+      <td class="r ${r.diff > 0 ? 'hk-pos' : r.diff < 0 ? 'hk-neg' : ''}">${r.diff > 0 ? '+' : ''}${r.diff}</td><td class="r"><button class="hk-btn" onclick="hkStRemove('${hkEsc(r.k)}')">✕</button></td></tr>`).join('') : '<tr><td colspan="6" class="tk-empty">まだ数えていません</td></tr>'}
+    </tbody></table></div>
+    <label style="flex-direction:row;align-items:center;gap:6px;font-size:12.5px;color:var(--text)"><input type="checkbox" ${st.zeroOthers ? 'checked' : ''} onchange="HK.st.zeroOthers=this.checked;hkStSave();hkRender()"> 数えなかった商品は在庫0にする（清洲のHAKの商品を全部数えたとき）</label>
+    ${st.zeroOthers && others.length ? `<div class="hk-warn">数えていない${others.length}種類・${others.reduce((s, i) => s + i.qty, 0)}点が在庫0になります。</div>` : ''}
+    <div class="hk-row" style="justify-content:flex-end"><button class="cm-btn" onclick="hkStClear()" style="flex:0 0 auto">数えた内容を消す</button><button class="cm-btn primary" onclick="hkStCommit()" style="flex:0 0 auto" ${rows.length || (st.zeroOthers && others.length) ? '' : 'disabled'}>棚卸しを確定</button></div></div>`;
+}
+function hkStAdd(raw) {
+  const jan = hkCleanJan(raw);
+  const input = document.getElementById('hk-st-jan');
+  if (!jan) { if (input) input.focus(); return; }
+  const st = hkStLoad(); const k = hkJanKey(jan);
+  if (!st.counts[k]) { st.counts[k] = { jan, name: hkNameOf(jan), n: 0 }; }
+  st.counts[k].n += 1;
+  st.order = [k, ...st.order.filter(x => x !== k)];
+  hkStSave();
+  if (typeof playConsignNotifySound === 'function' && !st.counts[k].name) playConsignNotifySound();
+  hkRender();
+  const el = document.getElementById('hk-st-jan'); if (el) { el.value = ''; el.focus(); }
+}
+function hkStSetCount(k, v) { const st = hkStLoad(); if (st.counts[k]) { st.counts[k].n = Math.max(0, parseInt(v) || 0); hkStSave(); hkRender(); } }
+function hkStSetName(k, v) { const st = hkStLoad(); if (st.counts[k]) { st.counts[k].name = v.trim(); hkStSave(); } }
+function hkStRemove(k) { const st = hkStLoad(); delete st.counts[k]; st.order = st.order.filter(x => x !== k); hkStSave(); hkRender(); }
+async function hkStClear() { if (!await showConfirm('数えた内容をすべて消しますか？')) return; HK.st = { counts: {}, order: [], zeroOthers: false }; hkStSave(); hkRender(); }
+async function hkStCommit() {
+  const st = hkStLoad();
+  const changes = [];
+  st.order.forEach(k => { const c = st.counts[k]; const sys = HK.items[k] ? Number(HK.items[k].qty) || 0 : 0; changes.push({ k, jan: c.jan, name: c.name || hkNameOf(c.jan), from: sys, to: c.n }); });
+  if (st.zeroOthers) hkItemList().filter(i => i.qty > 0 && !st.counts[i._k]).forEach(i => changes.push({ k: i._k, jan: i.jan, name: i.name, from: i.qty, to: 0 }));
+  const unnamed = changes.filter(c => !c.name);
+  if (unnamed.length) { showToast(`商品名が入っていない商品が${unnamed.length}件あります。表で入力してください`); return; }
+  const diffs = changes.filter(c => c.from !== c.to);
+  if (!await showConfirm(`棚卸しを確定しますか？\n${changes.length}種類のうち、${diffs.length}種類の在庫数が変わります。`)) return;
+  const now = Date.now(), by = currentSessionEmail(), upd = {}, newItems = {};
+  await hkLoadJanNames();
+  changes.forEach(c => {
+    const cur = HK.items[c.k];
+    const avgCost = cur ? Number(cur.avgCost) || 0 : ((HK.janNames[c.k] && HK.janNames[c.k].c) || 0);
+    newItems[c.k] = { jan: c.jan, name: (cur && cur.name) || c.name, qty: c.to, avgCost, updatedAt: now };
+    upd['items/' + c.k] = newItems[c.k];
+    if (c.from !== c.to) upd['moves/' + hkNewId()] = { type: 'stocktake', jan: c.jan, name: c.name, qty: c.to - c.from, before: c.from, after: c.to, date: todayStr(), at: now, by };
+  });
+  upd['meta/lastStocktakeAt'] = now;
+  try {
+    await hkReq('hak', 'PATCH', upd);
+    Object.assign(HK.items, newItems);
+    Object.keys(upd).filter(p => p.startsWith('moves/')).forEach(p => { HK.moves[p.slice(6)] = upd[p]; });
+    HK.st = { counts: {}, order: [], zeroOthers: false }; hkStSave();
+    showToast(`棚卸しを確定しました（${diffs.length}種類の在庫数を直しました）`);
+    hkSetTab('stock');
+  } catch (e) { showToast('確定できませんでした。通信状況をご確認ください'); }
+}
+
+// ── 清洲→港区（HAKからKANETAKAへの販売）──
+// KANETAKAのアカウントだけが行う。1回の確定で、HAKの在庫が減り、KANETAKAの在庫（港区）が増え、
+// KANETAKAの仕入れ（仕入先：（株）HAK）が記録され、HAK→KANETAKAの納品書が1枚できる。
+// 卸単価は時期で変わるため、移動のたびに入力する。
+function hkTrLoad() { if (!HK.tr) HK.tr = { date: todayStr(), lines: [], recordPurchase: true, q: '' }; return HK.tr; }
+function hkTaxMode() { return HK.settings.taxMode === 'incl' ? 'incl' : 'excl'; }
+function hkTotals(lines, mode) {
+  const sub = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.unitPrice) || 0), 0);
+  if (mode === 'incl') { const tax = Math.floor(sub * 10 / 110); return { sub, tax, total: sub, net: sub - tax }; }
+  const tax = Math.floor(sub * 0.1); return { sub, tax, total: sub + tax, net: sub };
+}
+function hkTransferHtml() {
+  if (!hkIsKanetaka()) return '';
+  const tr = hkTrLoad();
+  const mode = hkTaxMode();
+  const t = hkTotals(tr.lines, mode);
+  const q = tr.q.trim().toLowerCase();
+  const cands = q ? hkItemList().filter(i => i.qty > 0 && (String(i.name).toLowerCase().includes(q) || String(i.jan).includes(q)) && !tr.lines.some(l => l.k === i._k)).slice(0, 8) : [];
+  return `<div class="hk-card"><h3>清洲（HAK）→ 港区（KANETAKA）へ移動<small>HAKからKANETAKAへの販売として記録します</small></h3>
+    <p class="hk-note">移動する商品を選び、個数と卸単価を入れて確定してください。確定すると、HAKの在庫が減り、KANETAKAの港区の在庫が増え、HAK→KANETAKAの納品書ができます。卸単価は<b>${mode === 'incl' ? '税込' : '税抜'}</b>で入力します（会社情報タブで変更できます）。</p>
+    <div class="hk-row"><label style="flex:0 0 160px">日付<input id="hk-tr-date" type="date" value="${hkEsc(tr.date)}" onchange="HK.tr.date=this.value"></label>
+      <label style="flex:3 1 220px">商品を追加（JAN・商品名で検索）<input id="hk-tr-jan" value="${hkEsc(tr.q)}" placeholder="JANを読み取るか、名前を入力" oninput="HK.tr.q=this.value;clearTimeout(HK._tq);HK._tq=setTimeout(()=>{hkRender();const e=document.getElementById('hk-tr-jan');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},300)" onkeydown="if(event.key==='Enter'){event.preventDefault();hkTrAddByJan(this.value)}"></label>
+      <button class="cm-btn" onclick="startScan('hk-tr-jan')" style="flex:0 0 auto">📷</button></div>
+    ${cands.length ? `<div class="hk-scroll"><table><tbody>${cands.map(i => `<tr><td>${hkEsc(i.name)}</td><td class="jan">${hkEsc(i.jan)}</td><td class="r">在庫${i.qty}</td><td class="r"><button class="hk-btn" onclick="hkTrAdd('${hkEsc(i._k)}')">追加</button></td></tr>`).join('')}</tbody></table></div>` : ''}
+  </div>
+  <div class="hk-card"><h3>移動する商品<small>${tr.lines.length}種類・${tr.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0)}点</small></h3>
+    <div class="hk-scroll"><table><thead><tr><th>商品名</th><th>JAN</th><th class="r">清洲の在庫</th><th class="r">個数</th><th class="r">卸単価</th><th class="r">金額</th><th></th></tr></thead><tbody>
+    ${tr.lines.length ? tr.lines.map((l, i) => { const it = HK.items[l.k] || {}; return `<tr><td>${hkEsc(it.name || l.name)}</td><td class="jan">${hkEsc(it.jan || l.jan)}</td><td class="r">${Number(it.qty) || 0}<br><span class="hk-note">平均仕入${hkYen(it.avgCost)}</span></td>
+      <td class="r"><input class="hk-qty" type="number" min="1" value="${l.qty}" onchange="HK.tr.lines[${i}].qty=parseInt(this.value)||0;hkRender()"></td>
+      <td class="r"><input class="hk-price" type="number" min="0" value="${l.unitPrice ?? ''}" placeholder="例：28000" onchange="HK.tr.lines[${i}].unitPrice=this.value===''?null:Number(this.value);hkRender()"></td>
+      <td class="r">${hkYen((Number(l.qty) || 0) * (Number(l.unitPrice) || 0))}</td><td class="r"><button class="hk-btn" onclick="HK.tr.lines.splice(${i},1);hkRender()">✕</button></td></tr>`; }).join('') : '<tr><td colspan="7" class="tk-empty">上で商品を追加してください</td></tr>'}
+    </tbody>${tr.lines.length ? `<tfoot><tr><td colspan="5" class="r">小計</td><td class="r">${hkYen(t.sub)}</td><td></td></tr><tr><td colspan="5" class="r">消費税（10%${mode === 'incl' ? '・内税' : ''}）</td><td class="r">${hkYen(t.tax)}</td><td></td></tr><tr><td colspan="5" class="r"><b>合計</b></td><td class="r"><b>${hkYen(t.total)}</b></td><td></td></tr></tfoot>` : ''}</table></div>
+    <label style="flex-direction:row;align-items:center;gap:6px;font-size:12.5px;color:var(--text)"><input type="checkbox" ${tr.recordPurchase ? 'checked' : ''} onchange="HK.tr.recordPurchase=this.checked"> KANETAKAの「仕入」に記録する（仕入先：${HK_SUPPLIER}、合計${hkYen(t.total)}）</label>
+    <p class="hk-note">この仕入は自動で記録されるので、業務の「仕入」画面で同じものを手入力しないでください。</p>
+    <div class="hk-row" style="justify-content:flex-end"><button class="cm-btn" onclick="HK.tr=null;hkRender()" style="flex:0 0 auto">クリア</button><button class="cm-btn primary" onclick="hkTrCommit()" style="flex:0 0 auto" ${tr.lines.length ? '' : 'disabled'}>移動を確定して納品書を作る</button></div></div>`;
+}
+function hkTrAdd(k) {
+  const tr = hkTrLoad(); const it = HK.items[k]; if (!it) return;
+  if (!tr.lines.some(l => l.k === k)) tr.lines.push({ k, jan: it.jan, name: it.name, qty: 1, unitPrice: null });
+  tr.q = ''; hkRender();
+  setTimeout(() => document.getElementById('hk-tr-jan')?.focus(), 30);
+}
+function hkTrAddByJan(raw) {
+  const jan = hkCleanJan(raw); const k = hkJanKey(jan);
+  if (HK.items[k] && Number(HK.items[k].qty) > 0) { hkTrAdd(k); return; }
+  if (jan) showToast('清洲のHAKの在庫に、このJANの商品はありません');
+}
+async function hkTrCommit() {
+  const tr = hkTrLoad();
+  const lines = tr.lines.filter(l => (Number(l.qty) || 0) > 0);
+  if (!lines.length) { showToast('個数を入力してください'); return; }
+  const noPrice = lines.filter(l => l.unitPrice == null || l.unitPrice === '' || isNaN(Number(l.unitPrice)));
+  if (noPrice.length) { showToast('卸単価が入っていない商品があります'); return; }
+  const short = lines.filter(l => (Number((HK.items[l.k] || {}).qty) || 0) < l.qty);
+  if (short.length) { showToast(`清洲の在庫が足りない商品があります（${short.map(l => l.name).join('、')}）`); return; }
+  const date = tr.date || todayStr();
+  const mode = hkTaxMode();
+  const t = hkTotals(lines, mode);
+  if (!await showConfirm(`HAK→KANETAKAの移動を確定しますか？\n${lines.length}種類・${lines.reduce((s, l) => s + l.qty, 0)}点　合計${hkYen(t.total)}\n・HAKの清洲在庫が減ります\n・KANETAKAの港区の在庫が増えます${tr.recordPurchase ? '\n・KANETAKAの仕入に記録します' : ''}`)) return;
+  // KANETAKAの商品マスタを最新にしてから、港区への入荷を記録する
+  try { if (typeof loadInventory === 'function') await loadInventory(); } catch (e) {}
+  const now = Date.now(), by = currentSessionEmail();
+  const ymd = date.replace(/-/g, '').slice(2);
+  const sameDay = Object.values(HK.transfers || {}).filter(x => x.date === date).length;
+  const no = `H${ymd}-${String(sameDay + 1).padStart(2, '0')}`;
+  const tid = hkNewId();
+  const docLines = lines.map(l => { const it = HK.items[l.k]; return { jan: it.jan, name: it.name, qty: l.qty, unitPrice: Number(l.unitPrice), amount: l.qty * Number(l.unitPrice) }; });
+  const upd = {}, newQty = {};
+  lines.forEach((l, i) => {
+    const it = HK.items[l.k]; const before = Number(it.qty) || 0;
+    newQty[l.k] = before - l.qty;
+    upd['items/' + l.k + '/qty'] = newQty[l.k]; upd['items/' + l.k + '/updatedAt'] = now;
+    upd['moves/' + hkNewId()] = { type: 'transfer', jan: it.jan, name: it.name, qty: -l.qty, before, after: newQty[l.k], unitPrice: Number(l.unitPrice), unitCost: Number(it.avgCost) || 0, dest: '株式会社KANETAKA（港区）', ref: no, date, at: now, by };
+  });
+  const transfer = { no, date, items: docLines, subtotal: t.sub, tax: t.tax, total: t.total, taxMode: mode, at: now, by, purchaseKey: null, kanetakaDone: false };
+  upd['transfers/' + tid] = transfer;
+  try {
+    // 1) HAK側：在庫を減らし、納品書（移動記録）を作る
+    await hkReq('hak', 'PATCH', upd);
+    lines.forEach(l => { HK.items[l.k].qty = newQty[l.k]; });
+    HK.transfers[tid] = transfer;
+    Object.keys(upd).filter(p => p.startsWith('moves/')).forEach(p => { HK.moves[p.slice(6)] = upd[p]; });
+  } catch (e) { showToast('移動を記録できませんでした。通信状況をご確認ください'); return; }
+  // 2) KANETAKA側：港区への入荷と仕入の記録
+  try {
+    await hkKanetakaReceive(transfer, tid, tr.recordPurchase);
+    showToast(`移動を確定しました（納品書 ${no}）`);
+  } catch (e) {
+    console.error(e);
+    showToast(`HAKの在庫は減らしましたが、KANETAKA側の入荷記録に失敗しました。履歴の納品書${no}から「KANETAKAへの入荷をやり直す」を押してください`);
+  }
+  HK.tr = null;
+  hkSetTab('history');
+}
+// KANETAKAの在庫（港区）への入荷と、仕入の記録。失敗した場合は履歴から再実行できる（kanetakaDoneで二重登録を防ぐ）
+async function hkKanetakaReceive(transfer, tid, recordPurchase) {
+  if (transfer.kanetakaDone) return;
+  const loc = (typeof stockLocations !== 'undefined' && stockLocations.some(l => l.id === HK_DEST_LOC)) ? HK_DEST_LOC : defaultHomeLoc();
+  for (const l of transfer.items) {
+    let prod = (products || []).find(p => l.jan && String(p.jan || '') === String(l.jan));
+    if (!prod) {
+      const data = { maker: '', name: l.name, model: '', jan: l.jan, stock: 0, lowStock: null, cost: l.unitPrice, category: '家電', subcategory: '', location: '', memo: 'HAKからの移動で自動登録', image: '', homeLoc: loc, createdAt: Date.now() };
+      const res = await fetch(authedUrl('/products.json'), { method: 'POST', body: JSON.stringify(data) });
+      if (!res.ok) throw new Error('product create failed');
+      const key = (await res.json()).name;
+      prod = { ...data, _key: key };
+      products.push(prod);
+    }
+    const before = Number(prod.stock) || 0;
+    const ls = locStateAfterDelta(prod, loc, l.qty);
+    await saveProductLocState(prod, ls.stock, ls.locQty);
+    const r = await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
+      productKey: prod._key, productName: prod.name, jan: l.jan, type: 'in', qty: l.qty, date: transfer.date,
+      memo: `HAKより移動（納品書${transfer.no}）`, loc, supplier: HK_SUPPLIER, unitCost: l.unitPrice, hakTransferNo: transfer.no,
+      stockBefore: before, stockAfter: ls.stock, createdAt: Date.now() }) });
+    if (!r.ok) throw new Error('stock move failed');
+  }
+  let purchaseKey = null;
+  if (recordPurchase) {
+    const r = await fetch(authedUrl('/purchases.json'), { method: 'POST', body: JSON.stringify({
+      type: 'purchase', date: transfer.date, supplier: HK_SUPPLIER, amount: transfer.total,
+      note: `HAK清洲在庫より移動（納品書${transfer.no}）`, submittedAt: new Date().toLocaleDateString('ja-JP'), enteredBy: currentSessionEmail(), hakTransferNo: transfer.no, createdAt: Date.now() }) });
+    if (!r.ok) throw new Error('purchase failed');
+    purchaseKey = (await r.json()).name;
+  }
+  await hkReq('hak/transfers/' + tid, 'PATCH', { kanetakaDone: true, purchaseKey });
+  transfer.kanetakaDone = true; transfer.purchaseKey = purchaseKey;
+  try { if (typeof loadAll === 'function') loadAll(); } catch (e) {}
+}
+async function hkRetryReceive(tid) {
+  const t = HK.transfers[tid]; if (!t || t.kanetakaDone) return;
+  if (!await showConfirm(`納品書${t.no}の商品を、KANETAKAの港区の在庫と仕入に記録し直しますか？`)) return;
+  try { if (typeof loadInventory === 'function') await loadInventory(); await hkKanetakaReceive(t, tid, true); showToast('KANETAKAへの入荷を記録しました'); hkRender(); }
+  catch (e) { showToast('記録できませんでした。通信状況をご確認ください'); }
+}
+
+// ── 履歴・書類 ──
+const HK_MOVE_LABEL = { gild: ['GILD検品', 'in'], stocktake: ['棚卸し', 'st'], out: ['出庫', 'out'], transfer: ['港区へ移動', 'tr'] };
+function hkHistoryHtml() {
+  const trs = Object.entries(HK.transfers || {}).map(([id, t]) => ({ ...t, _id: id })).sort((a, b) => String(b.date).localeCompare(String(a.date)) || (b.at || 0) - (a.at || 0));
+  const months = [...new Set(trs.map(t => String(t.date).slice(0, 7)))];
+  const curMonth = HK._invMonth || months[0] || todayStr().slice(0, 7);
+  const moves = Object.values(HK.moves || {}).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 300);
+  return `<div class="hk-card"><h3>HAK→KANETAKAの納品書<small>清洲→港区の移動ごとに1枚</small></h3>
+    ${!HK.settings.companyName ? '<div class="hk-warn">納品書・請求書に載せるHAKの会社情報がまだ入っていません。「会社情報」タブで入力してください。</div>' : ''}
+    <div class="hk-scroll"><table><thead><tr><th>日付</th><th>納品書No.</th><th class="r">点数</th><th class="r">合計</th><th></th></tr></thead><tbody>
+    ${trs.length ? trs.map(t => `<tr><td>${hkEsc(t.date)}</td><td>${hkEsc(t.no)}${t.kanetakaDone === false ? '<br><span class="hk-chip out">KANETAKAへの入荷が未記録</span>' : ''}</td><td class="r">${(t.items || []).reduce((s, l) => s + (l.qty || 0), 0)}</td><td class="r">${hkYen(t.total)}</td>
+      <td class="r"><button class="hk-btn" onclick="hkPrintDelivery('${t._id}')">納品書</button>${t.kanetakaDone === false && hkIsKanetaka() ? ` <button class="hk-btn" onclick="hkRetryReceive('${t._id}')">KANETAKAへの入荷をやり直す</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="5" class="tk-empty">まだ移動はありません</td></tr>'}
+    </tbody></table></div>
+    <div class="hk-row" style="align-items:center"><label style="flex:0 0 170px">請求書の対象月<input type="month" value="${hkEsc(curMonth)}" onchange="HK._invMonth=this.value;hkRender()"></label>
+      <button class="cm-btn primary" onclick="hkPrintInvoice('${hkEsc(curMonth)}')" style="flex:0 0 auto">この月の請求書</button>
+      <span class="hk-note" style="flex:1 1 200px">その月の納品書をまとめた、HAKからKANETAKAへの請求書を作ります。</span></div></div>
+  <div class="hk-card"><h3>在庫の増減の履歴<small>新しい順に最大300件</small></h3>
+    <div class="hk-scroll"><table><thead><tr><th>日付</th><th>種類</th><th>商品</th><th class="r">増減</th><th class="r">在庫</th><th>内容</th></tr></thead><tbody>
+    ${moves.length ? moves.map(m => { const [lb, cl] = HK_MOVE_LABEL[m.type] || [m.type, '']; return `<tr><td style="white-space:nowrap">${hkEsc(m.date || '')}</td><td><span class="hk-chip ${cl}">${lb}</span></td><td>${hkEsc(m.name)}<br><span class="hk-note">${hkEsc(m.jan)}</span></td>
+      <td class="r ${m.qty > 0 ? 'hk-pos' : 'hk-neg'}">${m.qty > 0 ? '+' : ''}${m.qty}</td><td class="r">${m.before}→${m.after}</td>
+      <td style="font-size:12px">${hkEsc([m.dest, m.ref ? (m.type === 'gild' ? '依頼' + m.ref : m.ref) : '', m.unitPrice ? '単価' + hkYen(m.unitPrice) : '', m.memo].filter(Boolean).join('・'))}</td></tr>`; }).join('') : '<tr><td colspan="6" class="tk-empty">まだ履歴はありません</td></tr>'}
+    </tbody></table></div></div>`;
+}
+
+// 納品書・請求書（HAK→KANETAKA）の印刷。インボイス制度の記載事項（発行者名・登録番号・日付・品目・
+// 税率ごとの合計と消費税額・宛先）を載せる。印刷画面から「PDFに保存」もできる。
+function hkDocCss() {
+  return `<style>
+    .hd { font-size:12px; color:#1a1a1a; }
+    .hd h1 { text-align:center; font-size:22px; letter-spacing:.3em; margin:0 0 18px; font-weight:700; }
+    .hd .top { display:flex; justify-content:space-between; gap:20px; margin-bottom:16px; }
+    .hd .to { font-size:15px; font-weight:700; border-bottom:1.5px solid #1a1a1a; padding-bottom:4px; min-width:260px; }
+    .hd .from { text-align:right; line-height:1.7; font-size:11.5px; }
+    .hd .from b { font-size:13.5px; }
+    .hd .meta { text-align:right; font-size:11.5px; line-height:1.7; }
+    .hd .big { display:inline-block; font-size:17px; font-weight:700; border-bottom:2px solid #1a1a1a; padding:2px 6px; margin:6px 0 14px; }
+    .hd table { border-collapse:collapse; width:100%; }
+    .hd th, .hd td { border:1px solid #9a9a9a; padding:5px 7px; font-size:11.5px; }
+    .hd th { background:#eeeeee; font-weight:700; }
+    .hd td.r { text-align:right; white-space:nowrap; }
+    .hd .sum { width:300px; margin:10px 0 0 auto; }
+    .hd .note { margin-top:14px; font-size:11px; line-height:1.7; border:1px solid #9a9a9a; padding:8px 10px; }
+  </style>`;
+}
+function hkFromHtml() {
+  const s = HK.settings || {};
+  const lines = [`<b>${hkEsc(s.companyName || '（HAKの会社名が未設定です）')}</b>`, s.address ? hkEsc(s.address) : '', s.tel ? 'TEL ' + hkEsc(s.tel) : '', s.regNo ? '登録番号 ' + hkEsc(s.regNo) : ''].filter(Boolean);
+  return `<div class="from">${lines.join('<br>')}</div>`;
+}
+function hkPrintDoc(fileName, html) {
+  const { iframe, idoc } = preparePrintIframeDoc(fileName.replace(/[\\/:*?"<>|]/g, '_'));
+  idoc.getElementById('ds-print-root').innerHTML = hkDocCss() + html;
+  triggerPrintOnIframe(iframe, fileName);
+}
+function hkPrintDelivery(tid) {
+  const t = HK.transfers[tid]; if (!t) return;
+  const incl = t.taxMode === 'incl';
+  const rows = (t.items || []).map(l => `<tr><td>${hkEsc(l.name)}</td><td>${hkEsc(l.jan)}</td><td class="r">${l.qty}</td><td class="r">${hkYen(l.unitPrice)}</td><td class="r">${hkYen(l.amount)}</td></tr>`).join('');
+  hkPrintDoc(`納品書_${t.no}_株式会社KANETAKA`, `<div class="hd"><h1>納 品 書</h1>
+    <div class="top"><div><div class="to">株式会社KANETAKA 御中</div><div style="margin-top:8px">下記のとおり納品いたします。</div><div class="big">合計金額 ${hkYen(t.total)}（税込）</div></div>
+      <div><div class="meta">納品日 ${hkEsc(fmtDateJPLong(t.date))}<br>納品書No. ${hkEsc(t.no)}</div>${hkFromHtml()}</div></div>
+    <table><thead><tr><th>品名</th><th>JANコード</th><th>数量</th><th>単価（${incl ? '税込' : '税抜'}）</th><th>金額</th></tr></thead><tbody>${rows}</tbody></table>
+    <table class="sum"><tr><th>小計（10%対象）</th><td class="r">${hkYen(t.subtotal)}</td></tr><tr><th>消費税（10%${incl ? '・内税' : ''}）</th><td class="r">${hkYen(t.tax)}</td></tr><tr><th>合計</th><td class="r"><b>${hkYen(t.total)}</b></td></tr></table>
+    <div class="note">納品先：株式会社KANETAKA 港区事務所（清洲事務所より移動）</div></div>`);
+}
+function hkPrintInvoice(ym) {
+  const trs = Object.values(HK.transfers || {}).filter(t => String(t.date).slice(0, 7) === ym).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  if (!trs.length) { showToast('この月の納品書はありません'); return; }
+  const s = HK.settings || {};
+  const modes = [...new Set(trs.map(t => t.taxMode === 'incl' ? 'incl' : 'excl'))];
+  const total = trs.reduce((a, t) => a + (t.total || 0), 0);
+  const tax = trs.reduce((a, t) => a + (t.tax || 0), 0);
+  const [y, m] = ym.split('-').map(Number);
+  const issue = new Date(y, m, 0); const issueStr = `${issue.getFullYear()}-${String(issue.getMonth() + 1).padStart(2, '0')}-${String(issue.getDate()).padStart(2, '0')}`;
+  const rows = trs.map(t => `<tr><td>${hkEsc(fmtDateJPLong(t.date))}</td><td>${hkEsc(t.no)}</td><td class="r">${(t.items || []).reduce((a, l) => a + (l.qty || 0), 0)}</td><td class="r">${hkYen(t.total - t.tax)}</td><td class="r">${hkYen(t.tax)}</td><td class="r">${hkYen(t.total)}</td></tr>`).join('');
+  hkPrintDoc(`請求書_${ym}_株式会社KANETAKA`, `<div class="hd"><h1>請 求 書</h1>
+    <div class="top"><div><div class="to">株式会社KANETAKA 御中</div><div style="margin-top:8px">${y}年${m}月分として、下記のとおりご請求申し上げます。</div><div class="big">ご請求金額 ${hkYen(total)}（税込）</div></div>
+      <div><div class="meta">請求日 ${hkEsc(fmtDateJPLong(issueStr))}<br>請求書No. HI${String(y).slice(2)}${String(m).padStart(2, '0')}</div>${hkFromHtml()}</div></div>
+    <table><thead><tr><th>納品日</th><th>納品書No.</th><th>点数</th><th>税抜金額</th><th>消費税（10%）</th><th>税込金額</th></tr></thead><tbody>${rows}</tbody></table>
+    <table class="sum"><tr><th>10%対象（税抜）</th><td class="r">${hkYen(total - tax)}</td></tr><tr><th>消費税（10%）</th><td class="r">${hkYen(tax)}</td></tr><tr><th>ご請求金額</th><td class="r"><b>${hkYen(total)}</b></td></tr></table>
+    <div class="note">${s.bank ? 'お振込先：' + hkEsc(s.bank).replace(/\n/g, '<br>') + '<br>' : ''}${s.payTerms ? 'お支払期限：' + hkEsc(s.payTerms) + '<br>' : ''}${modes.length > 1 ? '※税抜・税込の単価の納品書が混在しています。消費税額は納品書ごとの合計です。' : ''}明細は各納品書のとおりです。</div></div>`);
+}
+
+// ── 会社情報（納品書・請求書に載せるHAKの情報）──
+function hkCompanyHtml() {
+  const s = HK.settings || {};
+  const f = (id, label, v, ph) => `<label>${label}<input id="hk-co-${id}" value="${hkEsc(v || '')}" placeholder="${ph || ''}"></label>`;
+  return `<div class="hk-card"><h3>HAKの会社情報<small>納品書・請求書の発行元として載ります</small></h3>
+    ${f('name', '会社名', s.companyName, '株式会社HAK')}
+    ${f('address', '住所', s.address, '〒000-0000 …')}
+    <div class="hk-row">${f('tel', '電話番号', s.tel)}${f('regno', 'インボイス登録番号', s.regNo, 'T1234567890123')}</div>
+    <label>振込先（請求書に載ります）<textarea id="hk-co-bank" rows="3" placeholder="○○銀行 ○○支店 普通 1234567 カ）ハク">${hkEsc(s.bank || '')}</textarea></label>
+    ${f('terms', 'お支払期限（請求書に載ります・任意）', s.payTerms, '翌月末日')}
+    <label>卸単価の消費税<select id="hk-co-tax"><option value="excl" ${hkTaxMode() === 'excl' ? 'selected' : ''}>税抜で入力（消費税10%を上乗せ）</option><option value="incl" ${hkTaxMode() === 'incl' ? 'selected' : ''}>税込で入力</option></select></label>
+    <div class="hk-row" style="justify-content:flex-end"><button class="cm-btn primary" onclick="hkSaveCompany()" style="flex:0 0 auto">保存</button></div></div>`;
+}
+async function hkSaveCompany() {
+  const v = id => document.getElementById('hk-co-' + id).value.trim();
+  const s = { companyName: v('name'), address: v('address'), tel: v('tel'), regNo: v('regno'), bank: document.getElementById('hk-co-bank').value.trim(), payTerms: v('terms'), taxMode: document.getElementById('hk-co-tax').value, updatedAt: Date.now() };
+  try { await hkReq('hak/settings', 'PUT', s); HK.settings = s; showToast('会社情報を保存しました'); hkRender(); }
+  catch (e) { showToast('保存できませんでした'); }
+}
+
+// バーコードのカメラ読み取り（startScan）の結果を受け取る
+function hkOnScan(target, text) {
+  if (target === 'hk-st-jan') hkStAdd(text);
+  else if (target === 'hk-tr-jan') hkTrAddByJan(text);
+}
+
+// ── KANETAKAの設定画面：HAKのアカウントの登録（管理者のみ）──
+async function hkRenderSettingsCard() {
+  if (typeof isAdmin !== 'function' || !isAdmin()) return;
+  const col = document.querySelector('#screen-settings .settings-col:last-child') || document.querySelector('#screen-settings .settings-col');
+  if (!col) return;
+  let card = document.getElementById('hk-settings-card');
+  if (!card) { card = document.createElement('div'); card.id = 'hk-settings-card'; card.className = 'card'; col.appendChild(card); }
+  let users = {};
+  try { users = (await hkReq('hakUsers')) || {}; } catch (e) {}
+  const list = Object.values(users).map(u => u.email).filter(Boolean);
+  card.innerHTML = `<div class="card-title">HAKのアカウント</div>
+    <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:8px;font-size:13px">
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.6">ここに登録したメールアドレスでログインすると、HAKの清洲在庫の画面だけが開きます（KANETAKAの売上・在庫などは見えません）。アカウント自体は、Firebaseの認証で先に作成してください。</div>
+      ${list.length ? list.map(e => `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px"><span>${hkEsc(e)}</span><button onclick="hkRemoveHakUser('${hkEsc(e)}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px">削除</button></div>`).join('') : '<div style="color:var(--text-muted);font-size:12px">まだ登録されていません</div>'}
+      <div style="display:flex;gap:6px"><input id="hk-add-user" type="email" placeholder="HAKの方のメールアドレス" style="flex:1;min-width:0;padding:9px 10px;border:1.5px solid var(--border);border-radius:8px;font:inherit;font-size:13px"><button onclick="hkAddHakUser()" style="padding:9px 14px;border:none;border-radius:8px;background:#0f766e;color:#fff;font-weight:700;cursor:pointer;font-family:inherit">追加</button></div>
+    </div>`;
+}
+async function hkAddHakUser() {
+  const email = (document.getElementById('hk-add-user').value || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showToast('メールアドレスを確認してください'); return; }
+  if (typeof ADMIN_EMAILS !== 'undefined' && ADMIN_EMAILS.includes(email)) { showToast('KANETAKAの管理者のアドレスは登録できません'); return; }
+  if (!await showConfirm(`${email} をHAKのアカウントとして登録しますか？\nこのアドレスでログインすると、HAKの清洲在庫の画面だけが開き、KANETAKAのデータは見えなくなります。`)) return;
+  try { await hkReq('hakUsers/' + tkKey(email), 'PUT', { email, addedAt: Date.now(), addedBy: currentSessionEmail() }); showToast('登録しました'); hkRenderSettingsCard(); }
+  catch (e) { showToast('登録できませんでした（Firebaseのルールを更新済みか確認してください）'); }
+}
+async function hkRemoveHakUser(email) {
+  if (!await showConfirm(`${email} をHAKのアカウントから外しますか？\n【注意】外すと、このアドレスでログインした人はKANETAKAのデータもすべて見られるようになります。HAKの方が使わなくなった場合は、先にFirebaseの認証でアカウント自体を削除（無効に）してください。`)) return;
+  try { await hkReq('hakUsers/' + tkKey(email), 'DELETE'); showToast('外しました'); hkRenderSettingsCard(); }
+  catch (e) { showToast('削除できませんでした'); }
 }
 </script>
 
