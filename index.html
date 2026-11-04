@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-04m">
+<meta name="app-build" content="2026-11-04n">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -25,6 +25,34 @@
 <title>株式会社KANETAKA</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
+<script>
+// HAK専用の入口：このアドレスの最後に「?hak」を付けて開くと、ログイン画面・タブの名前・ホーム画面のアイコンを
+// 「株式会社HAK 在庫管理」にする（中身は同じアプリ。HAKのアカウントはログインするとHAKの在庫の画面だけが出る）。
+// 要望：「HAKの代表がKANETAKAのシステムにログインするのは複雑な気持ちになるのでは」への対応。
+window.IS_HAK_ENTRY = /[?&]hak(=|&|$)/.test(location.search) || location.hash === '#hak';
+(function () {
+  if (!window.IS_HAK_ENTRY) return;
+  try {
+    document.title = 'HAK 在庫管理';
+    document.querySelector('meta[name="apple-mobile-web-app-title"]').setAttribute('content', 'HAK在庫');
+    var c = document.createElement('canvas'); c.width = c.height = 192;
+    var x = c.getContext('2d'); x.fillStyle = '#0f766e'; x.fillRect(0, 0, 192, 192);
+    x.fillStyle = '#fff'; x.font = 'bold 64px -apple-system, Helvetica, Arial, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('HAK', 96, 100);
+    var icon = c.toDataURL('image/png');
+    document.querySelector('link[rel="apple-touch-icon"]').setAttribute('href', icon);
+    var start = location.origin + location.pathname + '?hak';
+    var mf = { name: 'HAK 在庫管理', short_name: 'HAK在庫', start_url: start, scope: location.origin + location.pathname.replace(/[^/]*$/, ''), display: 'standalone',
+      background_color: '#f5f5f5', theme_color: '#0f766e', icons: [{ src: icon, sizes: '192x192', type: 'image/png' }] };
+    document.querySelector('link[rel="manifest"]').setAttribute('href', 'data:application/manifest+json,' + encodeURIComponent(JSON.stringify(mf)));
+    document.addEventListener('DOMContentLoaded', function () {
+      var box = document.querySelector('#login-screen .login-box'); if (!box) return;
+      var img = box.querySelector('img'); if (img) img.style.display = 'none';
+      var t = box.querySelector('.login-title'); if (t) t.textContent = '株式会社HAK';
+      var sub = box.querySelector('.login-sub'); if (sub) sub.textContent = '在庫管理';
+    });
+  } catch (e) {}
+})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <!-- 納品書プレビューの共有アイコンから、LINE・メール等を直接選べる共有シートを開くためのPDF生成用。
      読み込みに失敗した場合や生成に失敗した場合は、従来の確実な「ブラウザの印刷機能」経由の
@@ -23428,7 +23456,12 @@ async function hkInitRole() {
   if (!me) return false;
   let isHak = false;
   try { isHak = !!(await hkReq('hakUsers/' + tkKey(me))); } catch (e) { isHak = false; }
-  if (!isHak) { HK.role = 'kanetaka'; return false; }
+  if (!isHak) {
+    HK.role = 'kanetaka';
+    // HAK専用の入口（?hak）からKANETAKAのアカウントで入ったときは、HAKの画面を開いておく（✕で閉じればいつもの画面）
+    if (window.IS_HAK_ENTRY) setTimeout(() => { try { openHakApp('stock'); } catch (e) {} }, 1500);
+    return false;
+  }
   HK.role = 'hak';
   document.body.classList.add('hak-only');
   openHakApp();
@@ -23608,7 +23641,7 @@ function hkRender() {
   else body = hkCompanyHtml();
   app.innerHTML = `
     <div class="hk-head">
-      <h2>HAK 清洲在庫<small>株式会社HAKの在庫（KANETAKAの在庫とは別に管理しています）</small></h2>
+      <h2>${hkIsKanetaka() ? 'HAK 清洲在庫<small>株式会社HAKの在庫（KANETAKAの在庫とは別に管理しています）</small>' : '株式会社HAK 在庫管理<small>清洲の在庫・Amazon・売上</small>'}</h2>
       ${hkIsKanetaka() ? '<button class="cm-btn" onclick="closeHakApp()">✕ 閉じる</button>' : '<button class="cm-btn" onclick="doLogout()">ログアウト</button>'}
     </div>
     <div class="hk-tabs">${tabs.map(([k, l]) => `<button class="${HK.tab === k ? 'on' : ''}" onclick="hkSetTab('${k}')">${l}</button>`).join('')}</div>
