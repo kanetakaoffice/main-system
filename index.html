@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-04f">
+<meta name="app-build" content="2026-11-04h">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -4015,7 +4015,11 @@ function showInvScreen(name) {
   if (name === 'inv-packec') {
     const addTab = document.getElementById('packec-tab-add');
     const ecTab  = document.getElementById('packec-tab-ec');
-    if (addTab) addTab.style.display = isAdmin() ? '' : 'none';
+    // 「出荷リスト」「追加」（手入力の出荷予定）は、Amazonタブができて今は使わないため隠しておく。
+    // 自社ECなどAmazon以外の出荷を始めるときは、ここと下の listTab の行を元に戻せばまた使える
+    const listTab = document.getElementById('packec-tab-list');
+    if (listTab) listTab.style.display = 'none';
+    if (addTab) addTab.style.display = 'none';
     if (ecTab)  ecTab.style.display  = isAdmin() ? '' : 'none';
     // Amazonの自己配送の注文（取り込み・梱包リスト・在庫を減らす）を最初に開く
     switchPackecTab('amazon');
@@ -14865,7 +14869,7 @@ async function renderHomeScreen() {
   // 一度も在庫画面を開いていないログイン直後でも数字が出るよう、必要なら先に取得しておく
   const needs = [];
   if (!(window._getProducts?.()||[]).length && window.loadInventory) needs.push(window.loadInventory());
-  if (!_packItems.length && typeof loadPackItems === 'function') needs.push(loadPackItems());
+  if (typeof azPrefetchHome === 'function') needs.push(azPrefetchHome());
   if (needs.length) { try { await Promise.all(needs); } catch(e) {} }
   renderHomeSummary();
   // HOMEを開いた時点のスタッフ登録件数を既読にし、通知許可の案内バナーの表示も更新する
@@ -14965,14 +14969,15 @@ async function renderGeneralHomeScreen() {
 
   const needs = [];
   if (!(window._getProducts?.()||[]).length && window.loadInventory) needs.push(window.loadInventory());
-  if (!_packItems.length && typeof loadPackItems === 'function') needs.push(loadPackItems());
+  if (typeof azPrefetchHome === 'function') needs.push(azPrefetchHome());
   if (needs.length) { try { await Promise.all(needs); } catch(e) {} }
 
   const products = window._getProducts ? window._getProducts() : [];
   const lowStockCount = products.filter(p => p.stock <= getLowStockThreshold(p)).length;
-  const pendingItems = (_packItems || []).filter(i => !i.done);
+  // 出荷待ち＝Amazonの注文のうち、今日までに出荷する分（出荷管理のAmazonタブと同じ判定）
+  const pendingItems = typeof azHomeShipToday === 'function' ? azHomeShipToday() : [];
   const pendingShipCount = pendingItems.length;
-  const pendingPreview = pendingItems.slice(0, 3);
+  const pendingPreview = pendingItems.slice(0, 5);
 
   const d = new Date();
   const week = ['日','月','火','水','木','金','土'][d.getDay()];
@@ -14980,8 +14985,8 @@ async function renderGeneralHomeScreen() {
 
   const pendingRowsHtml = pendingPreview.map(i => `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;font-size:12px;border-bottom:1px solid var(--border)">
-      <span style="font-weight:600;color:var(--text)">${i.product||''}${i.customer?'／'+i.customer:''}</span>
-      <span style="color:#9ca3af">${i.qty||1}個・${i.category||''}</span>
+      <span style="font-weight:600;color:var(--text)">${escapeHtmlMain(azModelOf(i) || '（型番不明）')}</span>
+      <span style="color:#9ca3af">${i.qty||1}個・${azCarrier(i)}・${escapeHtmlMain(locName(i.loc))}から</span>
     </div>`).join('') || `<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px">出荷待ちの商品はありません</div>`;
 
   el.innerHTML = `
@@ -15009,12 +15014,12 @@ async function renderGeneralHomeScreen() {
         <div style="font-size:22px;font-weight:700;color:${lowStockCount?'var(--warning)':'#4a4a4a'}">${lowStockCount}件</div>
       </div>
       <div class="home-stat-card" onclick="goHomeToInv('inv-packec')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center">
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">出荷待ち</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">今日のAmazon出荷</div>
         <div style="font-size:22px;font-weight:700;color:#4a4a4a">${pendingShipCount}件</div>
       </div>
     </div>
     <div class="card">
-      <div class="card-title">本日の出荷待ち（一部）</div>
+      <div class="card-title">今日のAmazon出荷（一部）</div>
       ${pendingRowsHtml}
       <div style="padding:10px 12px;text-align:center">
         <button onclick="goHomeToInv('inv-packec')" style="background:none;border:none;color:var(--gold-dark);font-size:12px;font-weight:700;cursor:pointer">すべて見る →</button>
@@ -15094,7 +15099,7 @@ function renderHomeSummary() {
   const dueSoonCount = unpaid.filter(s=>s.due && s.due >= today && s.due <= dueSoonStr).length;
 
   const lowStockCount = products.filter(p => p.stock <= getLowStockThreshold(p)).length;
-  const pendingShipCount = _packItems.filter(i=>!i.done).length;
+  const pendingShipCount = typeof azHomeShipToday === 'function' ? azHomeShipToday().length : 0;
   const ecTodayTotal = _ecItems.filter(i=>i.date===today).reduce((s,i)=>s+i.amount,0);
 
   el.innerHTML = `
@@ -15122,7 +15127,7 @@ function renderHomeSummary() {
         <div style="font-size:18px;font-weight:700;color:${lowStockCount?'var(--warning)':'#4a4a4a'}">${lowStockCount}件</div>
       </div>
       <div class="home-stat-card" onclick="goHomeToInv('inv-packec')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">出荷待ち</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">今日のAmazon出荷</div>
         <div style="font-size:18px;font-weight:700;color:#4a4a4a">${pendingShipCount}件</div>
       </div>
       <div class="home-stat-card" onclick="goHomeToInv('inv-packec','ec')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
@@ -16260,9 +16265,9 @@ function renderHomeSidePanels() {
   }).join('');
 
   // 2) 出荷待ち
-  const ship = (typeof _packItems !== 'undefined' ? _packItems : []).filter(i => i && !i.done);
+  const ship = typeof azHomeShipToday === 'function' ? azHomeShipToday() : [];
   const shipRows = ship.slice(0, 5).map(i =>
-    `<div class="home-side-row"><span class="home-side-row-main">${esc(i.product)}${i.customer ? '／' + esc(i.customer) : ''}</span><span class="home-side-row-sub">${esc(i.qty || 1)}個${i.category ? '・' + esc(i.category) : ''}</span></div>`
+    `<div class="home-side-row"><span class="home-side-row-main">${esc(azModelOf(i) || '（型番不明）')}</span><span class="home-side-row-sub">${esc(i.qty || 1)}個・${esc(azCarrier(i))}・${esc(locName(i.loc))}から</span></div>`
   ).join('');
 
   // 3) 在庫アラート（在庫が少ない順）
@@ -16284,7 +16289,7 @@ function renderHomeSidePanels() {
   el.innerHTML =
     card('🔔 取引先からの連絡（確認待ち）', pending.length, consignRows, '確認待ちの連絡はありません', '委託リストを開く', "goHomeToInv('inv-wholesale');setTimeout(()=>switchWhTab('consign'),200)") +
     card('🚚 運び待ち（定位置以外の事務所にある商品）', away.length, awayRows, '運び待ちの商品はありません', 'まとめて移動する', "openBulkTransferModal()") +
-    card('🚚 出荷待ち', ship.length, shipRows, '出荷待ちの商品はありません', '出荷管理を開く', "goHomeToInv('inv-packec')") +
+    card('🚚 今日のAmazon出荷', ship.length, shipRows, '出荷待ちの商品はありません', '出荷管理を開く', "goHomeToInv('inv-packec')") +
     card('⚠️ 在庫アラート（在庫が少ない商品）', low.length, lowRows, '在庫が少ない商品はありません', '在庫一覧を開く', "goHomeToInv('inv-list')");
 }
 
@@ -22793,6 +22798,9 @@ async function azCommit() {
     if (Object.keys(write).length) await fetch(authedUrl('/amazonOrders.json'), { method: 'PATCH', body: JSON.stringify(write) });
     const meta = { lastImportAt: Date.now(), lastImportBy: currentSessionEmail() || '', lastKind: P.kind };
     await fetch(authedUrl('/amazonMeta.json'), { method: 'PATCH', body: JSON.stringify(meta) });
+    Object.assign(AZ.orders, write); Object.keys(write).forEach(k => { if (write[k] === null) delete AZ.orders[k]; });
+    var salesMsg = '';
+    try { salesMsg = await azSyncSales(Object.keys(write).map(k => AZ.orders[k] || null).filter(Boolean)); } catch (e) { console.error('amazon sales sync error', e); }
     AZ.plan = null;
     await loadInventory();
     await azLoad();
@@ -22801,6 +22809,7 @@ async function azCommit() {
     if (done) parts.push(`在庫を${done}件減らしました`);
     if (restored) parts.push(`${restored}件戻しました`);
     if (failed) parts.push(`${failed}件は要確認`);
+    if (salesMsg) parts.push(salesMsg);
     showToast(parts.join('・'));
   } catch (e) {
     console.error('amazon import error', e);
@@ -23116,6 +23125,7 @@ function azRender() {
       <div class="az-h"><span>Amazonの注文を取り込む</span><button class="az-btn primary" onclick="azPickFile()">📥 レポートを選ぶ</button></div>
       <div class="az-sub">セラーセントラル →「注文レポート」→「全注文レポート」（レポートの種類：最終更新日・過去7日）をダウンロードして選んでください。毎日取り込んでも二重にはなりません。</div>
       ${meta.lastImportAt ? `<div class="az-sub" style="margin-top:6px">前回の取り込み：${azEsc(azFmtTime(new Date(meta.lastImportAt).toISOString()))}</div>` : ''}
+      ${isAdmin() ? `<div class="az-sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">Amazonの売上：<input type="date" class="az-loc" value="${azEsc(meta.salesFrom || '')}" onchange="azSetSalesFrom(this.value)">以降の注文日の分を、取り込むたびにEC売上へ自動で記録します（税込・キャンセル分は除く）。${meta.salesFrom ? 'この日からは手入力しないでください。' : '次の取り込みで、手入力の最後の日の翌日から始めます。'}</div>` : ''}
       <div class="az-sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">当日出荷の締め：${cutSel}までの注文はその日に出荷。大型の商品（西濃運輸）は土日祝日を除いて出荷日を決めます。それ以外はヤマト運輸です。</div>
     </div>
     ${azPreviewHtml()}
@@ -23126,6 +23136,82 @@ function azRender() {
       ${recent.length ? recent.map(recentRow).join('') : '<div class="az-empty">まだありません</div>'}
       ${recentAll.length > 10 ? `<div style="text-align:center;margin-top:8px"><button class="az-btn small" onclick="AZ.showAllRecent=!AZ.showAllRecent;azRender()">${AZ.showAllRecent ? '閉じる' : `すべて表示（${recentAll.length}件）`}</button></div>` : ''}
     </div>`;
+}
+// ── Amazonの売上をEC売上に自動で記録する ──
+// 要望：「Amazonの売上は、ビジネスレポートの1日分の金額（注文商品の売上額）をEC売上に手入力していた」
+// への対応。取り込んだ注文の販売額（税込・item-price）を「注文日」ごとに合計し、EC売上（/ecSales）に
+// 1日1件（キー az_YYYY-MM-DD・auto:true）として書く。キャンセルになった注文は含めない。
+// 手入力していた期間と重ならないよう、AZ.meta.salesFrom（この注文日から自動）より前の日は書かない。
+function azOrderDay(o) { const t = new Date(o.purchaseDate || o.updated || 0); return isNaN(t) ? '' : ymdKey(t); }
+async function azEnsureSalesFrom() {
+  if (AZ.meta.salesFrom) return AZ.meta.salesFrom;
+  AZ._salesFromNew = true;
+  // 初回：手入力のAmazon売上の最後の日の翌日から（手入力が無ければ、取り込んだ注文のいちばん古い日から）
+  let from = '';
+  try {
+    const ec = await fetch(authedUrl('/ecSales.json')).then(r => r.json());
+    const manual = Object.entries(ec || {}).filter(([k, v]) => v && v.channel === 'Amazon' && !v.auto && !String(k).startsWith('az_')).map(([, v]) => v.date).filter(Boolean).sort();
+    if (manual.length) { const d = new Date(manual[manual.length - 1] + 'T00:00:00'); d.setDate(d.getDate() + 1); from = ymdKey(d); }
+  } catch (e) {}
+  // レポートは過去7日分なので、それより前の日は注文がそろっていない可能性がある → 6日前より前からは始めない
+  const lim = new Date(); lim.setDate(lim.getDate() - 6);
+  if (!from || from < ymdKey(lim)) from = ymdKey(lim);
+  AZ.meta.salesFrom = from;
+  await fetch(authedUrl('/amazonMeta/salesFrom.json'), { method: 'PUT', body: JSON.stringify(from) });
+  return from;
+}
+async function azSyncSales(touched, forceDays) {
+  const from = await azEnsureSalesFrom();
+  const days = new Set(forceDays || []);
+  // 自動記録を始めた最初の回は、取り込み済みの注文の日をすべて記録する
+  if (AZ._salesFromNew) { AZ._salesFromNew = false; Object.values(AZ.orders).forEach(o => { const d = azOrderDay(o); if (d && d >= from) days.add(d); }); }
+  (touched || []).forEach(o => { const d = azOrderDay(o); if (d && d >= from) days.add(d); });
+  if (!days.size) return '';
+  const all = Object.values(AZ.orders);
+  const write = {};
+  days.forEach(d => {
+    if (d < from) { write['az_' + d] = null; return; }
+    const list = all.filter(o => o.status !== 'cancelled' && azOrderDay(o) === d);
+    const amount = Math.round(list.reduce((s, o) => s + (Number(o.price) || 0), 0));
+    write['az_' + d] = amount > 0 ? { channel: 'Amazon', amount, date: d, auto: true,
+      note: `自動（Amazon注文 ${list.length}件・税込）`, createdAt: new Date().toISOString() } : null;
+  });
+  await fetch(authedUrl('/ecSales.json'), { method: 'PATCH', body: JSON.stringify(write) });
+  return `Amazon売上を${days.size}日分記録しました`;
+}
+async function azSetSalesFrom(v) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v || '')) return;
+  const old = AZ.meta.salesFrom || v;
+  const ok = await showConfirm(`Amazonの売上を、${v.replace(/-/g, '/')}以降の注文日から自動で記録します。\nこの日より前の自動記録は消し、手入力の分はそのまま残します。よろしいですか？`);
+  if (!ok) { azRender(); return; }
+  AZ.meta.salesFrom = v;
+  try {
+    await fetch(authedUrl('/amazonMeta/salesFrom.json'), { method: 'PUT', body: JSON.stringify(v) });
+    // 範囲が変わった日を計算し直す（前より早くした日は新しく書き、遅くした日は自動分を消す）
+    const a = old < v ? old : v, b = old < v ? v : old, days = [];
+    for (let d = new Date(a + 'T00:00:00'); ymdKey(d) <= b; d.setDate(d.getDate() + 1)) days.push(ymdKey(d));
+    const known = new Set(Object.values(AZ.orders).map(azOrderDay));
+    await azSyncSales([], days.filter(d => known.has(d) || d < v));
+    showToast('設定しました');
+  } catch (e) { showToast('保存に失敗しました'); }
+  azRender();
+}
+
+// HOME用：Amazonの注文だけを軽く読み込む（1分以内に読み込んでいれば読み直さない）
+async function azPrefetchHome() {
+  if (AZ._homeAt && Date.now() - AZ._homeAt < 60000) return;
+  try {
+    const [o, m] = await Promise.all([
+      fetch(authedUrl('/amazonOrders.json')).then(r => r.json()),
+      fetch(authedUrl('/amazonMeta.json')).then(r => r.json()).catch(() => null)
+    ]);
+    AZ.orders = o || {}; AZ.meta = Object.assign({}, AZ.meta, m || {}); AZ._homeAt = Date.now();
+  } catch (e) {}
+}
+// 今日までに出荷する未出荷の注文（出荷遅れを含む）
+function azHomeShipToday() {
+  const today = todayStr();
+  return azUnshippedList().filter(o => azShipDay(o) <= today);
 }
 function azToggleDay(day) { if (AZ.openDays.has(day)) AZ.openDays.delete(day); else AZ.openDays.add(day); azRender(); }
 async function azSetIdsLoc(ids, loc) {
