@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-04o">
+<meta name="app-build" content="2026-11-04p">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -18584,6 +18584,9 @@ function bzDeltaHtml(cur, prev, opts) {
   const pct = prev ? Math.round(Math.abs(diff) / prev * 100) : null;
   return `<span class="${cls}">${sign}${yen(Math.abs(diff))}${pct !== null ? `（${sign}${pct}%）` : ''}</span>`;
 }
+// Amazonの売上（EC売上に記録された販路Amazonの分：出荷管理で自動記録した分と、以前の手入力の分）
+const BZ_AMZ_COLOR = '#f0a35e';
+function bzAmazonSales() { return ((window._getEcSales && window._getEcSales()) || []).filter(e => e && e.channel === 'Amazon' && e.date); }
 function bzGroup(items, keyFn) {
   const map = {};
   items.forEach(a => { const k = keyFn(a) || '不明'; if (!map[k]) map[k] = { key: k, total: 0, count: 0 }; map[k].total += Number(a.amount) || 0; map[k].count++; });
@@ -18598,7 +18601,7 @@ function bzBarsHtml(groups, color, prevMap) {
     return `<div class="bz-bar-row">
       <div class="bz-bar-label">${bzEsc(g.key)}<span class="bz-bar-meta">${g.count}件・${Math.round(g.total / all * 100)}%${prev !== null ? '・前月比 ' + bzDeltaHtml(g.total, prev) : ''}</span></div>
       <div class="bz-bar-amt">${yen(g.total)}</div>
-      <div class="bz-bar-track"><div class="bz-bar-fill" style="width:${Math.max(2, Math.round(g.total / max * 100))}%;background:${color}"></div></div>
+      <div class="bz-bar-track"><div class="bz-bar-fill" style="width:${Math.max(2, Math.round(g.total / max * 100))}%;background:${g.color || color}"></div></div>
     </div>`;
   }).join('');
 }
@@ -18792,7 +18795,7 @@ function renderBzReceivableSide() {
 // ── 一覧（出張／経費／仕入／売上タブ）の右側：選んだ月の内訳 ──
 function bzListMonth(tab) {
   if (_bzListMonth[tab]) return _bzListMonth[tab];
-  const items = bzItems(tab);
+  const items = bzItems(tab).concat(tab === 'sales' ? bzAmazonSales() : []);
   const latest = items.map(a => (a.date || '').slice(0, 7)).filter(Boolean).sort().pop();
   return latest || ymKey(new Date());
 }
@@ -18817,24 +18820,48 @@ function renderBzListSide() {
   const ym = bzListMonth(tab);
   const prevYm = bzShiftYM(ym, -1);
   const cur = bzInMonth(all, ym), prev = bzInMonth(all, prevYm);
-  const curTotal = bzSum(cur), prevTotal = bzSum(prev);
+  // 売上タブは、卸売（請求書）に加えてAmazon（出荷管理で自動記録した分）も並べて比べられるようにする。
+  // ただし左の一覧と「うち未入金」は請求・入金の管理なので、卸売だけのまま。
+  const isSales = tab === 'sales';
+  const amz = isSales ? bzAmazonSales() : [];
+  const curAmz = bzInMonth(amz, ym), prevAmz = bzInMonth(amz, prevYm);
+  const curAmzTotal = bzSum(curAmz), prevAmzTotal = bzSum(prevAmz);
+  const curTotal = bzSum(cur) + curAmzTotal, prevTotal = bzSum(prev) + prevAmzTotal;
   const keyFn = bzGroupKeyFn(tab);
   const groups = bzGroup(cur, keyFn);
   const prevMap = {}; bzGroup(prev, keyFn).forEach(g => { prevMap[g.key] = g.total; });
+  if (isSales && (curAmzTotal || prevAmzTotal)) {
+    const n = curAmz.reduce((t, a) => { const m = /注文\s*(\d+)件/.exec(a.note || ''); return t + (m ? Number(m[1]) : 0); }, 0);
+    groups.push({ key: 'Amazon（EC）', total: curAmzTotal, count: n || curAmz.length, color: BZ_AMZ_COLOR });
+    groups.sort((a, b) => b.total - a.total);
+    prevMap['Amazon（EC）'] = prevAmzTotal;
+  }
 
   // 日ごとの推移（その月の1日〜月末の棒）
   const y = parseInt(ym.slice(0, 4), 10), mo = parseInt(ym.slice(5, 7), 10);
   const days = new Date(y, mo, 0).getDate();
-  const perDay = Array.from({ length: days }, (_, i) => bzSum(cur.filter(a => parseInt((a.date || '').slice(8, 10), 10) === i + 1)));
+  const perDayW = Array.from({ length: days }, (_, i) => bzSum(cur.filter(a => parseInt((a.date || '').slice(8, 10), 10) === i + 1)));
+  const perDayA = Array.from({ length: days }, (_, i) => bzSum(curAmz.filter(a => parseInt((a.date || '').slice(8, 10), 10) === i + 1)));
+  const perDay = perDayW.map((v, i) => v + perDayA[i]);
   const dayMax = Math.max(...perDay, 1);
-  const dayBars = perDay.map((v, i) => `<div class="bz-day${v ? '' : ' zero'}" title="${mo}/${i + 1}　${yen(v)}" style="height:${v ? Math.max(4, Math.round(v / dayMax * 100)) : 0}%;background:${color}"></div>`).join('');
+  // 売上は卸売（下）とAmazon（上）を色分けして積み上げる
+  const dayBars = perDay.map((v, i) => {
+    const w = perDayW[i], a = perDayA[i], pct = v ? Math.round(w / v * 100) : 100;
+    const bg = isSales && a ? `linear-gradient(to top, ${color} 0 ${pct}%, ${BZ_AMZ_COLOR} ${pct}% 100%)` : color;
+    const tip = isSales && a ? `${mo}/${i + 1}　卸売 ${yen(w)}／Amazon ${yen(a)}` : `${mo}/${i + 1}　${yen(v)}`;
+    return `<div class="bz-day${v ? '' : ' zero'}" title="${tip}" style="height:${v ? Math.max(4, Math.round(v / dayMax * 100)) : 0}%;background:${bg}"></div>`;
+  }).join('');
 
   let extraKpi = '';
   if (tab === 'sales') {
     const unpaid = cur.filter(a => a.payStatus !== '入金済み');
     const dom = bzSum(cur.filter(a => a.salesType !== '国外（インボイス）')), ovs = bzSum(cur.filter(a => a.salesType === '国外（インボイス）'));
-    extraKpi = `<div class="bz-kpi"><div class="bz-kpi-label">うち未入金</div><div class="bz-kpi-value" style="color:${unpaid.length ? 'var(--danger)' : 'var(--success)'}">${yen(bzSum(unpaid))}</div><div class="bz-kpi-note">国内 ${yen(dom)}／国外 ${yen(ovs)}</div></div>`;
+    extraKpi = `<div class="bz-kpi"><div class="bz-kpi-label">うち未入金（卸売）</div><div class="bz-kpi-value" style="color:${unpaid.length ? 'var(--danger)' : 'var(--success)'}">${yen(bzSum(unpaid))}</div><div class="bz-kpi-note">国内 ${yen(dom)}／国外 ${yen(ovs)}</div></div>`;
   }
+  const salesSplit = isSales ? `<div class="bz-kpis" style="padding-top:0">
+      <div class="bz-kpi"><div class="bz-kpi-label">卸売（${cur.length}件）</div><div class="bz-kpi-value" style="color:${color}">${yen(curTotal - curAmzTotal)}</div><div class="bz-kpi-note">前月比 ${bzDeltaHtml(curTotal - curAmzTotal, prevTotal - prevAmzTotal)}</div></div>
+      <div class="bz-kpi"><div class="bz-kpi-label">Amazon（EC）</div><div class="bz-kpi-value" style="color:#c56a1a">${yen(curAmzTotal)}</div><div class="bz-kpi-note">前月比 ${bzDeltaHtml(curAmzTotal, prevAmzTotal)}</div></div>
+    </div>` : '';
   box.innerHTML = `
   <div class="bz-card">
     <div class="bz-head">
@@ -18842,18 +18869,19 @@ function renderBzListSide() {
       <span class="bz-month-nav"><button onclick="bzListMonthShift('${tab}',-1)" title="前の月">◀</button><button onclick="bzListMonthShift('${tab}',1)" title="次の月">▶</button></span>
     </div>
     <div class="bz-kpis">
-      <div class="bz-kpi"><div class="bz-kpi-label">合計（${cur.length}件）</div><div class="bz-kpi-value" style="color:${color}">${yen(curTotal)}</div><div class="bz-kpi-note">前月比 ${bzDeltaHtml(curTotal, prevTotal, { lowerIsBetter: tab === 'expense' })}</div></div>
-      <div class="bz-kpi"><div class="bz-kpi-label">前月（${parseInt(prevYm.slice(5, 7), 10)}月）</div><div class="bz-kpi-value">${yen(prevTotal)}</div><div class="bz-kpi-note">${prev.length}件</div></div>
+      <div class="bz-kpi"><div class="bz-kpi-label">${isSales ? '合計（卸売＋Amazon）' : `合計（${cur.length}件）`}</div><div class="bz-kpi-value" style="color:${color}">${yen(curTotal)}</div><div class="bz-kpi-note">前月比 ${bzDeltaHtml(curTotal, prevTotal, { lowerIsBetter: tab === 'expense' })}</div></div>
+      <div class="bz-kpi"><div class="bz-kpi-label">前月（${parseInt(prevYm.slice(5, 7), 10)}月）</div><div class="bz-kpi-value">${yen(prevTotal)}</div><div class="bz-kpi-note">${isSales ? `卸売 ${yen(prevTotal - prevAmzTotal)}／Amazon ${yen(prevAmzTotal)}` : prev.length + '件'}</div></div>
       ${extraKpi}
     </div>
+    ${salesSplit}
   </div>
   <div class="bz-card">
-    <div class="bz-head"><span>日ごとの推移</span><span class="bz-sub">1日〜${days}日</span></div>
+    <div class="bz-head"><span>日ごとの推移</span><span class="bz-sub">${isSales ? `<span style="color:${color}">■</span>卸売 <span style="color:${BZ_AMZ_COLOR}">■</span>Amazon　` : ''}1日〜${days}日</span></div>
     <div class="bz-days">${dayBars}</div>
     <div class="bz-days-axis"><span>1日</span><span>10日</span><span>20日</span><span>${days}日</span></div>
   </div>
   <div class="bz-card">
-    <div class="bz-head"><span>${bzGroupTitle(tab)}</span><span class="bz-sub">金額の多い順</span></div>
+    <div class="bz-head"><span>${isSales ? '卸先・販路別' : bzGroupTitle(tab)}</span><span class="bz-sub">金額の多い順</span></div>
     ${bzBarsHtml(groups, color, prevMap)}
   </div>
   <div style="font-size:11px;color:var(--text-muted);padding:0 4px 8px">※ 左の月の見出しをタップすると、右側もその月の内容に切り替わります</div>`;
@@ -23296,6 +23324,20 @@ function azSalesCardHtml() {
   const yearTotal = mRows.reduce((s, r) => s + r.v, 0);
   const monthTotal = sum(x => x.date.startsWith(ym));
   const prevYm = ymKey(new Date(y, m - 2, 1)), nextYm = ymKey(new Date(y, m, 1));
+  const prevTotal = sum(x => x.date.startsWith(prevYm));
+  const delta = (a, b) => { if (!b) return a ? '<span class="az-sub">前月 ¥0</span>' : ''; const d = a - b, r = Math.round(d / b * 100); return `<span style="color:${d >= 0 ? '#2e7d32' : '#c0392b'};font-weight:700">${d >= 0 ? '+' : '−'}${yen(Math.abs(d))}（${d >= 0 ? '+' : ''}${r}%）</span>`; };
+  // 型番別（その月の注文日の分。注文の記録は90日分を残しているので、それより前の月は出ない）
+  const ordersIn = mm => Object.values(AZ.orders || {}).filter(o => o.status !== 'cancelled' && azOrderDay(o).startsWith(mm));
+  const byModel = (list) => { const g = {}; list.forEach(o => { const k = azModelOf(o) || '（型番不明）'; if (!g[k]) g[k] = { k, qty: 0, amt: 0 }; g[k].qty += Number(o.qty) || 0; g[k].amt += Number(o.price) || 0; }); return g; };
+  const cm = byModel(ordersIn(ym)), pm = byModel(ordersIn(prevYm));
+  const ranking = Object.values(cm).sort((a, b) => b.amt - a.amt);
+  const rMax = Math.max(1, ...ranking.map(r => r.amt));
+  const rTotal = ranking.reduce((t, r) => t + r.amt, 0) || 1;
+  const rankHtml = ranking.length ? ranking.slice(0, AZ.rankAll ? 999 : 10).map(r => `<div style="padding:7px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;gap:8px;font-size:13px"><span style="min-width:0"><b>${azEsc(r.k)}</b> <span class="az-sub">${r.qty}個・${Math.round(r.amt / rTotal * 100)}%${pm[r.k] ? '・前月比 ' + delta(r.amt, pm[r.k].amt) : '・前月なし'}</span></span><b style="white-space:nowrap">${yen(r.amt)}</b></div>
+      <div style="height:5px;background:var(--surface);border-radius:3px;margin-top:4px"><div style="height:5px;width:${Math.max(2, Math.round(r.amt / rMax * 100))}%;background:#f0a35e;border-radius:3px"></div></div></div>`).join('')
+    + (ranking.length > 10 ? `<div style="text-align:center;margin-top:6px"><button class="az-btn small" onclick="AZ.rankAll=!AZ.rankAll;azRender()">${AZ.rankAll ? '閉じる' : `すべて表示（${ranking.length}型番）`}</button></div>` : '')
+    : '<div class="az-empty">この月の注文の記録はありません（注文の記録は直近90日分です）</div>';
   return `<div class="az-card">
     <div class="az-h"><span>💴 Amazonの売上（税込）</span></div>
     <div class="az-sum" style="margin-top:0">
@@ -23318,6 +23360,8 @@ function azSalesCardHtml() {
         return `<div class="az-grp"><div>${Number(x.d.slice(5, 7))}/${Number(x.d.slice(8))}（${w}）${auto && n ? `<span class="az-sub">　${n}件</span>` : (x.v ? '<span class="az-sub">　手入力</span>' : '')}</div><b>${yen(x.v)}</b></div>`;
       }).join('') || '<div class="az-empty">まだありません</div>'}
     </details>
+    <div class="az-sub" style="text-align:center;margin-top:6px">${m}月の合計 ${yen(monthTotal)}　前月比 ${delta(monthTotal, prevTotal) || '—'}</div>
+    <div style="margin-top:12px"><div style="font-size:12px;font-weight:700;margin-bottom:2px">${m}月の型番別（金額の多い順）</div>${rankHtml}</div>
     <details style="margin-top:10px"><summary style="font-size:12px;font-weight:700;cursor:pointer">月別の売上（${fy}年3月〜）</summary>
       ${mRows.map(r => `<div class="az-grp"><div>${Number(r.mm.slice(5))}月</div><b>${yen(r.v)}</b></div>`).join('')}
       <div class="az-grp" style="background:var(--surface)"><div><b>年間合計</b></div><b>${yen(yearTotal)}</b></div>
