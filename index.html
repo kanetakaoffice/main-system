@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-04d">
+<meta name="app-build" content="2026-11-04f">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1384,7 +1384,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div class="card settings-collapse">
       <div class="card-title settings-toggle" role="button" tabindex="0" onclick="toggleSettingsCard(this)" onkeydown="if(event.key==='Enter')toggleSettingsCard(this)"><span>商品写真の自動取得（楽天）</span><span class="settings-toggle-arrow">▼</span></div>
       <div class="field settings-collapse-body">
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">楽天ウェブサービスで発行した「アプリケーションID」と「アクセスキー」を入力してください。在庫一覧の「🖼 写真を自動で付ける」で、JANコードから楽天に出ている商品写真を表示できるようになります。</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">楽天ウェブサービスで発行した「アプリケーションID」と「アクセスキー」を入力してください。JANコードから楽天に出ている商品写真を、在庫の商品に付けられるようになります。</div>
         <div class="field-label">アプリケーションID</div>
         <input type="text" id="rakuten-app-id" placeholder="例：2fc160ec-…" autocomplete="off">
         <div class="field-label" style="margin-top:10px">アクセスキー</div>
@@ -1393,6 +1393,14 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div style="display:flex;gap:8px;margin-top:12px">
           <button class="btn btn-gold" onclick="saveRakutenSettings()" style="flex:1">保存する</button>
           <button class="btn btn-secondary" onclick="testRakutenSettings()" style="flex:1">試しに1件取得する</button>
+        </div>
+        <!-- 写真の無い商品にまとめて写真を付ける（以前は在庫一覧にあったボタン。普段は使わないため設定に移した） -->
+        <div class="field-divider" style="margin:16px 0 12px"></div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">新しく登録した商品には自動で写真が付きます。写真の無い古い商品にまとめて付けたいときは、下のボタンを押してください。</div>
+        <button class="btn btn-secondary" id="inv-auto-photo-btn" style="width:100%" onclick="(async()=>{ if(!products||!products.length) await loadInventory(); startAutoProductPhotos(); })()">🖼 写真の無い商品に写真を付ける</button>
+        <div id="inv-auto-photo-status" style="display:none;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding:8px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--border);font-size:12px;color:var(--text-muted)">
+          <span id="inv-auto-photo-text"></span>
+          <button type="button" id="inv-auto-photo-cancel" onclick="_autoPhotoCancel=true" style="flex-shrink:0;padding:4px 10px;font-size:11.5px;border:1px solid var(--border);border-radius:6px;background:var(--white);color:var(--text);cursor:pointer">中止</button>
         </div>
       </div>
     </div>
@@ -1555,6 +1563,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 
 <!-- 入出庫 -->
 <div id="screen-inv-move" class="screen" style="display:none;padding-top:8px">
+  <button type="button" onclick="showInvScreen('inv-list')" style="background:none;border:none;color:var(--gold-dark);font-size:13px;font-weight:700;cursor:pointer;padding:2px 0 10px">← 在庫一覧に戻る</button>
   <div id="move-inner" style="display:flex;gap:20px;align-items:flex-start">
     <!-- 左：入出庫フォーム -->
     <div id="move-form-col" style="flex:1;min-width:0">
@@ -1669,21 +1678,16 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
         <div style="font-size:14px;color:var(--text-sub);font-weight:500" id="inv-list-count">0件</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-secondary" style="flex:none;padding:8px 14px;font-size:13px" onclick="showInvScreen('inv-move')">🔁 入出庫・移動・棚卸</button>
           <div id="inv-list-admin-actions" style="display:none;gap:8px;flex-wrap:wrap">
             <button class="btn btn-secondary" style="flex:none;padding:8px 14px;font-size:13px" onclick="openStocktakeModal()">📋 棚卸</button>
             <button class="btn btn-secondary" style="flex:none;padding:8px 14px;font-size:13px" onclick="document.getElementById('inv-bulk-import-file').click()">📥 CSV/Excelから一括登録</button>
             <input type="file" id="inv-bulk-import-file" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkImportFile(event)">
-            <button class="btn btn-secondary" id="inv-auto-photo-btn" style="flex:none;padding:8px 14px;font-size:13px" onclick="startAutoProductPhotos()">🖼 写真を自動で付ける</button>
           </div>
           <button class="btn btn-secondary" style="flex:none;padding:8px 14px;font-size:13px" onclick="openInvCalModal()">📅 カレンダー</button>
           <button class="btn btn-secondary" style="flex:none;padding:8px 14px;font-size:13px" onclick="openOutPrintModal()">🖨 出庫印刷</button>
           <button class="btn btn-secondary" style="flex:none;padding:8px 14px;font-size:13px" onclick="doExportInventory()">📊 Excel出力</button>
         </div>
-      </div>
-      <!-- 楽天の商品写真の自動取得：進み具合と中止ボタン -->
-      <div id="inv-auto-photo-status" style="display:none;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;padding:8px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--border);font-size:12px;color:var(--text-muted)">
-        <span id="inv-auto-photo-text"></span>
-        <button type="button" id="inv-auto-photo-cancel" onclick="_autoPhotoCancel=true" style="flex-shrink:0;padding:4px 10px;font-size:11.5px;border:1px solid var(--border);border-radius:6px;background:var(--white);color:var(--text);cursor:pointer">中止</button>
       </div>
       <div id="inv-reorder-panel" style="display:none;margin-bottom:12px;background:var(--warning-bg);border:1px solid #fde68a;border-radius:10px;padding:10px 12px">
         <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('inv-reorder')">
@@ -2711,12 +2715,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       商品登録
     </button>
   </div>
-  <div class="nav-btn-wrap">
-    <button class="nav-btn" id="nav-inv-move" onclick="showInvScreen('inv-move')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-      入出庫
-    </button>
-  </div>
+  <!-- 入出庫は普段使わないため下のメニューから外し、在庫一覧の「入出庫・移動・棚卸」ボタンから開く -->
   <div class="nav-btn-wrap">
     <button class="nav-btn" id="nav-inv-list" onclick="showInvScreen('inv-list')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
@@ -3997,7 +3996,7 @@ function showInvScreen(name) {
   }
 
   // ナビボタンをアクティブに
-  const navBtn = document.getElementById('nav-' + name);
+  const navBtn = document.getElementById('nav-' + (name === 'inv-move' ? 'inv-list' : name));
   if (navBtn) navBtn.classList.add('active');
 
   // 画面ごとの追加処理
