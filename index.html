@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-03d">
+<meta name="app-build" content="2026-11-04a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1795,11 +1795,13 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 
 <div id="screen-inv-packec" class="screen" style="display:none;padding-top:8px">
   <div class="tab-switch" style="margin-bottom:12px">
-    <button class="tab-switch-btn active" id="packec-tab-list" onclick="switchPackecTab('list')">🚚 出荷リスト</button>
+    <button class="tab-switch-btn active" id="packec-tab-amazon" onclick="switchPackecTab('amazon')">📦 Amazon</button>
+    <button class="tab-switch-btn" id="packec-tab-list" onclick="switchPackecTab('list')">🚚 出荷リスト</button>
     <button class="tab-switch-btn" id="packec-tab-add" onclick="switchPackecTab('add')">📝 追加</button>
     <button class="tab-switch-btn" id="packec-tab-ec" onclick="switchPackecTab('ec')">💰 EC売上</button>
   </div>
-  <div id="packec-body-list">
+  <div id="packec-body-amazon"><div id="az-root"></div></div>
+  <div id="packec-body-list" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <span style="font-size:13px;font-weight:700;color:#3a3a3a">本日の出荷リスト</span>
       <span id="pack-summary-sp" style="font-size:12px;color:#909090"></span>
@@ -4016,7 +4018,8 @@ function showInvScreen(name) {
     const ecTab  = document.getElementById('packec-tab-ec');
     if (addTab) addTab.style.display = isAdmin() ? '' : 'none';
     if (ecTab)  ecTab.style.display  = isAdmin() ? '' : 'none';
-    switchPackecTab('list');
+    // Amazonの自己配送の注文（取り込み・梱包リスト・在庫を減らす）を最初に開く
+    switchPackecTab('amazon');
     // 出荷管理画面を開き直すたびに、日別グラフは当月表示に戻す（前回開いた時に過去の月を
     // 見ていた状態のまま残ってしまわないようにするため）
     _ecDailyChartYm = null;
@@ -14832,12 +14835,13 @@ function togglePackecSection(name) {
 }
 
 function switchPackecTab(tab) {
-  ['list','add','ec'].forEach(t => {
+  ['amazon','list','add','ec'].forEach(t => {
     const body = document.getElementById('packec-body-' + t);
     const btn  = document.getElementById('packec-tab-' + t);
     if (body) body.style.display = t === tab ? 'block' : 'none';
     if (btn)  btn.classList.toggle('active', t === tab);
   });
+  if (tab === 'amazon' && typeof azOpen === 'function') azOpen();
   if (tab === 'ec') {
     const dateEl = document.getElementById('ec-date-sp');
     if (dateEl && !dateEl.value) dateEl.value = todayStr();
@@ -22506,6 +22510,540 @@ function caHomeTileHtml() {
       </div>`;
 }
 </script>
+<style>
+/* ── Amazon（自己配送）連携 ── */
+.az-card { background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:12px; }
+.az-h { font-size:13px; font-weight:800; color:#3a3a3a; display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.az-sub { font-size:11.5px; color:var(--text-muted); line-height:1.6; }
+.az-btn { padding:9px 12px; font-size:13px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--white); color:var(--text); cursor:pointer; }
+.az-btn.primary { background:#3a3a3a; border-color:#3a3a3a; color:#fff; }
+.az-btn.small { padding:5px 9px; font-size:11.5px; }
+.az-sum { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:6px; margin:10px 0; }
+.az-sum div { background:var(--surface); border-radius:8px; padding:8px; text-align:center; font-size:11px; color:var(--text-muted); }
+.az-sum b { display:block; font-size:18px; color:var(--text); }
+.az-grp { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--border); font-size:13px; }
+.az-grp > div:first-child { flex:1; min-width:0; }
+.az-grp > select, .az-grp > button { flex-shrink:0; }
+.az-grp:last-child { border-bottom:none; }
+.az-ord { border:1px solid var(--border); border-radius:10px; padding:10px; margin-bottom:8px; }
+.az-ord.warn { border-color:#e6b35a; background:#fffaf0; }
+.az-model { font-size:14px; font-weight:800; color:var(--text); }
+.az-title { font-size:11.5px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.az-meta { font-size:11px; color:var(--text-muted); margin-top:4px; display:flex; flex-wrap:wrap; gap:4px 10px; }
+.az-row { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; }
+.az-qty { font-size:13px; font-weight:800; }
+.az-qty.multi { color:#c0392b; }
+.az-loc { width:auto !important; flex-shrink:0; font-size:13px; padding:6px 8px; border:1.5px solid var(--border); border-radius:6px; background:var(--white); }
+.az-tag { display:inline-block; font-size:10.5px; font-weight:700; padding:2px 6px; border-radius:4px; background:#fdecea; color:#c0392b; }
+.az-tag.ok { background:#e8f5e9; color:#2e7d32; }
+.az-tag.gray { background:var(--surface); color:var(--text-muted); }
+.az-empty { text-align:center; padding:14px; color:var(--text-muted); font-size:12.5px; }
+.az-modal { display:none; position:fixed; inset:0; z-index:690; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; padding:24px; }
+.az-modal-box { background:var(--white); border-radius:16px; padding:18px; width:100%; max-width:420px; max-height:82vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.2); }
+.az-pick { padding:9px 4px; border-bottom:1px solid var(--border); cursor:pointer; font-size:13px; }
+.az-pick:hover { background:var(--surface); }
+</style>
+
+<div id="az-match-modal" class="az-modal" onclick="if(event.target===this)azCloseMatch()">
+  <div class="az-modal-box">
+    <div style="font-size:15px;font-weight:800;margin-bottom:4px">在庫の商品を選ぶ</div>
+    <div id="az-match-desc" class="az-sub" style="margin-bottom:10px"></div>
+    <input type="text" id="az-match-q" placeholder="型番・商品名で検索" oninput="azRenderMatchResults()" style="width:100%;box-sizing:border-box;padding:10px;font-size:15px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:8px">
+    <div id="az-match-results"></div>
+    <div style="margin-top:12px"><button class="az-btn" style="width:100%" onclick="azCloseMatch()">閉じる</button></div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Amazon（自己配送）連携
+// 要望：「Amazonの自己配送の注文（毎日4〜40件）で、アプリの在庫を減らし、梱包・出荷リストを作りたい」への対応。
+//
+// ■ 使い方
+//   セラーセントラル → 注文レポート → 全注文レポート（レポートの種類「最終更新日」・過去7日）を
+//   ダウンロードし、出荷管理の「Amazon」タブで取り込む。毎日同じ範囲を取り込んでも二重にはならない
+//   （注文商品ID＝order-item-idごとに1件として扱う）。
+//   ・未出荷の注文 → 梱包リストに表示（出荷元の事務所を選べる）
+//   ・Amazonで「出荷済み」になった注文 → その時点で在庫を減らす（stockMovesにtype:'out'・channel:'Amazon'）
+//   ・出荷後にキャンセルになった注文 → 減らした在庫を戻す
+//   FBM未出荷注文レポートも取り込めるが、その場合は未出荷の一覧として使うだけで、
+//   お客様の名前・住所・電話・メールの列は読み込まずに捨てる（保存しない）。
+//
+// ■ データ
+//   /amazonOrders/{order-item-id} … {orderId, sku, asin, title, qty, price, tax, purchaseDate, updated, promise,
+//        status: unshipped|shipped|cancelled, productKey, loc, deducted, moveKey, deductLoc, shipDate,
+//        skipped（在庫を減らさず記録だけ）, issue（在庫を減らせなかった理由）}
+//   /amazonAsinMap/{ASIN} … 手で選んだ商品のキー（次回から自動で同じ商品に結びつける）
+//   /amazonMeta … 前回の取り込み日時など
+//   販売額（price）は今は画面に出さず記録だけしておく（後で利益の目安を出す場合に使う）。
+// ============================================================
+const AZ = { orders: {}, asinMap: {}, meta: {}, loaded: false, plan: null, matchFor: null, showAllRecent: false };
+const AZ_SUPPLIERS = [['hak', '（株）HAK'], ['yy', '電脳（Yahoo）'], ['yh', '電脳（Yahoo）'], ['e', 'EDION'], ['y', 'ヤマダ電機']];
+const AZ_KEEP_DAYS = 90;
+
+function azEsc(s) { return escapeHtmlMain(s == null ? '' : String(s)); }
+function azFirebaseKey(s) { return String(s || '').replace(/[.#$\[\]\/]/g, '_'); }
+
+// SKU「YYMMDD-仕入値仕入先」（例：261102-45000hak）を読む。同じSKUが登録できない場合の
+// 末尾の「a・b・c」「1・2・3」（例：haka・hak1）は無視して仕入先を判定する
+function azParseSku(sku) {
+  const m = String(sku || '').trim().match(/^(\d{6}|\d{8})-(\d+)([A-Za-z]*)/);
+  if (!m) return null;
+  const d = m[1].length === 6 ? '20' + m[1] : m[1];
+  const code = m[3].toLowerCase();
+  const hit = AZ_SUPPLIERS.find(([k]) => code.startsWith(k));
+  return { date: d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6, 8), cost: Number(m[2]) || 0, code, supplier: hit ? hit[1] : (code ? code : '') };
+}
+
+// ── ファイルの読み込み（全注文レポートはShift_JIS、FBM未出荷はUTF-8のことが多い） ──
+async function azDecodeFile(file) {
+  const buf = await file.arrayBuffer();
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch (e) { return new TextDecoder('shift_jis').decode(buf); }
+}
+function azParseReport(text) {
+  const lines = String(text || '').replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 1) return null;
+  const head = lines[0].split('\t').map(h => h.trim().toLowerCase());
+  const ix = n => head.indexOf(n);
+  const isAll = ix('amazon-order-id') >= 0 && ix('order-status') >= 0;
+  const isFbm = ix('order-id') >= 0 && ix('quantity-to-ship') >= 0;
+  if (!isAll && !isFbm) return null;
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const c = lines[i].split('\t');
+    const g = n => { const k = ix(n); return k >= 0 ? String(c[k] == null ? '' : c[k]).trim() : ''; };
+    const itemId = g('order-item-id');
+    if (!itemId) continue;
+    if (isAll) {
+      const os = g('order-status').toLowerCase(), is = g('item-status').toLowerCase();
+      if (g('fulfillment-channel') && g('fulfillment-channel').toLowerCase() !== 'merchant') continue; // FBAは対象外
+      let status = 'unshipped';
+      if (os.startsWith('cancel')) status = 'cancelled';
+      else if (is === 'shipped' || os.startsWith('shipped')) status = 'shipped';
+      rows.push({ itemId, orderId: g('amazon-order-id'), sku: g('sku'), asin: g('asin'), title: g('product-name'),
+        qty: parseInt(g('quantity'), 10) || 0, price: Number(g('item-price')) || 0, tax: Number(g('item-tax')) || 0,
+        purchaseDate: g('purchase-date'), updated: g('last-updated-date'), status });
+    } else {
+      // FBM未出荷注文レポート：個人情報の列（buyer-*・recipient-name・ship-address-*など）は読まない
+      rows.push({ itemId, orderId: g('order-id'), sku: g('sku'), asin: '', title: g('product-name'),
+        qty: parseInt(g('quantity-to-ship'), 10) || parseInt(g('quantity-purchased'), 10) || 0,
+        purchaseDate: g('purchase-date'), updated: g('reporting-date'), promise: g('promise-date'), status: 'unshipped' });
+    }
+  }
+  return { kind: isAll ? 'all' : 'fbm', rows };
+}
+
+// ── 在庫の商品との結びつけ ──
+// 1) 以前手で選んだASIN  2) 商品名に含まれる型番（いちばん長く一致したもの）
+function azMatchProduct(row) {
+  if (row.asin && AZ.asinMap[row.asin] && (products || []).some(p => p._key === AZ.asinMap[row.asin])) return AZ.asinMap[row.asin];
+  const t = normalizeModelStr(row.title);
+  if (!t) return '';
+  let best = null, bestLen = 0;
+  (products || []).forEach(p => {
+    const m = normalizeModelStr(p.model);
+    if (m.length < 4 || !t.includes(m)) return;
+    const better = m.length > bestLen || (m.length === bestLen && (Number(p.stock) || 0) > (Number(best.stock) || 0));
+    if (better) { best = p; bestLen = m.length; }
+  });
+  return best ? best._key : '';
+}
+function azProduct(key) { return (products || []).find(p => p._key === key) || null; }
+function azModelOf(o) {
+  const p = azProduct(o.productKey);
+  if (p && p.model) return p.model;
+  return (typeof hkGuessModel === 'function' ? hkGuessModel(o.title) : '') || '';
+}
+// 出荷元の初期値：定位置に足りるならそこ、足りなければ在庫の多い事務所
+function azSuggestLoc(p, qty) {
+  if (!p) return defaultHomeLoc();
+  const bd = computeLocBreakdown(p);
+  if ((bd.byLoc[bd.home] || 0) >= qty) return bd.home;
+  const best = Object.keys(bd.byLoc).sort((a, b) => (bd.byLoc[b] || 0) - (bd.byLoc[a] || 0))[0];
+  return (best && bd.byLoc[best] > 0) ? best : bd.home;
+}
+
+async function azLoad() {
+  const [o, a, m] = await Promise.all([
+    fetch(authedUrl('/amazonOrders.json')).then(r => r.json()).catch(() => null),
+    fetch(authedUrl('/amazonAsinMap.json')).then(r => r.json()).catch(() => null),
+    fetch(authedUrl('/amazonMeta.json')).then(r => r.json()).catch(() => null)
+  ]);
+  AZ.orders = o || {}; AZ.asinMap = a || {}; AZ.meta = m || {}; AZ.loaded = true;
+  if (!products || !products.length) await loadInventory();
+}
+
+async function azOpen() {
+  const root = document.getElementById('az-root');
+  if (!root) return;
+  if (!AZ.loaded) root.innerHTML = '<div class="az-empty">読み込み中…</div>';
+  try { await azLoad(); } catch (e) { root.innerHTML = '<div class="az-empty">読み込みに失敗しました</div>'; return; }
+  azRender();
+}
+
+// ── 取り込み ──
+function azPickFile() { document.getElementById('az-file')?.click(); }
+async function azOnFile(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  let parsed;
+  try { parsed = azParseReport(await azDecodeFile(file)); } catch (e) { parsed = null; }
+  if (!parsed) { showToast('このファイルは読めませんでした。全注文レポート（.txt）を選んでください'); return; }
+  if (!parsed.rows.length) { showToast('注文が入っていませんでした'); return; }
+  await azLoad();
+  AZ.plan = azBuildPlan(parsed);
+  azRender();
+  document.getElementById('az-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function azBuildPlan(parsed) {
+  const recs = {}; let nNew = 0, nUnshipped = 0, nDeduct = 0, nMatch = 0, nRestore = 0, nSame = 0, nShipNoProd = 0;
+  parsed.rows.forEach(r => {
+    const id = azFirebaseKey(r.itemId);
+    const ex = AZ.orders[id] || null;
+    // 古いレポートを後から取り込んでも、新しい状態を巻き戻さない
+    if (ex && ex.updated && r.updated && new Date(r.updated) < new Date(ex.updated)) { nSame++; return; }
+    if (ex && r.status === 'unshipped' && (ex.status === 'shipped' || ex.status === 'cancelled')) { nSame++; return; }
+    const rec = Object.assign({}, ex || {});
+    rec.orderId = r.orderId || rec.orderId || '';
+    rec.sku = r.sku || rec.sku || '';
+    if (r.asin) rec.asin = r.asin;
+    rec.title = r.title || rec.title || '';
+    if (r.qty > 0) rec.qty = r.qty; else if (!rec.qty) rec.qty = r.status === 'cancelled' ? 0 : 1;
+    if (r.price) rec.price = r.price;
+    if (r.tax) rec.tax = r.tax;
+    if (r.purchaseDate) rec.purchaseDate = r.purchaseDate;
+    if (r.updated) rec.updated = r.updated;
+    if (r.promise) rec.promise = r.promise;
+    if (!rec.productKey || !azProduct(rec.productKey)) rec.productKey = azMatchProduct(rec);
+    if (!rec.loc) rec.loc = azSuggestLoc(azProduct(rec.productKey), rec.qty || 1);
+    const prevStatus = ex ? ex.status : '';
+    rec.status = r.status;
+    let action = '';
+    if (r.status === 'cancelled') { if (rec.deducted) { action = 'restore'; nRestore++; } }
+    else if (r.status === 'shipped') {
+      if (!rec.deducted && !rec.skipped) {
+        // 前回の取り込みで在庫を減らせなかった注文は、「要確認」の欄で手で対応してもらう（毎回数えない）
+        if (ex && ex.issue && prevStatus === 'shipped') { /* そのまま */ }
+        else if (rec.productKey) { action = 'deduct'; nDeduct++; } else { rec.issue = '商品が見つかりません'; nMatch++; nShipNoProd++; }
+      }
+    } else { if (prevStatus !== 'unshipped') nUnshipped++; if (!rec.productKey) nMatch++; }
+    if (!ex) nNew++;
+    if (!ex || action || JSON.stringify(ex) !== JSON.stringify(rec)) recs[id] = { rec, action };
+    else nSame++;
+  });
+  const nShipped = nDeduct + nShipNoProd;
+  return { kind: parsed.kind, total: parsed.rows.length, recs, nNew, nUnshipped, nDeduct, nMatch, nRestore, nSame, nShipped,
+    skipDeduct: !AZ.meta.lastImportAt && nShipped > 0 };
+}
+
+function azPreviewHtml() {
+  const P = AZ.plan; if (!P) return '';
+  const kindTxt = P.kind === 'all' ? '全注文レポート' : 'FBM未出荷注文レポート（お客様の情報は読み込んでいません）';
+  return `<div class="az-card" id="az-preview" style="border-color:#3a3a3a">
+    <div class="az-h">取り込みの確認</div>
+    <div class="az-sub">${azEsc(kindTxt)}・${P.total}件</div>
+    <div class="az-sum">
+      <div><b>${P.nUnshipped}</b>梱包リストに追加</div>
+      <div><b>${P.nDeduct}</b>出荷済み→在庫を減らす</div>
+      <div><b>${P.nRestore}</b>キャンセル→在庫を戻す</div>
+      <div><b style="color:${P.nMatch ? '#c0392b' : 'inherit'}">${P.nMatch}</b>商品の確認が必要</div>
+    </div>
+    ${P.nShipped ? `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.6;margin:6px 0 10px;cursor:pointer">
+      <input type="checkbox" id="az-skip-deduct" ${P.skipDeduct ? 'checked' : ''} onchange="AZ.plan.skipDeduct=this.checked" style="margin-top:3px">
+      <span>今回の出荷済み${P.nShipped}件は在庫を減らさず、記録だけにする<br><span class="az-sub">はじめて取り込むときや、すでに入出庫画面で手で減らした分が含まれるときにチェックしてください</span></span></label>` : ''}
+    ${P.nSame ? `<div class="az-sub" style="margin-bottom:8px">${P.nSame}件は取り込み済みで、変更はありません</div>` : ''}
+    <div style="display:flex;gap:8px">
+      <button class="az-btn" style="flex:1" onclick="AZ.plan=null;azRender()">やめる</button>
+      <button class="az-btn primary" style="flex:2" id="az-commit-btn" onclick="azCommit()">取り込む</button>
+    </div>
+  </div>`;
+}
+
+async function azCommit() {
+  const P = AZ.plan; if (!P) return;
+  const btn = document.getElementById('az-commit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '取り込み中…'; }
+  let done = 0, restored = 0, failed = 0;
+  try {
+    const ids = Object.keys(P.recs);
+    const write = {};
+    for (const id of ids) {
+      const { rec, action } = P.recs[id];
+      if (P.skipDeduct && rec.status === 'shipped' && !rec.deducted && rec.issue === '商品が見つかりません' && !action) { rec.skipped = true; delete rec.issue; }
+      if (action === 'deduct') {
+        if (P.skipDeduct) { rec.skipped = true; delete rec.issue; }
+        else { const ok = await azDeduct(id, rec); ok ? done++ : failed++; }
+      } else if (action === 'restore') {
+        await azRestore(rec); restored++;
+      }
+      write[id] = rec;
+    }
+    // 古い記録（90日より前に注文され、出荷・キャンセル済みのもの）は整理する
+    const cutoff = Date.now() - AZ_KEEP_DAYS * 86400000;
+    Object.keys(AZ.orders).forEach(id => {
+      const o = AZ.orders[id];
+      if (write[id] || !o || o.status === 'unshipped') return;
+      const t = new Date(o.purchaseDate || o.updated || 0).getTime();
+      if (t && t < cutoff) write[id] = null;
+    });
+    if (Object.keys(write).length) await fetch(authedUrl('/amazonOrders.json'), { method: 'PATCH', body: JSON.stringify(write) });
+    const meta = { lastImportAt: Date.now(), lastImportBy: currentSessionEmail() || '', lastKind: P.kind };
+    await fetch(authedUrl('/amazonMeta.json'), { method: 'PATCH', body: JSON.stringify(meta) });
+    AZ.plan = null;
+    await loadInventory();
+    await azLoad();
+    azRender();
+    const parts = ['取り込みました'];
+    if (done) parts.push(`在庫を${done}件減らしました`);
+    if (restored) parts.push(`${restored}件戻しました`);
+    if (failed) parts.push(`${failed}件は要確認`);
+    showToast(parts.join('・'));
+  } catch (e) {
+    console.error('amazon import error', e);
+    showToast('取り込みに失敗しました。もう一度お試しください');
+    if (btn) { btn.disabled = false; btn.textContent = '取り込む'; }
+  }
+}
+
+// 在庫を減らす（成功したらrecに記録を書き込む。保存はまとめて呼び出し元で行う）
+async function azDeduct(id, rec) {
+  const prod = azProduct(rec.productKey);
+  const qty = Number(rec.qty) || 0;
+  if (!prod) { rec.issue = '商品が見つかりません'; return false; }
+  if (qty <= 0) { rec.issue = '数量が0です'; return false; }
+  if ((Number(prod.stock) || 0) < qty) { rec.issue = `在庫が足りません（在庫${Number(prod.stock) || 0}個）`; return false; }
+  const loc = stockLocations.some(l => l.id === rec.loc) ? rec.loc : azSuggestLoc(prod, qty);
+  const before = Number(prod.stock) || 0;
+  const st = locStateAfterDelta(prod, loc, -qty);
+  const shipDate = rec.updated ? ymdKey(new Date(rec.updated)) : todayStr();
+  await saveProductLocState(prod, st.stock, st.locQty);
+  const res = await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
+    productKey: prod._key, productName: prod.name || '', jan: prod.jan || '',
+    type: 'out', qty, date: shipDate, channel: 'Amazon', loc,
+    memo: 'Amazon注文 ' + (rec.orderId || ''), amazonOrderId: rec.orderId || '', amazonOrderItemId: id,
+    stockBefore: before, stockAfter: st.stock, createdAt: Date.now()
+  })});
+  const j = await res.json().catch(() => null);
+  rec.deducted = true; rec.moveKey = (j && j.name) || ''; rec.deductLoc = loc; rec.shipDate = shipDate;
+  rec.deductedAt = Date.now(); delete rec.issue; delete rec.skipped;
+  return true;
+}
+// 減らした在庫を戻す（出荷後のキャンセル・手での取り消し）
+async function azRestore(rec) {
+  if (!rec.deducted) return;
+  const prod = azProduct(rec.productKey);
+  if (prod) {
+    const st = locStateAfterDelta(prod, rec.deductLoc || rec.loc || getHomeLoc(prod), Number(rec.qty) || 0);
+    await saveProductLocState(prod, st.stock, st.locQty);
+  }
+  if (rec.moveKey) await fetch(authedUrl('/stockMoves/' + rec.moveKey + '.json'), { method: 'DELETE' });
+  rec.deducted = false; rec.moveKey = ''; rec.restoredAt = Date.now();
+}
+
+async function azSaveOne(id) {
+  await fetch(authedUrl('/amazonOrders/' + id + '.json'), { method: 'PUT', body: JSON.stringify(AZ.orders[id]) });
+}
+async function azSetLoc(id, loc) {
+  const o = AZ.orders[id]; if (!o) return;
+  o.loc = loc;
+  try { await fetch(authedUrl('/amazonOrders/' + id + '/loc.json'), { method: 'PUT', body: JSON.stringify(loc) }); }
+  catch (e) { showToast('保存に失敗しました'); }
+}
+async function azSetGroupLoc(productKey, loc) {
+  const ids = Object.keys(AZ.orders).filter(id => AZ.orders[id].status === 'unshipped' && AZ.orders[id].productKey === productKey);
+  await Promise.all(ids.map(id => azSetLoc(id, loc)));
+  azRender();
+}
+async function azRetry(id) {
+  const o = AZ.orders[id]; if (!o) return;
+  try {
+    await loadInventory();
+    const ok = await azDeduct(id, o);
+    await azSaveOne(id);
+    if (ok) await loadInventory();
+    azRender();
+    showToast(ok ? '在庫を減らしました' : (o.issue || '在庫を減らせませんでした'));
+  } catch (e) { showToast('失敗しました'); }
+}
+async function azSkip(id) {
+  const o = AZ.orders[id]; if (!o) return;
+  const ok = await showConfirm('この注文は在庫を減らさず、記録だけにしますか？');
+  if (!ok) return;
+  o.skipped = true; delete o.issue;
+  await azSaveOne(id); azRender();
+}
+async function azUndo(id) {
+  const o = AZ.orders[id]; if (!o) return;
+  const p = azProduct(o.productKey);
+  const ok = await showConfirm(`${azModelOf(o) || '商品'}（${o.qty}個）の在庫を${locName(o.deductLoc || o.loc)}に戻しますか？\nこの注文は以後「記録だけ」になり、在庫は減らしません`);
+  if (!ok) return;
+  try {
+    await azRestore(o); o.skipped = true;
+    await azSaveOne(id); await loadInventory(); azRender();
+    showToast('在庫を戻しました' + (p ? '（在庫: ' + locBreakdownText(p) + '）' : ''));
+  } catch (e) { showToast('失敗しました'); }
+}
+
+// ── 商品を手で選ぶ ──
+function azOpenMatch(id) {
+  const o = AZ.orders[id]; if (!o) return;
+  AZ.matchFor = id;
+  document.getElementById('az-match-desc').textContent = (o.title || '').slice(0, 90) + (o.asin ? '（ASIN ' + o.asin + '）' : '');
+  const q = document.getElementById('az-match-q');
+  q.value = azModelOf(o) || '';
+  azRenderMatchResults();
+  document.getElementById('az-match-modal').style.display = 'flex';
+  setTimeout(() => q.focus(), 50);
+}
+function azCloseMatch() { document.getElementById('az-match-modal').style.display = 'none'; AZ.matchFor = null; }
+function azRenderMatchResults() {
+  const q = normalizeModelStr(document.getElementById('az-match-q').value);
+  const raw = String(document.getElementById('az-match-q').value || '').trim();
+  const list = (products || []).filter(p => {
+    if (!q && !raw) return false;
+    return (q && normalizeModelStr(p.model).includes(q)) || (raw && String(p.name || '').includes(raw)) || (q && String(p.jan || '').includes(q));
+  }).slice(0, 30);
+  document.getElementById('az-match-results').innerHTML = list.length ? list.map(p =>
+    `<div class="az-pick" onclick="azChooseProduct('${p._key}')"><b>${azEsc(p.model || '（型番なし）')}</b>
+      <span class="az-sub">在庫 ${azEsc(locBreakdownText(p))}</span><div class="az-title">${azEsc(p.name || '')}</div></div>`).join('')
+    : '<div class="az-empty">見つかりません。型番の一部で検索してください</div>';
+}
+async function azChooseProduct(productKey) {
+  const id = AZ.matchFor; const o = AZ.orders[id]; if (!o) return;
+  azCloseMatch();
+  try {
+    // 同じASIN（または同じ商品名）の注文はまとめて同じ商品に結びつけ、次回からも自動にする
+    if (o.asin) { AZ.asinMap[o.asin] = productKey; await fetch(authedUrl('/amazonAsinMap/' + azFirebaseKey(o.asin) + '.json'), { method: 'PUT', body: JSON.stringify(productKey) }); }
+    const same = Object.keys(AZ.orders).filter(k => k === id || (!AZ.orders[k].deducted && ((o.asin && AZ.orders[k].asin === o.asin) || (!o.asin && AZ.orders[k].title === o.title))));
+    let deducted = 0;
+    for (const k of same) {
+      const r = AZ.orders[k];
+      r.productKey = productKey;
+      if (r.status === 'unshipped') r.loc = azSuggestLoc(azProduct(productKey), r.qty || 1);
+      if (r.status === 'shipped' && !r.deducted && !r.skipped) { if (await azDeduct(k, r)) deducted++; }
+      await azSaveOne(k);
+    }
+    if (deducted) await loadInventory();
+    azRender();
+    showToast(deducted ? `商品を結びつけ、在庫を${deducted}件減らしました` : '商品を結びつけました');
+  } catch (e) { showToast('保存に失敗しました'); }
+}
+
+// ── 表示 ──
+function azFmtTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso); if (isNaN(d)) return '';
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+function azLocSelect(value, onchange) {
+  return `<select class="az-loc" onchange="${onchange}">${stockLocations.map(l => `<option value="${azEsc(l.id)}" ${l.id === value ? 'selected' : ''}>${azEsc(l.name)}から</option>`).join('')}</select>`;
+}
+function azSkuLine(o) {
+  const s = azParseSku(o.sku);
+  const bits = [`SKU ${azEsc(o.sku)}`];
+  if (s) bits.push(`仕入 ${s.cost.toLocaleString()}円${s.supplier ? '・' + azEsc(s.supplier) : ''}`);
+  return bits.map(b => `<span>${b}</span>`).join('');
+}
+function azUnshippedList() {
+  return Object.keys(AZ.orders).map(id => Object.assign({ _id: id }, AZ.orders[id])).filter(o => o.status === 'unshipped')
+    .sort((a, b) => String(a.purchaseDate || '').localeCompare(String(b.purchaseDate || '')));
+}
+
+function azRender() {
+  const root = document.getElementById('az-root'); if (!root) return;
+  const unshipped = azUnshippedList();
+  const issues = Object.keys(AZ.orders).map(id => Object.assign({ _id: id }, AZ.orders[id]))
+    .filter(o => o.status === 'shipped' && !o.deducted && !o.skipped);
+  const recentAll = Object.keys(AZ.orders).map(id => Object.assign({ _id: id }, AZ.orders[id]))
+    .filter(o => o.deducted).sort((a, b) => (b.deductedAt || 0) - (a.deductedAt || 0));
+  const recent = AZ.showAllRecent ? recentAll : recentAll.slice(0, 10);
+  const meta = AZ.meta || {};
+  const totalQty = unshipped.reduce((s, o) => s + (Number(o.qty) || 0), 0);
+
+  // 型番ごとのまとめ
+  const groups = {};
+  unshipped.forEach(o => {
+    const k = o.productKey || ('?' + (o.asin || o.title));
+    if (!groups[k]) groups[k] = { productKey: o.productKey, model: azModelOf(o), qty: 0, n: 0, locs: new Set() };
+    groups[k].qty += Number(o.qty) || 0; groups[k].n++; groups[k].locs.add(o.loc);
+  });
+  const groupRows = Object.values(groups).sort((a, b) => b.qty - a.qty).map(g => {
+    const p = azProduct(g.productKey);
+    const bd = p ? computeLocBreakdown(p) : null;
+    const stockTxt = bd ? stockLocations.map(l => `${azEsc(l.name)} ${bd.byLoc[l.id] || 0}`).join('・') : '';
+    const short = p && (Number(p.stock) || 0) < g.qty;
+    const locSel = p && g.locs.size === 1 ? azLocSelect([...g.locs][0], `azSetGroupLoc('${g.productKey}',this.value)`) : (p ? '<span class="az-sub">注文ごとに選択</span>' : '');
+    return `<div class="az-grp"><div style="min-width:0"><div><b>${azEsc(g.model || '（型番不明）')}</b> <span class="az-qty ${g.qty > 1 ? 'multi' : ''}">×${g.qty}</span></div>
+      <div class="az-sub">${p ? '在庫 ' + stockTxt : '<span class="az-tag">商品が未確認</span>'}${short ? ' <span class="az-tag">在庫不足</span>' : ''}</div></div>${locSel}</div>`;
+  }).join('');
+
+  const orderCard = o => {
+    const p = azProduct(o.productKey);
+    const promise = o.promise ? `<span>出荷期限 ${azEsc(azFmtTime(o.promise))}</span>` : '';
+    return `<div class="az-ord ${p ? '' : 'warn'}">
+      <div style="display:flex;justify-content:space-between;gap:8px"><div style="min-width:0"><div class="az-model">${azEsc(azModelOf(o) || '（型番不明）')}</div>
+        <div class="az-title">${azEsc(o.title)}</div></div><div class="az-qty ${o.qty > 1 ? 'multi' : ''}" style="white-space:nowrap">×${o.qty}</div></div>
+      <div class="az-meta"><span>注文 ${azEsc(azFmtTime(o.purchaseDate))}</span>${promise}${azSkuLine(o)}<span>${azEsc(o.orderId)}</span></div>
+      <div class="az-row">${p ? azLocSelect(o.loc, `azSetLoc('${o._id}',this.value)`) : '<span class="az-tag">在庫の商品が見つかりません</span>'}
+        <button class="az-btn small" onclick="azOpenMatch('${o._id}')">${p ? '商品を変更' : '商品を選ぶ'}</button></div></div>`;
+  };
+
+  const issueCard = o => `<div class="az-ord warn">
+      <div class="az-model">${azEsc(azModelOf(o) || '（型番不明）')} <span class="az-qty">×${o.qty}</span></div>
+      <div class="az-title">${azEsc(o.title)}</div>
+      <div class="az-meta"><span class="az-tag">${azEsc(o.issue || '在庫を減らせていません')}</span><span>出荷 ${azEsc(azFmtTime(o.updated))}</span>${azSkuLine(o)}</div>
+      <div class="az-row" style="justify-content:flex-end;flex-wrap:wrap">
+        <button class="az-btn small" onclick="azOpenMatch('${o._id}')">商品を選ぶ</button>
+        ${azProduct(o.productKey) ? azLocSelect(o.loc, `azSetLoc('${o._id}',this.value)`) + `<button class="az-btn small primary" onclick="azRetry('${o._id}')">在庫を減らす</button>` : ''}
+        <button class="az-btn small" onclick="azSkip('${o._id}')">記録だけにする</button></div></div>`;
+
+  const recentRow = o => `<div class="az-grp"><div style="min-width:0"><div><b>${azEsc(azModelOf(o))}</b> ×${o.qty} <span class="az-sub">${azEsc(locName(o.deductLoc))}から</span></div>
+      <div class="az-sub">${azEsc(o.shipDate || '')} 出荷・${azEsc(o.orderId)}</div></div>
+      <button class="az-btn small" onclick="azUndo('${o._id}')">在庫を戻す</button></div>`;
+
+  root.innerHTML = `
+    <input type="file" id="az-file" accept=".txt,.tsv,.csv,text/plain" style="display:none" onchange="azOnFile(this)">
+    <div class="az-card">
+      <div class="az-h"><span>Amazonの注文を取り込む</span><button class="az-btn primary" onclick="azPickFile()">📥 レポートを選ぶ</button></div>
+      <div class="az-sub">セラーセントラル →「注文レポート」→「全注文レポート」（レポートの種類：最終更新日・過去7日）をダウンロードして選んでください。毎日取り込んでも二重にはなりません。</div>
+      ${meta.lastImportAt ? `<div class="az-sub" style="margin-top:6px">前回の取り込み：${azEsc(azFmtTime(new Date(meta.lastImportAt).toISOString()))}</div>` : ''}
+    </div>
+    ${azPreviewHtml()}
+    ${issues.length ? `<div class="az-card" style="border-color:#e6b35a"><div class="az-h"><span>⚠️ 要確認（出荷済みで在庫を減らせていない注文）${issues.length}件</span></div>${issues.map(issueCard).join('')}</div>` : ''}
+    <div class="az-card">
+      <div class="az-h"><span>📦 梱包リスト（未出荷 ${unshipped.length}件・${totalQty}個）</span>
+        ${unshipped.length ? '<button class="az-btn small" onclick="azPrintPackList()">🖨 印刷</button>' : ''}</div>
+      ${unshipped.length ? `<div style="margin-bottom:10px">${groupRows}</div>${unshipped.map(orderCard).join('')}`
+        : '<div class="az-empty">未出荷の注文はありません</div>'}
+    </div>
+    <div class="az-card">
+      <div class="az-h"><span>✅ 在庫を減らした注文</span></div>
+      ${recent.length ? recent.map(recentRow).join('') : '<div class="az-empty">まだありません</div>'}
+      ${recentAll.length > 10 ? `<div style="text-align:center;margin-top:8px"><button class="az-btn small" onclick="AZ.showAllRecent=!AZ.showAllRecent;azRender()">${AZ.showAllRecent ? '閉じる' : `すべて表示（${recentAll.length}件）`}</button></div>` : ''}
+    </div>`;
+}
+
+function azPrintPackList() {
+  const list = azUnshippedList().sort((a, b) => (locName(a.loc)).localeCompare(locName(b.loc)) || azModelOf(a).localeCompare(azModelOf(b)));
+  const fileName = 'Amazon梱包リスト_' + todayStr();
+  const { iframe, idoc } = preparePrintIframeDoc(fileName);
+  const e = azEsc;
+  const rows = list.map(o => `<tr><td style="text-align:center;font-size:16px">☐</td><td><b>${e(azModelOf(o) || '（型番不明）')}</b><div class="t">${e(String(o.title || '').slice(0, 60))}</div></td>
+    <td style="text-align:center;font-weight:800;${o.qty > 1 ? 'color:#c0392b' : ''}">${o.qty}</td><td>${e(locName(o.loc))}</td><td class="s">${e(o.sku)}</td><td class="s">${e(o.orderId)}</td></tr>`).join('');
+  const total = list.reduce((s, o) => s + (Number(o.qty) || 0), 0);
+  idoc.getElementById('ds-print-root').innerHTML = `<style>
+      h1{font-size:18px;margin:0 0 4px} .m{font-size:11px;color:#666;margin-bottom:10px}
+      table{width:100%;border-collapse:collapse;font-size:12px} th,td{border:1px solid #bbb;padding:6px;vertical-align:top}
+      th{background:#eee;font-size:11px} .t{font-size:10px;color:#666;margin-top:2px} .s{font-size:10px;word-break:break-all}
+    </style><h1>Amazon 梱包リスト</h1><div class="m">${e(todayStr())}　未出荷 ${list.length}件・${total}個</div>
+    <table><thead><tr><th style="width:28px">✓</th><th>型番・商品名</th><th style="width:40px">数量</th><th style="width:56px">出荷元</th><th style="width:120px">SKU</th><th style="width:130px">注文番号</th></tr></thead><tbody>${rows}</tbody></table>`;
+  triggerPrintOnIframe(iframe, fileName);
+}
+</script>
+
 <style>
 /* ── HAK 清洲在庫（株式会社HAKの在庫。KANETAKAの在庫とは別の帳簿）── */
 #hak-app { position:fixed; inset:0; z-index:190; background:var(--surface); overflow-y:auto; -webkit-overflow-scrolling:touch; display:none; }
