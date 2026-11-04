@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-04i">
+<meta name="app-build" content="2026-11-04j">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -23234,8 +23234,9 @@ function azSalesCardHtml() {
   const days = new Date(y, m, 0).getDate();
   const daily = Array.from({ length: days }, (_, i) => { const d = `${ym}-${String(i + 1).padStart(2, '0')}`; return { d, v: sum(x => x.date === d) }; });
   const max = Math.max(1, ...daily.map(x => x.v));
-  const bars = daily.map(x => `<div title="${x.d.slice(5).replace('-', '/')} ${yen(x.v)}" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;min-width:6px">
-      <div style="width:70%;height:${Math.round(x.v / max * 90)}px;background:${x.d === today ? '#e67e22' : '#f0a35e'};border-radius:2px 2px 0 0"></div>
+  const sel = AZ.salesDay && AZ.salesDay.startsWith(ym) ? AZ.salesDay : '';
+  const bars = daily.map(x => `<div title="${x.d.slice(5).replace('-', '/')} ${yen(x.v)}" onclick="AZ.salesDay='${x.d}';azRender()" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;min-width:6px;cursor:pointer">
+      <div style="width:70%;height:${Math.round(x.v / max * 90)}px;background:${x.d === sel ? '#b9560f' : x.d === today ? '#e67e22' : '#f0a35e'};border-radius:2px 2px 0 0"></div>
       <div style="font-size:8px;color:#9ca3af;margin-top:2px">${Number(x.d.slice(8)) % 5 === 1 || days < 20 ? Number(x.d.slice(8)) : ''}</div></div>`).join('');
   // 月別（3月始まりの会計年度）
   const now = new Date(); const fy = now.getMonth() >= 2 ? now.getFullYear() : now.getFullYear() - 1;
@@ -23256,7 +23257,16 @@ function azSalesCardHtml() {
       <span style="font-size:12px;font-weight:700">${y}年${m}月の日別　${yen(monthTotal)}</span>
       <button class="az-btn small" ${nextYm > today.slice(0, 7) ? 'disabled style="opacity:.4"' : ''} onclick="AZ.salesYm='${nextYm}';azRender()">▶</button>
     </div>
+    <div class="az-sub" style="text-align:center;margin-bottom:4px;min-height:18px">${sel ? `<b style="color:var(--text)">${azDayLabel(sel)}　${yen(sum(x => x.date === sel))}</b>` : '棒をタップすると、その日の金額が出ます'}</div>
     <div style="display:flex;align-items:flex-end;gap:1px;height:110px;border-bottom:1px solid var(--border);padding-bottom:2px">${bars}</div>
+    <details style="margin-top:10px" ${AZ.salesListOpen ? 'open' : ''} ontoggle="AZ.salesListOpen=this.open"><summary style="font-size:12px;font-weight:700;cursor:pointer">${m}月の日別の金額</summary>
+      ${daily.filter(x => x.v > 0 || x.d <= today).slice().reverse().filter(x => x.d <= today).map(x => {
+        const w = '日月火水木金土'[new Date(x.d + 'T00:00:00').getDay()];
+        const n = Object.values(AZ.orders || {}).filter(o => o.status !== 'cancelled' && azOrderDay(o) === x.d).length;
+        const auto = items.some(v => v.date === x.d && v.auto);
+        return `<div class="az-grp"><div>${Number(x.d.slice(5, 7))}/${Number(x.d.slice(8))}（${w}）${auto && n ? `<span class="az-sub">　${n}件</span>` : (x.v ? '<span class="az-sub">　手入力</span>' : '')}</div><b>${yen(x.v)}</b></div>`;
+      }).join('') || '<div class="az-empty">まだありません</div>'}
+    </details>
     <details style="margin-top:10px"><summary style="font-size:12px;font-weight:700;cursor:pointer">月別の売上（${fy}年3月〜）</summary>
       ${mRows.map(r => `<div class="az-grp"><div>${Number(r.mm.slice(5))}月</div><b>${yen(r.v)}</b></div>`).join('')}
       <div class="az-grp" style="background:var(--surface)"><div><b>年間合計</b></div><b>${yen(yearTotal)}</b></div>
