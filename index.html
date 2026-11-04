@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-04n">
+<meta name="app-build" content="2026-11-04o">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -49,6 +49,9 @@ window.IS_HAK_ENTRY = /[?&]hak(=|&|$)/.test(location.search) || location.hash ==
       var img = box.querySelector('img'); if (img) img.style.display = 'none';
       var t = box.querySelector('.login-title'); if (t) t.textContent = '株式会社HAK';
       var sub = box.querySelector('.login-sub'); if (sub) sub.textContent = '在庫管理';
+      // HAKのアカウントのメールアドレス・パスワードはKANETAKAが管理するため、パスワードの再設定の案内は出さない
+      var a = box.querySelector('a[onclick*="showResetModal"]');
+      if (a) { var p = a.parentNode; p.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">ログインできないときは、株式会社KANETAKAへご連絡ください</span>'; }
     });
   } catch (e) {}
 })();
@@ -16613,6 +16616,8 @@ async function reAuth(email, password) {
 }
 
 async function doChangeEmail() {
+  // HAKのアカウントは、メールアドレス・パスワードを変更できない（KANETAKAが管理する）
+  if (typeof HK !== 'undefined' && HK.role === 'hak') { showToast('このアカウントのメールアドレスは変更できません'); return; }
   const session = JSON.parse(sessionStorage.getItem('kanetaka_auth_token') || '{}');
   const currentEmail = session.email || '';
   const pw    = document.getElementById('settings-current-pw').value;
@@ -16671,6 +16676,7 @@ async function doChangeEmail() {
 }
 
 async function doChangePassword() {
+  if (typeof HK !== 'undefined' && HK.role === 'hak') { showToast('このアカウントのパスワードは変更できません'); return; }
   const session = JSON.parse(sessionStorage.getItem('kanetaka_auth_token') || '{}');
   const currentEmail = session.email || '';
   const currentPw = document.getElementById('settings-current-pw2').value;
@@ -16750,6 +16756,7 @@ function closeResetModal() {
 }
 
 async function doReset() {
+  if (window.IS_HAK_ENTRY) return;
   const email = document.getElementById('reset-email').value.trim();
   const errEl = document.getElementById('reset-error');
   const okEl  = document.getElementById('reset-success');
