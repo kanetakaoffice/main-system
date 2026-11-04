@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-04h">
+<meta name="app-build" content="2026-11-04i">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1802,7 +1802,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <button class="tab-switch-btn active" id="packec-tab-amazon" onclick="switchPackecTab('amazon')">📦 Amazon</button>
     <button class="tab-switch-btn" id="packec-tab-list" onclick="switchPackecTab('list')">🚚 出荷リスト</button>
     <button class="tab-switch-btn" id="packec-tab-add" onclick="switchPackecTab('add')">📝 追加</button>
-    <button class="tab-switch-btn" id="packec-tab-ec" onclick="switchPackecTab('ec')">💰 EC売上</button>
+    <button class="tab-switch-btn" id="packec-tab-ec" onclick="switchPackecTab('ec')">🛒 EC</button>
   </div>
   <div id="packec-body-amazon"><div id="az-root"></div></div>
   <div id="packec-body-list" style="display:none">
@@ -1887,8 +1887,15 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     </div>
   </div>
   <div id="packec-body-ec" style="display:none">
-    <!-- パソコン幅（1280px以上）では、左に「記録フォーム・集計・本日の明細」、右に「日別・月別グラフ」を並べる -->
-    <div class="pk-ec-grid"><div class="pk-ec-col">
+    <!-- 自社EC（WooCommerce）用。ECサイトが動き出したら、Amazonタブと同じ「注文の取り込み・梱包リスト・
+         在庫を減らす・売上の自動記録」の形で作る。それまでは準備中の表示だけにしておく。
+         以前の手入力のEC売上画面（下の pk-ec-grid）は、Amazonの売上が自動になったため隠している -->
+    <div class="card" style="padding:28px 18px;text-align:center">
+      <div style="font-size:30px;margin-bottom:8px">🛒</div>
+      <div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:6px">自社EC（準備中）</div>
+      <div style="font-size:12.5px;color:var(--text-muted);line-height:1.8">ホームページのECサイトで販売を始めたら、ここでAmazonと同じように<br>注文の取り込み・梱包リスト・在庫を減らす・売上の自動記録ができるようにします。<br>Amazonの売上は「📦 Amazon」タブで見られます。</div>
+    </div>
+    <div class="pk-ec-grid" style="display:none"><div class="pk-ec-col">
     <!-- EC売上を記録 -->
     <div class="card">
       <div class="card-title">EC売上を記録</div>
@@ -15130,7 +15137,7 @@ function renderHomeSummary() {
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">今日のAmazon出荷</div>
         <div style="font-size:18px;font-weight:700;color:#4a4a4a">${pendingShipCount}件</div>
       </div>
-      <div class="home-stat-card" onclick="goHomeToInv('inv-packec','ec')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
+      <div class="home-stat-card" onclick="goHomeToInv('inv-packec','amazon')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">EC本日の売上</div>
         <div style="font-size:18px;font-weight:700;color:#4a4a4a">${yen(ecTodayTotal)}</div>
       </div>
@@ -22677,6 +22684,7 @@ async function azLoad() {
     fetch(authedUrl('/amazonMeta.json')).then(r => r.json()).catch(() => null)
   ]);
   AZ.orders = o || {}; AZ.asinMap = a || {}; AZ.meta = m || {}; AZ.loaded = true;
+  if (isAdmin()) { try { AZ.ec = await fetch(authedUrl('/ecSales.json')).then(r => r.json()) || {}; } catch (e) { AZ.ec = {}; } }
   if (!products || !products.length) await loadInventory();
 }
 
@@ -23125,12 +23133,15 @@ function azRender() {
       <div class="az-h"><span>Amazonの注文を取り込む</span><button class="az-btn primary" onclick="azPickFile()">📥 レポートを選ぶ</button></div>
       <div class="az-sub">セラーセントラル →「注文レポート」→「全注文レポート」（レポートの種類：最終更新日・過去7日）をダウンロードして選んでください。毎日取り込んでも二重にはなりません。</div>
       ${meta.lastImportAt ? `<div class="az-sub" style="margin-top:6px">前回の取り込み：${azEsc(azFmtTime(new Date(meta.lastImportAt).toISOString()))}</div>` : ''}
-      ${isAdmin() ? `<div class="az-sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">Amazonの売上：<input type="date" class="az-loc" value="${azEsc(meta.salesFrom || '')}" onchange="azSetSalesFrom(this.value)">以降の注文日の分を、取り込むたびにEC売上へ自動で記録します（税込・キャンセル分は除く）。${meta.salesFrom ? 'この日からは手入力しないでください。' : '次の取り込みで、手入力の最後の日の翌日から始めます。'}</div>` : ''}
+      ${isAdmin() ? `<div class="az-sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">売上の自動記録：${meta.salesFrom ? `<b>${azEsc(meta.salesFrom.slice(5).replace('-', '/'))}の注文から</b>` : '次の取り込みから始まります'}
+        ${meta.salesFrom ? `<button class="az-btn small" onclick="AZ.editFrom=!AZ.editFrom;azRender()">${AZ.editFrom ? '閉じる' : '開始日を変える'}</button>` : ''}
+        ${AZ.editFrom ? `<input type="date" class="az-loc" value="${azEsc(meta.salesFrom || '')}" onchange="AZ.editFrom=false;azSetSalesFrom(this.value)">` : ''}</div>` : ''}
       <div class="az-sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">当日出荷の締め：${cutSel}までの注文はその日に出荷。大型の商品（西濃運輸）は土日祝日を除いて出荷日を決めます。それ以外はヤマト運輸です。</div>
     </div>
     ${azPreviewHtml()}
     ${issues.length ? `<div class="az-card" style="border-color:#e6b35a"><div class="az-h"><span>⚠️ 要確認（出荷済みで在庫を減らせていない注文）${issues.length}件</span></div>${issues.map(issueCard).join('')}</div>` : ''}
     ${unshipped.length ? sections.map(sectionHtml).join('') : '<div class="az-card"><div class="az-h"><span>📦 梱包リスト</span></div><div class="az-empty">未出荷の注文はありません</div></div>'}
+    ${isAdmin() ? azSalesCardHtml() : ''}
     <div class="az-card">
       <div class="az-h"><span>✅ 在庫を減らした注文</span></div>
       ${recent.length ? recent.map(recentRow).join('') : '<div class="az-empty">まだありません</div>'}
@@ -23192,6 +23203,7 @@ async function azSetSalesFrom(v) {
     for (let d = new Date(a + 'T00:00:00'); ymdKey(d) <= b; d.setDate(d.getDate() + 1)) days.push(ymdKey(d));
     const known = new Set(Object.values(AZ.orders).map(azOrderDay));
     await azSyncSales([], days.filter(d => known.has(d) || d < v));
+    try { AZ.ec = await fetch(authedUrl('/ecSales.json')).then(r => r.json()) || {}; } catch (e) {}
     showToast('設定しました');
   } catch (e) { showToast('保存に失敗しました'); }
   azRender();
@@ -23212,6 +23224,45 @@ async function azPrefetchHome() {
 function azHomeShipToday() {
   const today = todayStr();
   return azUnshippedList().filter(o => azShipDay(o) <= today);
+}
+// ── Amazonの売上（EC売上に記録された販路Amazonの分。自動記録・以前の手入力の両方） ──
+function azSalesCardHtml() {
+  const items = Object.values(AZ.ec || {}).filter(v => v && v.channel === 'Amazon' && v.date);
+  const sum = f => items.filter(f).reduce((s, v) => s + (Number(v.amount) || 0), 0);
+  const today = todayStr(), ym = (AZ.salesYm || today.slice(0, 7));
+  const [y, m] = ym.split('-').map(Number);
+  const days = new Date(y, m, 0).getDate();
+  const daily = Array.from({ length: days }, (_, i) => { const d = `${ym}-${String(i + 1).padStart(2, '0')}`; return { d, v: sum(x => x.date === d) }; });
+  const max = Math.max(1, ...daily.map(x => x.v));
+  const bars = daily.map(x => `<div title="${x.d.slice(5).replace('-', '/')} ${yen(x.v)}" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;min-width:6px">
+      <div style="width:70%;height:${Math.round(x.v / max * 90)}px;background:${x.d === today ? '#e67e22' : '#f0a35e'};border-radius:2px 2px 0 0"></div>
+      <div style="font-size:8px;color:#9ca3af;margin-top:2px">${Number(x.d.slice(8)) % 5 === 1 || days < 20 ? Number(x.d.slice(8)) : ''}</div></div>`).join('');
+  // 月別（3月始まりの会計年度）
+  const now = new Date(); const fy = now.getMonth() >= 2 ? now.getFullYear() : now.getFullYear() - 1;
+  const months = Array.from({ length: 12 }, (_, i) => ymKey(new Date(fy, 2 + i, 1)));
+  const mRows = months.map(mm => ({ mm, v: sum(x => x.date.startsWith(mm)) }));
+  const yearTotal = mRows.reduce((s, r) => s + r.v, 0);
+  const monthTotal = sum(x => x.date.startsWith(ym));
+  const prevYm = ymKey(new Date(y, m - 2, 1)), nextYm = ymKey(new Date(y, m, 1));
+  return `<div class="az-card">
+    <div class="az-h"><span>💴 Amazonの売上（税込）</span></div>
+    <div class="az-sum" style="margin-top:0">
+      <div><b>${yen(sum(x => x.date === today))}</b>今日</div>
+      <div><b>${yen(sum(x => x.date.startsWith(today.slice(0, 7))))}</b>今月</div>
+      <div><b>${yen(yearTotal)}</b>今期（${fy}年3月〜）</div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:6px 0">
+      <button class="az-btn small" onclick="AZ.salesYm='${prevYm}';azRender()">◀</button>
+      <span style="font-size:12px;font-weight:700">${y}年${m}月の日別　${yen(monthTotal)}</span>
+      <button class="az-btn small" ${nextYm > today.slice(0, 7) ? 'disabled style="opacity:.4"' : ''} onclick="AZ.salesYm='${nextYm}';azRender()">▶</button>
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:1px;height:110px;border-bottom:1px solid var(--border);padding-bottom:2px">${bars}</div>
+    <details style="margin-top:10px"><summary style="font-size:12px;font-weight:700;cursor:pointer">月別の売上（${fy}年3月〜）</summary>
+      ${mRows.map(r => `<div class="az-grp"><div>${Number(r.mm.slice(5))}月</div><b>${yen(r.v)}</b></div>`).join('')}
+      <div class="az-grp" style="background:var(--surface)"><div><b>年間合計</b></div><b>${yen(yearTotal)}</b></div>
+    </details>
+    <div class="az-sub" style="margin-top:8px">取り込むたびに注文日ごとの金額が自動で入ります（キャンセル分は除く）。自動にする前の分は、以前の手入力の金額です。</div>
+  </div>`;
 }
 function azToggleDay(day) { if (AZ.openDays.has(day)) AZ.openDays.delete(day); else AZ.openDays.add(day); azRender(); }
 async function azSetIdsLoc(ids, loc) {
