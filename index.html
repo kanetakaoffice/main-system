@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-04a">
+<meta name="app-build" content="2026-11-04c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -22952,6 +22952,74 @@ function azUnshippedList() {
     .sort((a, b) => String(a.purchaseDate || '').localeCompare(String(b.purchaseDate || '')));
 }
 
+// ── 出荷日の判定 ──
+// 要望：「当日13時までの注文は当日に出荷、13時以降は翌日。小さい商品は土日祝日も毎日出荷。
+// テレビなどの大型は配送業者が休みのため土日祝日は出荷しない（金曜13時以降の注文から月曜の出荷、
+// 祝日は明けの出荷）」への対応。大型かどうかは在庫の商品ごとの印（products/{key}/large）で決める。
+const _azHolCache = {};
+function azNthMonday(y, m, n) { const d = new Date(y, m, 1); const off = (8 - d.getDay()) % 7; return 1 + off + (n - 1) * 7; }
+function azJpHolidays(y) {
+  if (_azHolCache[y]) return _azHolCache[y];
+  const k = (m, d) => ymdKey(new Date(y, m, d));
+  const set = new Set([k(0, 1), k(1, 11), k(1, 23), k(3, 29), k(4, 3), k(4, 4), k(4, 5), k(7, 11), k(10, 3), k(10, 23),
+    k(0, azNthMonday(y, 0, 2)), k(6, azNthMonday(y, 6, 3)), k(8, azNthMonday(y, 8, 3)), k(9, azNthMonday(y, 9, 2)),
+    k(2, Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4))),
+    k(8, Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)))]);
+  // 国民の休日（祝日にはさまれた平日）
+  [...set].forEach(a => { const d = new Date(a + 'T00:00:00'); d.setDate(d.getDate() + 2); const b = ymdKey(d);
+    if (set.has(b)) { d.setDate(d.getDate() - 1); if (d.getDay() !== 0) set.add(ymdKey(d)); } });
+  // 振替休日（日曜の祝日の後の、最初の祝日でない日）
+  [...set].sort().forEach(a => { const d = new Date(a + 'T00:00:00'); if (d.getDay() !== 0) return;
+    do { d.setDate(d.getDate() + 1); } while (set.has(ymdKey(d))); set.add(ymdKey(d)); });
+  return (_azHolCache[y] = set);
+}
+function azIsHoliday(ymd) { return azJpHolidays(Number(ymd.slice(0, 4))).has(ymd); }
+function azCutoff() { const h = Number(AZ.meta && AZ.meta.cutoffHour); return h >= 0 && h <= 23 && AZ.meta.cutoffHour != null ? h : 13; }
+function azIsLarge(o) { const p = azProduct(o.productKey); return !!(p && p.large); }
+// 配送業者：大型は西濃運輸、それ以外はヤマト運輸
+function azCarrier(o) { return azIsLarge(o) ? '西濃運輸' : 'ヤマト運輸'; }
+function azCarrierTag(o) {
+  return azIsLarge(o) ? '<span class="az-tag" style="background:#fff3e0;color:#b36b00">🚛 西濃運輸</span>'
+    : '<span class="az-tag" style="background:#e8f0fe;color:#1a56b0">🐈 ヤマト運輸</span>';
+}
+function azShipDay(o) {
+  const t = new Date(o.purchaseDate || o.updated || Date.now());
+  const d = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  if (t.getHours() >= azCutoff()) d.setDate(d.getDate() + 1);
+  if (azIsLarge(o)) while (d.getDay() === 0 || d.getDay() === 6 || azIsHoliday(ymdKey(d))) d.setDate(d.getDate() + 1);
+  return ymdKey(d);
+}
+function azDayLabel(ymd) {
+  const d = new Date(ymd + 'T00:00:00'), t = todayStr();
+  const tm = new Date(); tm.setDate(tm.getDate() + 1);
+  const w = '日月火水木金土'[d.getDay()];
+  const md = `${d.getMonth() + 1}/${d.getDate()}（${w}${azIsHoliday(ymd) ? '・祝' : ''}）`;
+  if (ymd === t) return '今日 ' + md;
+  if (ymd === ymdKey(tm)) return '明日 ' + md;
+  return md;
+}
+async function azSetCutoff(h) {
+  AZ.meta.cutoffHour = Number(h);
+  try { await fetch(authedUrl('/amazonMeta/cutoffHour.json'), { method: 'PUT', body: JSON.stringify(Number(h)) }); } catch (e) {}
+  azRender();
+}
+async function azToggleLarge(productKey) {
+  const p = azProduct(productKey); if (!p) return;
+  const v = !p.large;
+  try {
+    await fetch(authedUrl('/products/' + productKey + '/large.json'), { method: 'PUT', body: JSON.stringify(v ? true : null) });
+    p.large = v || undefined; azRender();
+    showToast(v ? `${p.model || '商品'}を大型にしました（西濃運輸・土日祝日は出荷しない扱い）` : `${p.model || '商品'}の大型の印を外しました（ヤマト運輸）`);
+  } catch (e) { showToast('保存に失敗しました'); }
+}
+// 出荷日ごとに分ける（今日より前の日付は「出荷遅れ」として今日の分に含める）
+function azShipSections(unshipped) {
+  const today = todayStr(), by = {};
+  unshipped.forEach(o => { const d0 = azShipDay(o); const d = d0 < today ? today : d0; o._late = d0 < today; (by[d] = by[d] || []).push(o); });
+  if (!by[today] && unshipped.length) by[today] = [];
+  return Object.keys(by).sort().map(d => ({ day: d, list: by[d].sort((a, b) => (azIsLarge(a) - azIsLarge(b)) || String(a.purchaseDate || '').localeCompare(String(b.purchaseDate || ''))) }));
+}
+
 function azRender() {
   const root = document.getElementById('az-root'); if (!root) return;
   const unshipped = azUnshippedList();
@@ -22961,34 +23029,53 @@ function azRender() {
     .filter(o => o.deducted).sort((a, b) => (b.deductedAt || 0) - (a.deductedAt || 0));
   const recent = AZ.showAllRecent ? recentAll : recentAll.slice(0, 10);
   const meta = AZ.meta || {};
-  const totalQty = unshipped.reduce((s, o) => s + (Number(o.qty) || 0), 0);
+  const today = todayStr();
 
-  // 型番ごとのまとめ
-  const groups = {};
-  unshipped.forEach(o => {
-    const k = o.productKey || ('?' + (o.asin || o.title));
-    if (!groups[k]) groups[k] = { productKey: o.productKey, model: azModelOf(o), qty: 0, n: 0, locs: new Set() };
-    groups[k].qty += Number(o.qty) || 0; groups[k].n++; groups[k].locs.add(o.loc);
-  });
-  const groupRows = Object.values(groups).sort((a, b) => b.qty - a.qty).map(g => {
-    const p = azProduct(g.productKey);
-    const bd = p ? computeLocBreakdown(p) : null;
-    const stockTxt = bd ? stockLocations.map(l => `${azEsc(l.name)} ${bd.byLoc[l.id] || 0}`).join('・') : '';
-    const short = p && (Number(p.stock) || 0) < g.qty;
-    const locSel = p && g.locs.size === 1 ? azLocSelect([...g.locs][0], `azSetGroupLoc('${g.productKey}',this.value)`) : (p ? '<span class="az-sub">注文ごとに選択</span>' : '');
-    return `<div class="az-grp"><div style="min-width:0"><div><b>${azEsc(g.model || '（型番不明）')}</b> <span class="az-qty ${g.qty > 1 ? 'multi' : ''}">×${g.qty}</span></div>
-      <div class="az-sub">${p ? '在庫 ' + stockTxt : '<span class="az-tag">商品が未確認</span>'}${short ? ' <span class="az-tag">在庫不足</span>' : ''}</div></div>${locSel}</div>`;
-  }).join('');
+  const largeBtn = p => p ? `<button class="az-btn small" style="${p.large ? 'background:#fff3e0;border-color:#e6a23c;color:#b36b00' : ''}" onclick="azToggleLarge('${p._key}')">${p.large ? '🚛 大型（西濃）' : '大型にする'}</button>` : '';
+
+  // 型番ごとのまとめ（出荷日ごと）
+  const groupRowsOf = list => {
+    const groups = {};
+    list.forEach(o => {
+      const k = o.productKey || ('?' + (o.asin || o.title));
+      if (!groups[k]) groups[k] = { productKey: o.productKey, model: azModelOf(o), qty: 0, ids: [], locs: new Set() };
+      groups[k].qty += Number(o.qty) || 0; groups[k].ids.push(o._id); groups[k].locs.add(o.loc);
+    });
+    return Object.values(groups).sort((a, b) => b.qty - a.qty).map(g => {
+      const p = azProduct(g.productKey);
+      const bd = p ? computeLocBreakdown(p) : null;
+      const stockTxt = bd ? stockLocations.map(l => `${azEsc(l.name)} ${bd.byLoc[l.id] || 0}`).join('・') : '';
+      const short = p && (Number(p.stock) || 0) < g.qty;
+      const locSel = p && g.locs.size === 1 ? azLocSelect([...g.locs][0], `azSetIdsLoc('${g.ids.join(',')}',this.value)`) : (p ? '<span class="az-sub">注文ごとに選択</span>' : '');
+      return `<div class="az-grp"><div><div><b>${azEsc(g.model || '（型番不明）')}</b> <span class="az-qty ${g.qty > 1 ? 'multi' : ''}">×${g.qty}</span>${p ? ' ' + azCarrierTag({ productKey: g.productKey }) : ''}</div>
+        <div class="az-sub">${p ? '在庫 ' + stockTxt : '<span class="az-tag">商品が未確認</span>'}${short ? ' <span class="az-tag">在庫不足</span>' : ''}</div></div>${locSel}</div>`;
+    }).join('');
+  };
 
   const orderCard = o => {
     const p = azProduct(o.productKey);
     const promise = o.promise ? `<span>出荷期限 ${azEsc(azFmtTime(o.promise))}</span>` : '';
-    return `<div class="az-ord ${p ? '' : 'warn'}">
-      <div style="display:flex;justify-content:space-between;gap:8px"><div style="min-width:0"><div class="az-model">${azEsc(azModelOf(o) || '（型番不明）')}</div>
+    return `<div class="az-ord ${p ? '' : 'warn'}" ${o._late ? 'style="border-color:#e57373"' : ''}>
+      <div style="display:flex;justify-content:space-between;gap:8px"><div style="min-width:0"><div class="az-model">${azEsc(azModelOf(o) || '（型番不明）')} ${p ? azCarrierTag(o) : ''}${o._late ? ' <span class="az-tag">出荷遅れ</span>' : ''}</div>
         <div class="az-title">${azEsc(o.title)}</div></div><div class="az-qty ${o.qty > 1 ? 'multi' : ''}" style="white-space:nowrap">×${o.qty}</div></div>
       <div class="az-meta"><span>注文 ${azEsc(azFmtTime(o.purchaseDate))}</span>${promise}${azSkuLine(o)}<span>${azEsc(o.orderId)}</span></div>
-      <div class="az-row">${p ? azLocSelect(o.loc, `azSetLoc('${o._id}',this.value)`) : '<span class="az-tag">在庫の商品が見つかりません</span>'}
-        <button class="az-btn small" onclick="azOpenMatch('${o._id}')">${p ? '商品を変更' : '商品を選ぶ'}</button></div></div>`;
+      <div class="az-row" style="flex-wrap:wrap">${p ? azLocSelect(o.loc, `azSetLoc('${o._id}',this.value)`) : '<span class="az-tag">在庫の商品が見つかりません</span>'}
+        <span style="display:flex;gap:6px;margin-left:auto">${largeBtn(p)}<button class="az-btn small" onclick="azOpenMatch('${o._id}')">${p ? '商品を変更' : '商品を選ぶ'}</button></span></div></div>`;
+  };
+
+  const sections = azShipSections(unshipped);
+  const sectionHtml = sec => {
+    const qty = sec.list.reduce((s, o) => s + (Number(o.qty) || 0), 0);
+    const isToday = sec.day === today;
+    const late = sec.list.filter(o => o._late).length;
+    const nSeino = sec.list.filter(o => azIsLarge(o)).reduce((s, o) => s + (Number(o.qty) || 0), 0);
+    const carrierLine = sec.list.length ? `<div class="az-sub" style="margin:-2px 0 8px">🐈 ヤマト運輸 ${qty - nSeino}個　🚛 西濃運輸 ${nSeino}個</div>` : '';
+    return `<div class="az-card" ${isToday ? 'style="border-color:#3a3a3a"' : ''}>
+      <div class="az-h"><span>${isToday ? '📦' : '🗓'} ${azEsc(azDayLabel(sec.day))}に出荷（${sec.list.length}件・${qty}個）${late ? ` <span class="az-tag">出荷遅れ ${late}件</span>` : ''}</span>
+        ${sec.list.length ? `<button class="az-btn small" onclick="azPrintPackList('${sec.day}')">🖨 印刷</button>` : ''}</div>
+      ${carrierLine}
+      ${sec.list.length ? `<div style="margin-bottom:10px">${groupRowsOf(sec.list)}</div>${sec.list.map(orderCard).join('')}` : '<div class="az-empty">この日に出荷する注文はありません</div>'}
+    </div>`;
   };
 
   const issueCard = o => `<div class="az-ord warn">
@@ -23000,9 +23087,11 @@ function azRender() {
         ${azProduct(o.productKey) ? azLocSelect(o.loc, `azSetLoc('${o._id}',this.value)`) + `<button class="az-btn small primary" onclick="azRetry('${o._id}')">在庫を減らす</button>` : ''}
         <button class="az-btn small" onclick="azSkip('${o._id}')">記録だけにする</button></div></div>`;
 
-  const recentRow = o => `<div class="az-grp"><div style="min-width:0"><div><b>${azEsc(azModelOf(o))}</b> ×${o.qty} <span class="az-sub">${azEsc(locName(o.deductLoc))}から</span></div>
+  const recentRow = o => `<div class="az-grp"><div><div><b>${azEsc(azModelOf(o))}</b> ×${o.qty} <span class="az-sub">${azEsc(locName(o.deductLoc))}から</span></div>
       <div class="az-sub">${azEsc(o.shipDate || '')} 出荷・${azEsc(o.orderId)}</div></div>
       <button class="az-btn small" onclick="azUndo('${o._id}')">在庫を戻す</button></div>`;
+
+  const cutSel = `<select class="az-loc" onchange="azSetCutoff(this.value)">${[10, 11, 12, 13, 14, 15, 16, 17].map(h => `<option value="${h}" ${h === azCutoff() ? 'selected' : ''}>${h}時</option>`).join('')}</select>`;
 
   root.innerHTML = `
     <input type="file" id="az-file" accept=".txt,.tsv,.csv,text/plain" style="display:none" onchange="azOnFile(this)">
@@ -23010,36 +23099,38 @@ function azRender() {
       <div class="az-h"><span>Amazonの注文を取り込む</span><button class="az-btn primary" onclick="azPickFile()">📥 レポートを選ぶ</button></div>
       <div class="az-sub">セラーセントラル →「注文レポート」→「全注文レポート」（レポートの種類：最終更新日・過去7日）をダウンロードして選んでください。毎日取り込んでも二重にはなりません。</div>
       ${meta.lastImportAt ? `<div class="az-sub" style="margin-top:6px">前回の取り込み：${azEsc(azFmtTime(new Date(meta.lastImportAt).toISOString()))}</div>` : ''}
+      <div class="az-sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">当日出荷の締め：${cutSel}までの注文はその日に出荷。大型の商品（西濃運輸）は土日祝日を除いて出荷日を決めます。それ以外はヤマト運輸です。</div>
     </div>
     ${azPreviewHtml()}
     ${issues.length ? `<div class="az-card" style="border-color:#e6b35a"><div class="az-h"><span>⚠️ 要確認（出荷済みで在庫を減らせていない注文）${issues.length}件</span></div>${issues.map(issueCard).join('')}</div>` : ''}
-    <div class="az-card">
-      <div class="az-h"><span>📦 梱包リスト（未出荷 ${unshipped.length}件・${totalQty}個）</span>
-        ${unshipped.length ? '<button class="az-btn small" onclick="azPrintPackList()">🖨 印刷</button>' : ''}</div>
-      ${unshipped.length ? `<div style="margin-bottom:10px">${groupRows}</div>${unshipped.map(orderCard).join('')}`
-        : '<div class="az-empty">未出荷の注文はありません</div>'}
-    </div>
+    ${unshipped.length ? sections.map(sectionHtml).join('') : '<div class="az-card"><div class="az-h"><span>📦 梱包リスト</span></div><div class="az-empty">未出荷の注文はありません</div></div>'}
     <div class="az-card">
       <div class="az-h"><span>✅ 在庫を減らした注文</span></div>
       ${recent.length ? recent.map(recentRow).join('') : '<div class="az-empty">まだありません</div>'}
       ${recentAll.length > 10 ? `<div style="text-align:center;margin-top:8px"><button class="az-btn small" onclick="AZ.showAllRecent=!AZ.showAllRecent;azRender()">${AZ.showAllRecent ? '閉じる' : `すべて表示（${recentAll.length}件）`}</button></div>` : ''}
     </div>`;
 }
+async function azSetIdsLoc(ids, loc) {
+  await Promise.all(String(ids).split(',').filter(Boolean).map(id => azSetLoc(id, loc)));
+  azRender();
+}
 
-function azPrintPackList() {
-  const list = azUnshippedList().sort((a, b) => (locName(a.loc)).localeCompare(locName(b.loc)) || azModelOf(a).localeCompare(azModelOf(b)));
-  const fileName = 'Amazon梱包リスト_' + todayStr();
+function azPrintPackList(day) {
+  const sec = azShipSections(azUnshippedList()).find(x => x.day === day);
+  const list = (sec ? sec.list : []).slice().sort((a, b) => (azIsLarge(a) - azIsLarge(b)) || (locName(a.loc)).localeCompare(locName(b.loc)) || azModelOf(a).localeCompare(azModelOf(b)));
+  const fileName = 'Amazon梱包リスト_' + day;
   const { iframe, idoc } = preparePrintIframeDoc(fileName);
   const e = azEsc;
-  const rows = list.map(o => `<tr><td style="text-align:center;font-size:16px">☐</td><td><b>${e(azModelOf(o) || '（型番不明）')}</b><div class="t">${e(String(o.title || '').slice(0, 60))}</div></td>
-    <td style="text-align:center;font-weight:800;${o.qty > 1 ? 'color:#c0392b' : ''}">${o.qty}</td><td>${e(locName(o.loc))}</td><td class="s">${e(o.sku)}</td><td class="s">${e(o.orderId)}</td></tr>`).join('');
+  const rows = list.map(o => { const p = azProduct(o.productKey); return `<tr><td style="text-align:center;font-size:16px">☐</td><td><b>${e(azModelOf(o) || '（型番不明）')}</b>${o._late ? ' <span class="late">出荷遅れ</span>' : ''}<div class="t">${e(String(o.title || '').slice(0, 60))}</div></td>
+    <td style="text-align:center;font-weight:800;${o.qty > 1 ? 'color:#c0392b' : ''}">${o.qty}</td><td>${e(locName(o.loc))}</td><td>${!p ? '未確認' : p.large ? '<span class="lg">西濃運輸</span>' : 'ヤマト運輸'}</td><td class="s">${e(o.sku)}</td><td class="s">${e(o.orderId)}</td></tr>`; }).join('');
   const total = list.reduce((s, o) => s + (Number(o.qty) || 0), 0);
   idoc.getElementById('ds-print-root').innerHTML = `<style>
       h1{font-size:18px;margin:0 0 4px} .m{font-size:11px;color:#666;margin-bottom:10px}
       table{width:100%;border-collapse:collapse;font-size:12px} th,td{border:1px solid #bbb;padding:6px;vertical-align:top}
       th{background:#eee;font-size:11px} .t{font-size:10px;color:#666;margin-top:2px} .s{font-size:10px;word-break:break-all}
-    </style><h1>Amazon 梱包リスト</h1><div class="m">${e(todayStr())}　未出荷 ${list.length}件・${total}個</div>
-    <table><thead><tr><th style="width:28px">✓</th><th>型番・商品名</th><th style="width:40px">数量</th><th style="width:56px">出荷元</th><th style="width:120px">SKU</th><th style="width:130px">注文番号</th></tr></thead><tbody>${rows}</tbody></table>`;
+      .lg,.late{font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px} .lg{background:#fff3e0;color:#b36b00} .late{background:#fdecea;color:#c0392b}
+    </style><h1>Amazon 梱包リスト　${e(azDayLabel(day))}出荷分</h1><div class="m">${list.length}件・${total}個（ヤマト運輸 ${total - list.filter(o => azIsLarge(o)).reduce((s, o) => s + (Number(o.qty) || 0), 0)}個・西濃運輸 ${list.filter(o => azIsLarge(o)).reduce((s, o) => s + (Number(o.qty) || 0), 0)}個）</div>
+    <table><thead><tr><th style="width:28px">✓</th><th>型番・商品名</th><th style="width:40px">数量</th><th style="width:48px">出荷元</th><th style="width:64px">配送</th><th style="width:110px">SKU</th><th style="width:130px">注文番号</th></tr></thead><tbody>${rows}</tbody></table>`;
   triggerPrintOnIframe(iframe, fileName);
 }
 </script>
