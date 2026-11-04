@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-04l">
+<meta name="app-build" content="2026-11-04m">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -23596,13 +23596,15 @@ function hkRender() {
   const app = document.getElementById('hak-app');
   if (!app || !HK.open) return;
   HK._inMoves = null;
-  const tabs = [['stock', '在庫'], ['gild', 'GILD取り込み'], ['stocktake', '棚卸し'], ...(hkIsKanetaka() ? [['transfer', '港区へ移動']] : []), ['history', '履歴・書類'], ['company', '会社情報']];
+  const tabs = [['stock', '在庫'], ['amazon', 'Amazon'], ['sales', '売上'], ['gild', 'GILD取り込み'], ['stocktake', '棚卸し'], ...(hkIsKanetaka() ? [['transfer', '港区へ移動']] : []), ['history', '履歴・書類'], ['company', '会社情報']];
   let body = '';
   if (HK.tab === 'stock') body = hkStockHtml();
   else if (HK.tab === 'gild') body = hkGildHtml();
   else if (HK.tab === 'stocktake') body = hkStocktakeHtml();
   else if (HK.tab === 'transfer') body = hkTransferHtml();
   else if (HK.tab === 'history') body = hkHistoryHtml();
+  else if (HK.tab === 'amazon') body = hkaHtml();
+  else if (HK.tab === 'sales') body = hkSalesHtml();
   else body = hkCompanyHtml();
   app.innerHTML = `
     <div class="hk-head">
@@ -23652,12 +23654,12 @@ function hkStockHtml() {
 function hkOpenOut(k) { HK.outJan = k; hkRender(); setTimeout(() => document.getElementById('hk-out-qty')?.focus(), 30); }
 function hkOutModalHtml() {
   const it = HK.items[HK.outJan]; if (!it) return '';
-  const dests = [...new Set(Object.values(HK.moves || {}).filter(m => m.type === 'out' && m.dest).map(m => m.dest))];
-  if (!dests.includes('Amazon（HAK）')) dests.unshift('Amazon（HAK）');
+  // Amazonの注文は「Amazon」タブの取り込みで自動で減るため、ここは卸先への出庫に使う
+  const dests = [...new Set(Object.values(HK.moves || {}).filter(m => m.type === 'out' && m.dest && !String(m.dest).startsWith('Amazon')).map(m => m.dest))];
   return `<div class="hk-modal" onclick="if(event.target===this){HK.outJan=null;hkRender()}"><div>
-    <b>出庫：${hkEsc(hkModelOf(it.jan, it.name, it.model))}</b><span class="hk-note">清洲の在庫：${Number(it.qty) || 0}個。KANETAKA（港区）へ移すときは「港区へ移動」から行ってください。</span>
-    <label>出庫先<input id="hk-out-dest" list="hk-out-dests" value="Amazon（HAK）"></label><datalist id="hk-out-dests">${dests.map(d => `<option value="${hkEsc(d)}">`).join('')}</datalist>
-    <div class="hk-row"><label>個数<input id="hk-out-qty" type="number" min="1" value="1"></label><label>卸単価（任意）<input id="hk-out-price" type="number" min="0"></label></div>
+    <b>出庫：${hkEsc(hkModelOf(it.jan, it.name, it.model))}</b><span class="hk-note">清洲の在庫：${Number(it.qty) || 0}個。卸先への出庫に使います。Amazonの注文は「Amazon」タブの取り込みで自動で減るので、ここでは入れないでください。KANETAKA（港区）へ移すときは「港区へ移動」から行ってください。</span>
+    <label>卸先<input id="hk-out-dest" list="hk-out-dests" placeholder="卸先の名前（一度入れると次から選べます）"></label><datalist id="hk-out-dests">${dests.map(d => `<option value="${hkEsc(d)}">`).join('')}</datalist>
+    <div class="hk-row"><label>個数<input id="hk-out-qty" type="number" min="1" value="1"></label><label>卸単価（税込・売上に入ります）<input id="hk-out-price" type="number" min="0"></label></div>
     <div class="hk-row"><label>日付<input id="hk-out-date" type="date" value="${todayStr()}"></label></div>
     <label>メモ（任意）<input id="hk-out-memo"></label>
     <div class="hk-row" style="justify-content:flex-end"><button class="cm-btn" onclick="HK.outJan=null;hkRender()" style="flex:0 0 auto">キャンセル</button><button class="cm-btn primary" onclick="hkSubmitOut()" style="flex:0 0 auto">出庫を確定</button></div>
@@ -23672,7 +23674,7 @@ async function hkSubmitOut() {
   const memo = document.getElementById('hk-out-memo').value.trim();
   const have = Number(it.qty) || 0;
   if (qty <= 0) { showToast('個数を入力してください'); return; }
-  if (!dest) { showToast('出庫先を入力してください'); return; }
+  if (!dest) { showToast('卸先を入力してください'); return; }
   if (qty > have) { showToast(`在庫は${have}個です。個数を確認してください`); return; }
   const id = hkNewId();
   const upd = {
@@ -24269,6 +24271,322 @@ async function hkRemoveHakUser(email) {
 }
 </script>
 
+
+<script>
+// ============================================================
+// HAK のAmazon（HAKのセラーセントラルの注文）と売上
+// 要望：「HAKもAmazonで販売しており、HAKの卸先もある。HAKの代表も管理できるようにしたい。
+// HAKの代表は売上も見られるとよい」への対応。KANETAKAの出荷管理のAmazonタブと同じ流れ：
+//   HAKの全注文レポート（最終更新日・過去7日）を取り込む → 未出荷は梱包リスト（13時締め）、
+//   出荷済みになったらHAKの清洲在庫を減らす、キャンセルなら戻す、売上（注文日ごと・税込）を自動で記録。
+//   HAKは清洲からヤマト運輸のみで出荷するので、事務所・配送業者・大型の扱いは無い。
+// データはすべて /hak 以下（HAKのアカウントからも読み書きでき、KANETAKAのデータとは混ざらない）：
+//   /hak/amazonOrders/{order-item-id}  {orderId, sku, asin, title, qty, price, purchaseDate, updated, status,
+//                                       itemKey（HAK在庫のキー）, deducted, moveId, skipped, issue, packed}
+//   /hak/amazonAsinMap/{ASIN}          手で選んだHAK在庫のキー
+//   /hak/amazonMeta                    {lastImportAt, cutoffHour, salesFrom}
+//   /hak/sales/amazon/{YYYY-MM-DD}     {amount, n}（注文日ごとのAmazon売上・税込・キャンセル除く）
+// 卸売の売上は、在庫の「出庫」で卸単価を入れた分（出庫先がAmazon以外）から集計する。
+// KANETAKA向けの売上は「港区へ移動」の納品書（取消を除く）の合計。
+// ============================================================
+const HKA = { orders: {}, asinMap: {}, meta: {}, sales: {}, loaded: false, loading: false, plan: null, matchFor: null, openDays: new Set(), showAllRecent: false };
+const HKA_DEST = 'Amazon（HAK）';
+
+async function hkaLoad() {
+  if (HKA.loading) return; HKA.loading = true;
+  try {
+    const [o, a, m, s] = await Promise.all([hkReq('hak/amazonOrders'), hkReq('hak/amazonAsinMap'), hkReq('hak/amazonMeta'), hkReq('hak/sales')]);
+    HKA.orders = o || {}; HKA.asinMap = a || {}; HKA.meta = m || {}; HKA.sales = s || {}; HKA.loaded = true;
+  } catch (e) { showToast('HAKのAmazonの注文を読み込めませんでした'); }
+  HKA.loading = false;
+}
+function hkaItem(k) { return k && HK.items[k] ? HK.items[k] : null; }
+function hkaModel(o) { const it = hkaItem(o.itemKey); return it ? hkModelOf(it.jan, it.name, it.model) : (hkGuessModel(o.title) || ''); }
+function hkaMatch(row) {
+  if (row.asin && HKA.asinMap[row.asin] && HK.items[HKA.asinMap[row.asin]]) return HKA.asinMap[row.asin];
+  const t = normalizeModelStr(row.title); if (!t) return '';
+  let best = '', bestLen = 0, bestQty = -1;
+  Object.entries(HK.items || {}).forEach(([k, it]) => {
+    const m = normalizeModelStr(hkModelOf(it.jan, it.name, it.model));
+    if (m.length < 4 || !t.includes(m)) return;
+    const q = Number(it.qty) || 0;
+    if (m.length > bestLen || (m.length === bestLen && q > bestQty)) { best = k; bestLen = m.length; bestQty = q; }
+  });
+  return best;
+}
+function hkaCutoff() { const h = Number(HKA.meta.cutoffHour); return HKA.meta.cutoffHour != null && h >= 0 && h <= 23 ? h : 13; }
+function hkaShipDay(o) {
+  const t = new Date(o.purchaseDate || o.updated || Date.now());
+  const d = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  if (t.getHours() >= hkaCutoff()) d.setDate(d.getDate() + 1);
+  return ymdKey(d);
+}
+function hkaUnshipped() {
+  return Object.keys(HKA.orders).map(id => ({ _id: id, ...HKA.orders[id] })).filter(o => o.status === 'unshipped')
+    .sort((a, b) => String(a.purchaseDate || '').localeCompare(String(b.purchaseDate || '')));
+}
+
+// ── 取り込み ──
+async function hkaOnFile(input) {
+  const file = input.files && input.files[0]; input.value = '';
+  if (!file) return;
+  let parsed; try { parsed = azParseReport(await azDecodeFile(file)); } catch (e) { parsed = null; }
+  if (!parsed) { showToast('このファイルは読めませんでした。全注文レポート（.txt）を選んでください'); return; }
+  if (!parsed.rows.length) { showToast('注文が入っていませんでした'); return; }
+  await hkaLoad();
+  HKA.plan = hkaBuildPlan(parsed);
+  hkRender();
+}
+function hkaBuildPlan(parsed) {
+  const recs = {}; let nUnshipped = 0, nDeduct = 0, nMatch = 0, nRestore = 0, nSame = 0, nShipNoItem = 0;
+  parsed.rows.forEach(r => {
+    const id = azFirebaseKey(r.itemId), ex = HKA.orders[id] || null;
+    if (ex && ex.updated && r.updated && new Date(r.updated) < new Date(ex.updated)) { nSame++; return; }
+    if (ex && r.status === 'unshipped' && (ex.status === 'shipped' || ex.status === 'cancelled')) { nSame++; return; }
+    const rec = Object.assign({}, ex || {});
+    rec.orderId = r.orderId || rec.orderId || ''; rec.sku = r.sku || rec.sku || '';
+    if (r.asin) rec.asin = r.asin;
+    rec.title = r.title || rec.title || '';
+    if (r.qty > 0) rec.qty = r.qty; else if (!rec.qty) rec.qty = r.status === 'cancelled' ? 0 : 1;
+    if (r.price) rec.price = r.price;
+    if (r.purchaseDate) rec.purchaseDate = r.purchaseDate;
+    if (r.updated) rec.updated = r.updated;
+    if (r.promise) rec.promise = r.promise;
+    if (!rec.itemKey || !HK.items[rec.itemKey]) rec.itemKey = hkaMatch(rec);
+    const prev = ex ? ex.status : '';
+    rec.status = r.status;
+    let action = '';
+    if (r.status === 'cancelled') { if (rec.deducted) { action = 'restore'; nRestore++; } }
+    else if (r.status === 'shipped') {
+      if (!rec.deducted && !rec.skipped) {
+        if (ex && ex.issue && prev === 'shipped') { /* 要確認の欄で対応 */ }
+        else if (rec.itemKey) { action = 'deduct'; nDeduct++; } else { rec.issue = '在庫の商品が見つかりません'; nMatch++; nShipNoItem++; }
+      }
+    } else { if (prev !== 'unshipped') nUnshipped++; if (!rec.itemKey) nMatch++; }
+    if (!ex || action || JSON.stringify(ex) !== JSON.stringify(rec)) recs[id] = { rec, action }; else nSame++;
+  });
+  const nShipped = nDeduct + nShipNoItem;
+  return { kind: parsed.kind, total: parsed.rows.length, recs, nUnshipped, nDeduct, nMatch, nRestore, nSame, nShipped, skipDeduct: !HKA.meta.lastImportAt && nShipped > 0 };
+}
+async function hkaCommit() {
+  const P = HKA.plan; if (!P) return;
+  const btn = document.getElementById('hka-commit-btn'); if (btn) { btn.disabled = true; btn.textContent = '取り込み中…'; }
+  let done = 0, restored = 0;
+  try {
+    const write = {};
+    for (const id of Object.keys(P.recs)) {
+      const { rec, action } = P.recs[id];
+      if (P.skipDeduct && rec.status === 'shipped' && !rec.deducted && !action && rec.issue) { rec.skipped = true; delete rec.issue; }
+      if (action === 'deduct') { if (P.skipDeduct) { rec.skipped = true; delete rec.issue; } else if (await hkaDeduct(id, rec)) done++; }
+      else if (action === 'restore') { await hkaRestore(rec); restored++; }
+      write[id] = rec;
+    }
+    const cutoff = Date.now() - 90 * 86400000;
+    Object.keys(HKA.orders).forEach(id => { const o = HKA.orders[id]; if (write[id] || !o || o.status === 'unshipped') return; const t = new Date(o.purchaseDate || o.updated || 0).getTime(); if (t && t < cutoff) write[id] = null; });
+    if (Object.keys(write).length) await hkReq('hak/amazonOrders', 'PATCH', write);
+    Object.keys(write).forEach(k => { if (write[k] === null) delete HKA.orders[k]; else HKA.orders[k] = write[k]; });
+    // 売上：最初の取り込みでは6日前から（レポートが過去7日分のため）。以後は取り込んだ注文の注文日を計算し直す
+    if (!HKA.meta.salesFrom) { const d = new Date(); d.setDate(d.getDate() - 6); HKA.meta.salesFrom = ymdKey(d); }
+    const days = new Set(Object.values(write).filter(Boolean).map(azOrderDay).filter(d => d && d >= HKA.meta.salesFrom));
+    if (!HKA.meta.lastImportAt) Object.values(HKA.orders).forEach(o => { const d = azOrderDay(o); if (d && d >= HKA.meta.salesFrom) days.add(d); });
+    await hkaSyncSales([...days]);
+    HKA.meta.lastImportAt = Date.now();
+    await hkReq('hak/amazonMeta', 'PATCH', { lastImportAt: HKA.meta.lastImportAt, salesFrom: HKA.meta.salesFrom, lastImportBy: currentSessionEmail() || '' });
+    HKA.plan = null;
+    await hkLoad(); await hkaLoad(); hkRender();
+    showToast(['取り込みました', done ? `在庫を${done}件減らしました` : '', restored ? `${restored}件戻しました` : ''].filter(Boolean).join('・'));
+  } catch (e) {
+    console.error('HAK amazon import error', e);
+    showToast('取り込みに失敗しました。もう一度お試しください');
+    if (btn) { btn.disabled = false; btn.textContent = '取り込む'; }
+  }
+}
+async function hkaSyncSales(days) {
+  if (!days.length) return;
+  const all = Object.values(HKA.orders), upd = {};
+  days.forEach(d => {
+    const list = all.filter(o => o.status !== 'cancelled' && azOrderDay(o) === d);
+    const amount = Math.round(list.reduce((s, o) => s + (Number(o.price) || 0), 0));
+    upd['sales/amazon/' + d] = amount > 0 ? { amount, n: list.length } : null;
+  });
+  await hkReq('hak', 'PATCH', upd);
+}
+// HAKの在庫を減らす（在庫が実際と合っていない間も、足りなくてもそのまま減らす）
+async function hkaDeduct(id, rec) {
+  const it = hkaItem(rec.itemKey), qty = Number(rec.qty) || 0;
+  if (!it) { rec.issue = '在庫の商品が見つかりません'; return false; }
+  if (qty <= 0) { rec.issue = '数量が0です'; return false; }
+  const have = Number(it.qty) || 0, mid = hkNewId();
+  const date = rec.updated ? ymdKey(new Date(rec.updated)) : todayStr();
+  const move = { type: 'out', jan: it.jan, name: it.name, model: hkModelOf(it.jan, it.name, it.model), qty: -qty, before: have, after: have - qty,
+    dest: HKA_DEST, memo: 'Amazon注文 ' + (rec.orderId || ''), amazonOrderItemId: id, date, at: Date.now(), by: currentSessionEmail() };
+  await hkReq('hak', 'PATCH', { ['items/' + rec.itemKey + '/qty']: have - qty, ['items/' + rec.itemKey + '/updatedAt']: Date.now(), ['moves/' + mid]: move });
+  it.qty = have - qty; HK.moves[mid] = move;
+  rec.deducted = true; rec.moveId = mid; rec.shipDate = date; rec.deductedAt = Date.now(); delete rec.issue; delete rec.skipped;
+  return true;
+}
+async function hkaRestore(rec) {
+  if (!rec.deducted) return;
+  const it = hkaItem(rec.itemKey), upd = {};
+  if (it) { const q = (Number(it.qty) || 0) + (Number(rec.qty) || 0); upd['items/' + rec.itemKey + '/qty'] = q; upd['items/' + rec.itemKey + '/updatedAt'] = Date.now(); it.qty = q; }
+  if (rec.moveId) { upd['moves/' + rec.moveId] = null; delete HK.moves[rec.moveId]; }
+  if (Object.keys(upd).length) await hkReq('hak', 'PATCH', upd);
+  rec.deducted = false; rec.moveId = ''; rec.restoredAt = Date.now();
+}
+async function hkaSaveOne(id) { await hkReq('hak/amazonOrders/' + id, 'PUT', HKA.orders[id]); }
+async function hkaRetry(id) { const o = HKA.orders[id]; if (!o) return; try { const ok = await hkaDeduct(id, o); await hkaSaveOne(id); hkRender(); showToast(ok ? '在庫を減らしました' : (o.issue || '減らせませんでした')); } catch (e) { showToast('失敗しました'); } }
+async function hkaSkip(id) { const o = HKA.orders[id]; if (!o) return; if (!await showConfirm('この注文は在庫を減らさず、記録だけにしますか？')) return; o.skipped = true; delete o.issue; await hkaSaveOne(id); hkRender(); }
+async function hkaUndo(id) {
+  const o = HKA.orders[id]; if (!o) return;
+  if (!await showConfirm(`${hkaModel(o) || '商品'}（${o.qty}個）の在庫を戻しますか？\nこの注文は以後「記録だけ」になり、在庫は減らしません`)) return;
+  try { await hkaRestore(o); o.skipped = true; await hkaSaveOne(id); hkRender(); showToast('在庫を戻しました'); } catch (e) { showToast('失敗しました'); }
+}
+async function hkaSetPacked(ids, val) {
+  const upd = {};
+  String(ids).split(',').filter(Boolean).forEach(id => { const o = HKA.orders[id]; if (!o) return; if (val) o.packed = Date.now(); else delete o.packed; upd[id + '/packed'] = val ? Date.now() : null; });
+  hkRender();
+  try { await hkReq('hak/amazonOrders', 'PATCH', upd); } catch (e) { showToast('保存に失敗しました'); }
+}
+async function hkaSetCutoff(h) { HKA.meta.cutoffHour = Number(h); try { await hkReq('hak/amazonMeta/cutoffHour', 'PUT', Number(h)); } catch (e) {} hkRender(); }
+
+// ── 商品を手で選ぶ ──
+function hkaOpenMatch(id) { HKA.matchFor = id; HKA.matchQ = hkaModel(HKA.orders[id] || {}); hkRender(); setTimeout(() => document.getElementById('hka-match-q')?.focus(), 30); }
+function hkaMatchModalHtml() {
+  const o = HKA.orders[HKA.matchFor]; if (!o) return '';
+  const q = normalizeModelStr(HKA.matchQ || ''), raw = String(HKA.matchQ || '').trim();
+  const list = Object.entries(HK.items || {}).filter(([k, it]) => q && (normalizeModelStr(hkModelOf(it.jan, it.name, it.model)).includes(q) || String(it.jan || '').includes(q) || String(it.name || '').includes(raw))).slice(0, 30);
+  return `<div class="hk-modal" onclick="if(event.target===this){HKA.matchFor=null;hkRender()}"><div>
+    <b>HAKの在庫から商品を選ぶ</b><span class="hk-note">${hkEsc(String(o.title || '').slice(0, 90))}</span>
+    <input id="hka-match-q" placeholder="型番・JAN・商品名で検索" value="${hkEsc(HKA.matchQ || '')}" oninput="HKA.matchQ=this.value;clearTimeout(HKA._mt);HKA._mt=setTimeout(()=>{hkRender();const e=document.getElementById('hka-match-q');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},250)">
+    <div>${list.length ? list.map(([k, it]) => `<div class="az-pick" onclick="hkaChoose('${hkEsc(k)}')"><b>${hkEsc(hkModelOf(it.jan, it.name, it.model))}</b> <span class="hk-note">在庫 ${Number(it.qty) || 0}・${hkEsc(it.jan)}</span></div>`).join('') : '<div class="az-empty">見つかりません。型番の一部で検索してください</div>'}</div>
+    <p class="hk-note">HAKの在庫に無い商品は、先に「棚卸し」で登録してから選んでください。</p>
+    <div class="hk-row" style="justify-content:flex-end"><button class="cm-btn" style="flex:0 0 auto" onclick="HKA.matchFor=null;hkRender()">閉じる</button></div>
+  </div></div>`;
+}
+async function hkaChoose(itemKey) {
+  const id = HKA.matchFor, o = HKA.orders[id]; HKA.matchFor = null; if (!o) return;
+  try {
+    if (o.asin) { HKA.asinMap[o.asin] = itemKey; await hkReq('hak/amazonAsinMap/' + azFirebaseKey(o.asin), 'PUT', itemKey); }
+    const same = Object.keys(HKA.orders).filter(k => k === id || (!HKA.orders[k].deducted && ((o.asin && HKA.orders[k].asin === o.asin) || (!o.asin && HKA.orders[k].title === o.title))));
+    let n = 0;
+    for (const k of same) { const r = HKA.orders[k]; r.itemKey = itemKey; if (r.status === 'shipped' && !r.deducted && !r.skipped) { if (await hkaDeduct(k, r)) n++; } await hkaSaveOne(k); }
+    hkRender(); showToast(n ? `商品を結びつけ、在庫を${n}件減らしました` : '商品を結びつけました');
+  } catch (e) { showToast('保存に失敗しました'); }
+}
+
+// ── 画面 ──
+function hkaHtml() {
+  if (!HKA.loaded) { hkaLoad().then(() => { if (HK.tab === 'amazon') hkRender(); }); return '<div class="tk-empty">読み込み中…</div>'; }
+  const today = todayStr(), m = HKA.meta;
+  const P = HKA.plan;
+  const preview = P ? `<div class="hk-card" style="border-color:#0f766e"><h3>取り込みの確認<small>全注文レポート・${P.total}件</small></h3>
+    <div class="az-sum"><div><b>${P.nUnshipped}</b>梱包リストに追加</div><div><b>${P.nDeduct}</b>出荷済み→在庫を減らす</div><div><b>${P.nRestore}</b>キャンセル→在庫を戻す</div><div><b style="color:${P.nMatch ? '#c0392b' : 'inherit'}">${P.nMatch}</b>商品の確認が必要</div></div>
+    ${P.nShipped ? `<label style="flex-direction:row;align-items:flex-start;gap:8px;font-size:12.5px;font-weight:400;color:var(--text)"><input type="checkbox" ${P.skipDeduct ? 'checked' : ''} onchange="HKA.plan.skipDeduct=this.checked" style="margin-top:3px"><span>今回の出荷済み${P.nShipped}件は在庫を減らさず、記録だけにする<br><span class="hk-note">はじめて取り込むときや、すでに出庫で手で減らした分が含まれるときにチェックしてください</span></span></label>` : ''}
+    ${P.nSame ? `<p class="hk-note">${P.nSame}件は取り込み済みで、変更はありません</p>` : ''}
+    <div class="hk-row"><button class="cm-btn" onclick="HKA.plan=null;hkRender()">やめる</button><button class="cm-btn primary" id="hka-commit-btn" onclick="hkaCommit()" style="flex:2 1 200px">取り込む</button></div></div>` : '';
+
+  const all = Object.keys(HKA.orders).map(id => ({ _id: id, ...HKA.orders[id] }));
+  const issues = all.filter(o => o.status === 'shipped' && !o.deducted && !o.skipped);
+  const recentAll = all.filter(o => o.deducted).sort((a, b) => (b.deductedAt || 0) - (a.deductedAt || 0));
+  const recent = HKA.showAllRecent ? recentAll : recentAll.slice(0, 10);
+  const unshipped = hkaUnshipped();
+  const by = {};
+  unshipped.forEach(o => { const d0 = hkaShipDay(o), d = d0 < today ? today : d0; o._late = d0 < today; (by[d] = by[d] || []).push(o); });
+  if (unshipped.length && !by[today]) by[today] = [];
+  const sections = Object.keys(by).sort().map(d => ({ day: d, list: by[d] }));
+
+  const groupRows = list => {
+    const g = {};
+    list.forEach(o => { const k = o.itemKey || ('?' + (o.asin || o.title)); if (!g[k]) g[k] = { itemKey: o.itemKey, model: hkaModel(o), qty: 0, ids: [], packed: 0 }; g[k].qty += Number(o.qty) || 0; g[k].ids.push(o._id); if (o.packed) g[k].packed++; });
+    return Object.values(g).sort((a, b) => ((a.packed === a.ids.length) - (b.packed === b.ids.length)) || b.qty - a.qty).map(x => {
+      const it = hkaItem(x.itemKey), done = x.packed === x.ids.length, part = x.packed && !done, have = it ? Number(it.qty) || 0 : 0;
+      return `<div class="az-grp ${done ? 'az-done' : ''}"><button class="az-chk ${done ? 'on' : ''}" onclick="hkaSetPacked('${x.ids.join(',')}',${done ? 'false' : 'true'})">${done ? '✓' : part ? `<span style="color:#2e7d32;font-size:11px">${x.packed}</span>` : ''}</button>
+        <div><div><b>${hkEsc(x.model || '（型番不明）')}</b> <span class="az-qty ${x.qty > 1 ? 'multi' : ''}">×${x.qty}</span>${part ? ` <span class="hk-note">${x.packed}/${x.ids.length}件 梱包済み</span>` : ''}</div>
+        <div class="hk-note">${it ? `在庫 ${have}` : '<span class="az-tag">商品が未確認</span>'}${it && have < x.qty ? ' <span class="az-tag">在庫不足</span>' : ''}</div></div></div>`;
+    }).join('');
+  };
+  const orderCard = o => {
+    const it = hkaItem(o.itemKey);
+    return `<div class="az-ord ${it ? '' : 'warn'} ${o.packed ? 'az-done' : ''}" ${o._late ? 'style="border-color:#e57373"' : ''}>
+      <div style="display:flex;justify-content:space-between;gap:8px"><button class="az-chk ${o.packed ? 'on' : ''}" onclick="hkaSetPacked('${o._id}',${o.packed ? 'false' : 'true'})">${o.packed ? '✓' : ''}</button>
+        <div style="min-width:0;flex:1"><div class="az-model">${hkEsc(hkaModel(o) || '（型番不明）')}${o._late ? ' <span class="az-tag">出荷遅れ</span>' : ''}</div><div class="az-title">${hkEsc(o.title)}</div></div>
+        <div class="az-qty ${o.qty > 1 ? 'multi' : ''}" style="white-space:nowrap">×${o.qty}</div></div>
+      <div class="az-meta"><span>注文 ${hkEsc(azFmtTime(o.purchaseDate))}</span><span>SKU ${hkEsc(o.sku)}</span><span>${hkEsc(o.orderId)}</span></div>
+      <div class="az-row">${it ? '' : '<span class="az-tag">在庫の商品が見つかりません</span>'}<button class="hk-btn" style="margin-left:auto" onclick="hkaOpenMatch('${o._id}')">${it ? '商品を変更' : '商品を選ぶ'}</button></div></div>`;
+  };
+  const sectionHtml = sec => {
+    const qty = sec.list.reduce((s, o) => s + (Number(o.qty) || 0), 0), isToday = sec.day === today, open = HKA.openDays.has(sec.day);
+    const need = sec.list.filter(o => !hkaItem(o.itemKey)), rest = sec.list.filter(o => hkaItem(o.itemKey)).sort((a, b) => (!!a.packed - !!b.packed));
+    const nP = sec.list.filter(o => o.packed).length, late = sec.list.filter(o => o._late).length;
+    return `<div class="hk-card" ${isToday ? 'style="border-color:#0f766e"' : ''}>
+      <h3><span>${isToday ? '📦' : '🗓'} ${hkEsc(azDayLabel(sec.day))}に出荷（${sec.list.length}件・${qty}個）${late ? ` <span class="az-tag">出荷遅れ ${late}件</span>` : ''}${nP ? ` <span class="az-tag ok">梱包済み ${nP}/${sec.list.length}</span>` : ''}</span>
+        ${sec.list.length ? `<button class="hk-btn" onclick="hkaPrint('${sec.day}')">🖨 印刷</button>` : ''}</h3>
+      ${sec.list.length ? `<div>${groupRows(sec.list)}</div>${need.map(orderCard).join('')}${rest.length ? `<button class="hk-btn" style="width:100%;padding:8px" onclick="HKA.openDays.has('${sec.day}')?HKA.openDays.delete('${sec.day}'):HKA.openDays.add('${sec.day}');hkRender()">${open ? '▲ 注文ごとの表示を閉じる' : `▼ 注文ごとに見る（${rest.length}件）`}</button>` : ''}${open ? rest.map(orderCard).join('') : ''}` : '<div class="az-empty">この日に出荷する注文はありません</div>'}
+    </div>`;
+  };
+  const issueCard = o => `<div class="az-ord warn"><div class="az-model">${hkEsc(hkaModel(o) || '（型番不明）')} <span class="az-qty">×${o.qty}</span></div><div class="az-title">${hkEsc(o.title)}</div>
+    <div class="az-meta"><span class="az-tag">${hkEsc(o.issue || '在庫を減らせていません')}</span><span>出荷 ${hkEsc(azFmtTime(o.updated))}</span></div>
+    <div class="az-row" style="justify-content:flex-end;flex-wrap:wrap"><button class="hk-btn" onclick="hkaOpenMatch('${o._id}')">商品を選ぶ</button>${hkaItem(o.itemKey) ? `<button class="hk-btn" onclick="hkaRetry('${o._id}')">在庫を減らす</button>` : ''}<button class="hk-btn" onclick="hkaSkip('${o._id}')">記録だけにする</button></div></div>`;
+  const cutSel = `<select onchange="hkaSetCutoff(this.value)" style="width:auto">${[10, 11, 12, 13, 14, 15, 16, 17].map(h => `<option value="${h}" ${h === hkaCutoff() ? 'selected' : ''}>${h}時</option>`).join('')}</select>`;
+
+  return `<input type="file" id="hka-file" accept=".txt,.tsv,.csv,text/plain" style="display:none" onchange="hkaOnFile(this)">
+    <div class="hk-card"><h3>HAKのAmazonの注文を取り込む<button class="cm-btn primary" onclick="document.getElementById('hka-file').click()">📥 レポートを選ぶ</button></h3>
+      <p class="hk-note">HAKのセラーセントラル →「注文レポート」→「全注文レポート」（レポートの種類：最終更新日・過去7日）をダウンロードして選んでください。毎日取り込んでも二重にはなりません。出荷済みになった注文は、HAKの清洲在庫から自動で減ります。</p>
+      ${m.lastImportAt ? `<p class="hk-note">前回の取り込み：${hkEsc(azFmtTime(new Date(m.lastImportAt).toISOString()))}${m.salesFrom ? `　売上の自動記録：${hkEsc(m.salesFrom.slice(5).replace('-', '/'))}の注文から` : ''}</p>` : ''}
+      <div class="hk-note" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">当日出荷の締め：${cutSel}までの注文はその日に出荷（清洲・ヤマト運輸）</div></div>
+    ${preview}
+    ${issues.length ? `<div class="hk-card" style="border-color:#e6b35a"><h3>⚠️ 要確認（出荷済みで在庫を減らせていない注文）${issues.length}件</h3>${issues.map(issueCard).join('')}</div>` : ''}
+    ${unshipped.length ? sections.map(sectionHtml).join('') : '<div class="hk-card"><h3>📦 梱包リスト</h3><div class="az-empty">未出荷の注文はありません</div></div>'}
+    <div class="hk-card"><h3>✅ 在庫を減らした注文</h3>
+      ${recent.length ? recent.map(o => `<div class="az-grp"><div><div><b>${hkEsc(hkaModel(o))}</b> ×${o.qty}</div><div class="hk-note">${hkEsc(o.shipDate || '')} 出荷・${hkEsc(o.orderId)}</div></div><button class="hk-btn" onclick="hkaUndo('${o._id}')">在庫を戻す</button></div>`).join('') : '<div class="az-empty">まだありません</div>'}
+      ${recentAll.length > 10 ? `<button class="hk-btn" onclick="HKA.showAllRecent=!HKA.showAllRecent;hkRender()">${HKA.showAllRecent ? '閉じる' : `すべて表示（${recentAll.length}件）`}</button>` : ''}</div>
+    ${HKA.matchFor ? hkaMatchModalHtml() : ''}`;
+}
+function hkaPrint(day) {
+  const list = hkaUnshipped().filter(o => { const d0 = hkaShipDay(o); return (d0 < todayStr() ? todayStr() : d0) === day; }).sort((a, b) => hkaModel(a).localeCompare(hkaModel(b)));
+  const total = list.reduce((s, o) => s + (Number(o.qty) || 0), 0);
+  hkPrintDoc('HAK_Amazon梱包リスト_' + day, `<style>h1{font-size:18px;margin:0 0 4px}.m{font-size:11px;color:#666;margin-bottom:10px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #bbb;padding:6px;vertical-align:top}th{background:#eee;font-size:11px}.t{font-size:10px;color:#666}.s{font-size:10px;word-break:break-all}</style>
+    <h1>HAK Amazon 梱包リスト　${hkEsc(azDayLabel(day))}出荷分</h1><div class="m">${list.length}件・${total}個（清洲・ヤマト運輸）</div>
+    <table><thead><tr><th style="width:28px">✓</th><th>型番・商品名</th><th style="width:40px">数量</th><th style="width:120px">SKU</th><th style="width:130px">注文番号</th></tr></thead><tbody>
+    ${list.map(o => `<tr><td style="text-align:center;font-size:16px">☐</td><td><b>${hkEsc(hkaModel(o) || '（型番不明）')}</b><div class="t">${hkEsc(String(o.title || '').slice(0, 60))}</div></td><td style="text-align:center;font-weight:800">${o.qty}</td><td class="s">${hkEsc(o.sku)}</td><td class="s">${hkEsc(o.orderId)}</td></tr>`).join('')}</tbody></table>`);
+}
+
+// ── 売上（Amazon・卸売・KANETAKA向け）──
+function hkSalesRows() {
+  const rows = [];
+  Object.entries((HKA.sales && HKA.sales.amazon) || {}).forEach(([d, v]) => rows.push({ date: d, ch: 'amazon', amount: Number(v && v.amount) || 0 }));
+  Object.values(HK.moves || {}).forEach(mv => { if (mv.type === 'out' && mv.unitPrice && !String(mv.dest || '').startsWith('Amazon')) rows.push({ date: mv.date, ch: 'whole', amount: Math.round(Number(mv.unitPrice) * Math.abs(Number(mv.qty) || 0)), dest: mv.dest }); });
+  Object.values(HK.transfers || {}).forEach(t => { if (!t.canceled) rows.push({ date: t.date, ch: 'kanetaka', amount: Number(t.total) || 0 }); });
+  return rows.filter(r => r.date);
+}
+function hkSalesHtml() {
+  if (!HKA.loaded) { hkaLoad().then(() => { if (HK.tab === 'sales') hkRender(); }); return '<div class="tk-empty">読み込み中…</div>'; }
+  const rows = hkSalesRows(), today = todayStr();
+  const sum = (f) => rows.filter(f).reduce((s, r) => s + r.amount, 0);
+  const now = new Date(), fy = now.getMonth() >= 2 ? now.getFullYear() : now.getFullYear() - 1;
+  const months = Array.from({ length: 12 }, (_, i) => ymKey(new Date(fy, 2 + i, 1)));
+  const CH = [['amazon', 'Amazon'], ['whole', '卸売'], ['kanetaka', 'KANETAKA']];
+  const ym = HK.salesYm || today.slice(0, 7);
+  const [y, mo] = ym.split('-').map(Number), days = new Date(y, mo, 0).getDate();
+  const dayRows = Array.from({ length: days }, (_, i) => `${ym}-${String(i + 1).padStart(2, '0')}`).filter(d => d <= today).reverse()
+    .map(d => ({ d, v: CH.map(([c]) => sum(r => r.ch === c && r.date === d)) })).filter(x => x.v.some(Boolean));
+  const dests = {};
+  rows.filter(r => r.ch === 'whole' && r.date.startsWith(ym)).forEach(r => { dests[r.dest || '（未入力）'] = (dests[r.dest || '（未入力）'] || 0) + r.amount; });
+  const prevYm = ymKey(new Date(y, mo - 2, 1)), nextYm = ymKey(new Date(y, mo, 1));
+  return `<div class="hk-tiles"><div><span>今日</span><b>${hkYen(sum(r => r.date === today))}</b></div><div><span>今月</span><b>${hkYen(sum(r => r.date.startsWith(today.slice(0, 7))))}</b></div><div><span>今期（${fy}年3月〜）</span><b>${hkYen(sum(r => r.date >= months[0] + '-01'))}</b></div><div><span>今月のAmazon</span><b>${hkYen(sum(r => r.ch === 'amazon' && r.date.startsWith(today.slice(0, 7))))}</b></div></div>
+    <div class="hk-card"><h3>月別の売上<small>${fy}年3月〜・税込（卸売は入力した卸単価×個数）</small></h3>
+      <div class="hk-scroll"><table><thead><tr><th>月</th>${CH.map(([, l]) => `<th class="r">${l}</th>`).join('')}<th class="r">合計</th></tr></thead><tbody>
+      ${months.map(mm => { const v = CH.map(([c]) => sum(r => r.ch === c && r.date.startsWith(mm))); return `<tr><td>${Number(mm.slice(5))}月</td>${v.map(x => `<td class="r">${hkYen(x)}</td>`).join('')}<td class="r"><b>${hkYen(v.reduce((a, b) => a + b, 0))}</b></td></tr>`; }).join('')}
+      ${(() => { const v = CH.map(([c]) => sum(r => r.ch === c && r.date >= months[0] + '-01')); return `<tr style="background:var(--surface)"><td><b>年間合計</b></td>${v.map(x => `<td class="r"><b>${hkYen(x)}</b></td>`).join('')}<td class="r"><b>${hkYen(v.reduce((a, b) => a + b, 0))}</b></td></tr>`; })()}
+      </tbody></table></div></div>
+    <div class="hk-card"><h3><span>${y}年${mo}月の日別</span><span><button class="hk-btn" onclick="HK.salesYm='${prevYm}';hkRender()">◀</button> <button class="hk-btn" ${nextYm > today.slice(0, 7) ? 'disabled' : ''} onclick="HK.salesYm='${nextYm}';hkRender()">▶</button></span></h3>
+      <div class="hk-scroll"><table><thead><tr><th>日付</th>${CH.map(([, l]) => `<th class="r">${l}</th>`).join('')}<th class="r">合計</th></tr></thead><tbody>
+      ${dayRows.length ? dayRows.map(x => `<tr><td>${Number(x.d.slice(5, 7))}/${Number(x.d.slice(8))}（${'日月火水木金土'[new Date(x.d + 'T00:00:00').getDay()]}）</td>${x.v.map(v => `<td class="r">${v ? hkYen(v) : '—'}</td>`).join('')}<td class="r"><b>${hkYen(x.v.reduce((a, b) => a + b, 0))}</b></td></tr>`).join('') : '<tr><td colspan="5" class="tk-empty">この月の売上はまだありません</td></tr>'}
+      </tbody></table></div>
+      ${Object.keys(dests).length ? `<p class="hk-note"><b>卸先ごと（${mo}月）：</b>${Object.entries(dests).sort((a, b) => b[1] - a[1]).map(([d, v]) => `${hkEsc(d)} ${hkYen(v)}`).join('　')}</p>` : ''}
+      <p class="hk-note">Amazonは取り込んだ注文の販売額（注文日ごと・キャンセル分は除く）、卸売は在庫の「出庫」で卸単価を入れた分、KANETAKAは「港区へ移動」の納品書の合計です。</p></div>`;
+}
+</script>
 
 </body>
 </html>
