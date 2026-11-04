@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-04j">
+<meta name="app-build" content="2026-11-04k">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -22533,7 +22533,7 @@ function caHomeTileHtml() {
 .az-sum div { background:var(--surface); border-radius:8px; padding:8px; text-align:center; font-size:11px; color:var(--text-muted); }
 .az-sum b { display:block; font-size:18px; color:var(--text); }
 .az-grp { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--border); font-size:13px; }
-.az-grp > div:first-child { flex:1; min-width:0; }
+.az-grp > div { flex:1; min-width:0; }
 .az-grp > select, .az-grp > button { flex-shrink:0; }
 .az-grp:last-child { border-bottom:none; }
 .az-ord { border:1px solid var(--border); border-radius:10px; padding:10px; margin-bottom:8px; }
@@ -22548,6 +22548,10 @@ function caHomeTileHtml() {
 .az-tag { display:inline-block; font-size:10.5px; font-weight:700; padding:2px 6px; border-radius:4px; background:#fdecea; color:#c0392b; }
 .az-tag.ok { background:#e8f5e9; color:#2e7d32; }
 .az-tag.gray { background:var(--surface); color:var(--text-muted); }
+.az-chk { flex-shrink:0; width:28px; height:28px; border-radius:7px; border:2px solid #bbb; background:var(--white); color:#fff; font-size:16px; font-weight:900; line-height:1; cursor:pointer; padding:0; }
+.az-chk.on { background:#2e7d32; border-color:#2e7d32; }
+.az-done { opacity:.45; }
+.az-done b, .az-done .az-model { text-decoration:line-through; }
 .az-empty { text-align:center; padding:14px; color:var(--text-muted); font-size:12.5px; }
 .az-modal { display:none; position:fixed; inset:0; z-index:690; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; padding:24px; }
 .az-modal-box { background:var(--white); border-radius:16px; padding:18px; width:100%; max-width:420px; max-height:82vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.2); }
@@ -23066,16 +23070,18 @@ function azRender() {
     const groups = {};
     list.forEach(o => {
       const k = o.productKey || ('?' + (o.asin || o.title));
-      if (!groups[k]) groups[k] = { productKey: o.productKey, model: azModelOf(o), qty: 0, ids: [], locs: new Set() };
+      if (!groups[k]) groups[k] = { productKey: o.productKey, model: azModelOf(o), qty: 0, ids: [], locs: new Set(), packed: 0 };
       groups[k].qty += Number(o.qty) || 0; groups[k].ids.push(o._id); groups[k].locs.add(o.loc);
+      if (o.packed) groups[k].packed++;
     });
-    return Object.values(groups).sort((a, b) => b.qty - a.qty).map(g => {
+    return Object.values(groups).sort((a, b) => ((a.packed === a.ids.length) - (b.packed === b.ids.length)) || b.qty - a.qty).map(g => {
+      const done = g.packed === g.ids.length, part = g.packed && !done;
       const p = azProduct(g.productKey);
       const bd = p ? computeLocBreakdown(p) : null;
       const stockTxt = bd ? stockLocations.map(l => `${azEsc(l.name)} ${bd.byLoc[l.id] || 0}`).join('・') : '';
       const short = p && (Number(p.stock) || 0) < g.qty;
       const locSel = p && g.locs.size === 1 ? azLocSelect([...g.locs][0], `azSetIdsLoc('${g.ids.join(',')}',this.value)`) : (p ? '<span class="az-sub">注文ごとに選択</span>' : '');
-      return `<div class="az-grp"><div><div><b>${azEsc(g.model || '（型番不明）')}</b> <span class="az-qty ${g.qty > 1 ? 'multi' : ''}">×${g.qty}</span>${p ? ' ' + azCarrierTag({ productKey: g.productKey }) : ''}</div>
+      return `<div class="az-grp ${done ? 'az-done' : ''}"><button class="az-chk ${done ? 'on' : ''}" title="梱包済みにする" onclick="azSetPacked('${g.ids.join(',')}',${done ? 'false' : 'true'})">${done ? '✓' : part ? `<span style="color:#2e7d32;font-size:11px">${g.packed}</span>` : ''}</button><div><div><b>${azEsc(g.model || '（型番不明）')}</b> <span class="az-qty ${g.qty > 1 ? 'multi' : ''}">×${g.qty}</span>${p ? ' ' + azCarrierTag({ productKey: g.productKey }) : ''}${part ? ` <span class="az-sub">${g.packed}/${g.ids.length}件 梱包済み</span>` : ''}</div>
         <div class="az-sub">${p ? '在庫 ' + stockTxt : '<span class="az-tag">商品が未確認</span>'}${short ? ' <span class="az-tag">在庫不足</span>' : ''}</div></div>${locSel}</div>`;
     }).join('');
   };
@@ -23083,8 +23089,8 @@ function azRender() {
   const orderCard = o => {
     const p = azProduct(o.productKey);
     const promise = o.promise ? `<span>出荷期限 ${azEsc(azFmtTime(o.promise))}</span>` : '';
-    return `<div class="az-ord ${p ? '' : 'warn'}" ${o._late ? 'style="border-color:#e57373"' : ''}>
-      <div style="display:flex;justify-content:space-between;gap:8px"><div style="min-width:0"><div class="az-model">${azEsc(azModelOf(o) || '（型番不明）')} ${p ? azCarrierTag(o) : ''}${o._late ? ' <span class="az-tag">出荷遅れ</span>' : ''}</div>
+    return `<div class="az-ord ${p ? '' : 'warn'} ${o.packed ? 'az-done' : ''}" ${o._late ? 'style="border-color:#e57373"' : ''}>
+      <div style="display:flex;justify-content:space-between;gap:8px"><button class="az-chk ${o.packed ? 'on' : ''}" title="梱包済みにする" onclick="azSetPacked('${o._id}',${o.packed ? 'false' : 'true'})">${o.packed ? '✓' : ''}</button><div style="min-width:0;flex:1"><div class="az-model">${azEsc(azModelOf(o) || '（型番不明）')} ${p ? azCarrierTag(o) : ''}${o._late ? ' <span class="az-tag">出荷遅れ</span>' : ''}</div>
         <div class="az-title">${azEsc(o.title)}</div></div><div class="az-qty ${o.qty > 1 ? 'multi' : ''}" style="white-space:nowrap">×${o.qty}</div></div>
       <div class="az-meta"><span>注文 ${azEsc(azFmtTime(o.purchaseDate))}</span>${promise}${azSkuLine(o)}<span>${azEsc(o.orderId)}</span></div>
       <div class="az-row" style="flex-wrap:wrap">${p ? azLocSelect(o.loc, `azSetLoc('${o._id}',this.value)`) : '<span class="az-tag">在庫の商品が見つかりません</span>'}
@@ -23099,13 +23105,14 @@ function azRender() {
     const nSeino = sec.list.filter(o => azIsLarge(o)).reduce((s, o) => s + (Number(o.qty) || 0), 0);
     // 注文ごとのカードは閉じておき、タップで開く。商品が見つからない注文だけは常に表示する
     const open = AZ.openDays.has(sec.day);
-    const need = sec.list.filter(o => !azProduct(o.productKey)), rest = sec.list.filter(o => azProduct(o.productKey));
+    const need = sec.list.filter(o => !azProduct(o.productKey)), rest = sec.list.filter(o => azProduct(o.productKey)).sort((a, b) => (!!a.packed - !!b.packed));
+    const nPacked = sec.list.filter(o => o.packed).length;
     const needCards = need.map(orderCard).join('');
     const restCards = rest.map(orderCard).join('');
     const toggle = rest.length ? `<button class="az-btn small" style="width:100%;margin-top:4px" onclick="azToggleDay('${sec.day}')">${open ? '▲ 注文ごとの表示を閉じる' : `▼ 注文ごとに見る（${rest.length}件）`}</button>` : '';
     const carrierLine = sec.list.length ? `<div class="az-sub" style="margin:-2px 0 8px">🐈 ヤマト運輸 ${qty - nSeino}個　🚛 西濃運輸 ${nSeino}個</div>` : '';
     return `<div class="az-card" ${isToday ? 'style="border-color:#3a3a3a"' : ''}>
-      <div class="az-h"><span>${isToday ? '📦' : '🗓'} ${azEsc(azDayLabel(sec.day))}に出荷（${sec.list.length}件・${qty}個）${late ? ` <span class="az-tag">出荷遅れ ${late}件</span>` : ''}</span>
+      <div class="az-h"><span>${isToday ? '📦' : '🗓'} ${azEsc(azDayLabel(sec.day))}に出荷（${sec.list.length}件・${qty}個）${late ? ` <span class="az-tag">出荷遅れ ${late}件</span>` : ''}${nPacked ? ` <span class="az-tag ok">梱包済み ${nPacked}/${sec.list.length}</span>` : ''}</span>
         ${sec.list.length ? `<button class="az-btn small" onclick="azPrintPackList('${sec.day}')">🖨 印刷</button>` : ''}</div>
       ${carrierLine}
       ${sec.list.length ? `<div style="margin-bottom:6px">${groupRowsOf(sec.list)}</div>${needCards}${toggle}${open ? restCards : ''}` : '<div class="az-empty">この日に出荷する注文はありません</div>'}
@@ -23223,7 +23230,7 @@ async function azPrefetchHome() {
 // 今日までに出荷する未出荷の注文（出荷遅れを含む）
 function azHomeShipToday() {
   const today = todayStr();
-  return azUnshippedList().filter(o => azShipDay(o) <= today);
+  return azUnshippedList().filter(o => !o.packed && azShipDay(o) <= today);
 }
 // ── Amazonの売上（EC売上に記録された販路Amazonの分。自動記録・以前の手入力の両方） ──
 function azSalesCardHtml() {
@@ -23273,6 +23280,15 @@ function azSalesCardHtml() {
     </details>
     <div class="az-sub" style="margin-top:8px">取り込むたびに注文日ごとの金額が自動で入ります（キャンセル分は除く）。自動にする前の分は、以前の手入力の金額です。</div>
   </div>`;
+}
+// 梱包済みのチェック（ほかの人の画面にも反映。次の取り込みで出荷済みになれば、リストから消える）
+async function azSetPacked(ids, val) {
+  const list = String(ids).split(',').filter(Boolean);
+  const write = {};
+  list.forEach(id => { const o = AZ.orders[id]; if (!o) return; o.packed = val ? Date.now() : null; if (!val) delete o.packed; write[id + '/packed'] = val ? Date.now() : null; });
+  azRender();
+  try { await fetch(authedUrl('/amazonOrders.json'), { method: 'PATCH', body: JSON.stringify(write) }); }
+  catch (e) { showToast('保存に失敗しました'); }
 }
 function azToggleDay(day) { if (AZ.openDays.has(day)) AZ.openDays.delete(day); else AZ.openDays.add(day); azRender(); }
 async function azSetIdsLoc(ids, loc) {
