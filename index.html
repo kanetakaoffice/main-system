@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-04c">
+<meta name="app-build" content="2026-11-04d">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -22550,7 +22550,9 @@ function caHomeTileHtml() {
     <div id="az-match-desc" class="az-sub" style="margin-bottom:10px"></div>
     <input type="text" id="az-match-q" placeholder="型番・商品名で検索" oninput="azRenderMatchResults()" style="width:100%;box-sizing:border-box;padding:10px;font-size:15px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:8px">
     <div id="az-match-results"></div>
-    <div style="margin-top:12px"><button class="az-btn" style="width:100%" onclick="azCloseMatch()">閉じる</button></div>
+    <div class="az-sub" style="margin-top:12px">在庫に登録がない場合は、先に商品登録をしてから、もう一度「商品を選ぶ」を押してください。</div>
+    <div style="display:flex;gap:8px;margin-top:8px"><button class="az-btn" style="flex:1" onclick="azCloseMatch()">閉じる</button>
+      <button class="az-btn primary" style="flex:1" onclick="azGoRegister()">＋ 商品登録へ</button></div>
   </div>
 </div>
 
@@ -22577,7 +22579,7 @@ function caHomeTileHtml() {
 //   /amazonMeta … 前回の取り込み日時など
 //   販売額（price）は今は画面に出さず記録だけしておく（後で利益の目安を出す場合に使う）。
 // ============================================================
-const AZ = { orders: {}, asinMap: {}, meta: {}, loaded: false, plan: null, matchFor: null, showAllRecent: false };
+const AZ = { orders: {}, asinMap: {}, meta: {}, loaded: false, plan: null, matchFor: null, showAllRecent: false, openDays: new Set() };
 const AZ_SUPPLIERS = [['hak', '（株）HAK'], ['yy', '電脳（Yahoo）'], ['yh', '電脳（Yahoo）'], ['e', 'EDION'], ['y', 'ヤマダ電機']];
 const AZ_KEEP_DAYS = 90;
 
@@ -22814,7 +22816,7 @@ async function azDeduct(id, rec) {
   const qty = Number(rec.qty) || 0;
   if (!prod) { rec.issue = '商品が見つかりません'; return false; }
   if (qty <= 0) { rec.issue = '数量が0です'; return false; }
-  if ((Number(prod.stock) || 0) < qty) { rec.issue = `在庫が足りません（在庫${Number(prod.stock) || 0}個）`; return false; }
+  // 在庫の数がまだ実際と合っていない（棚卸前）ため、足りなくてもそのまま減らす（マイナス表示になる）
   const loc = stockLocations.some(l => l.id === rec.loc) ? rec.loc : azSuggestLoc(prod, qty);
   const before = Number(prod.stock) || 0;
   const st = locStateAfterDelta(prod, loc, -qty);
@@ -22897,6 +22899,16 @@ function azOpenMatch(id) {
   azRenderMatchResults();
   document.getElementById('az-match-modal').style.display = 'flex';
   setTimeout(() => q.focus(), 50);
+}
+// 商品登録画面を開き、型番・商品名を入れておく
+function azGoRegister() {
+  const o = AZ.orders[AZ.matchFor]; azCloseMatch();
+  showInvScreen('inv-add');
+  setTimeout(() => {
+    const m = document.getElementById('inv-model'), n = document.getElementById('inv-name');
+    if (o && m && !m.value) { m.value = azModelOf(o) || ''; m.dispatchEvent(new Event('input')); }
+    if (o && n && !n.value) n.value = String(o.title || '').slice(0, 80);
+  }, 80);
 }
 function azCloseMatch() { document.getElementById('az-match-modal').style.display = 'none'; AZ.matchFor = null; }
 function azRenderMatchResults() {
@@ -23069,12 +23081,18 @@ function azRender() {
     const isToday = sec.day === today;
     const late = sec.list.filter(o => o._late).length;
     const nSeino = sec.list.filter(o => azIsLarge(o)).reduce((s, o) => s + (Number(o.qty) || 0), 0);
+    // 注文ごとのカードは閉じておき、タップで開く。商品が見つからない注文だけは常に表示する
+    const open = AZ.openDays.has(sec.day);
+    const need = sec.list.filter(o => !azProduct(o.productKey)), rest = sec.list.filter(o => azProduct(o.productKey));
+    const needCards = need.map(orderCard).join('');
+    const restCards = rest.map(orderCard).join('');
+    const toggle = rest.length ? `<button class="az-btn small" style="width:100%;margin-top:4px" onclick="azToggleDay('${sec.day}')">${open ? '▲ 注文ごとの表示を閉じる' : `▼ 注文ごとに見る（${rest.length}件）`}</button>` : '';
     const carrierLine = sec.list.length ? `<div class="az-sub" style="margin:-2px 0 8px">🐈 ヤマト運輸 ${qty - nSeino}個　🚛 西濃運輸 ${nSeino}個</div>` : '';
     return `<div class="az-card" ${isToday ? 'style="border-color:#3a3a3a"' : ''}>
       <div class="az-h"><span>${isToday ? '📦' : '🗓'} ${azEsc(azDayLabel(sec.day))}に出荷（${sec.list.length}件・${qty}個）${late ? ` <span class="az-tag">出荷遅れ ${late}件</span>` : ''}</span>
         ${sec.list.length ? `<button class="az-btn small" onclick="azPrintPackList('${sec.day}')">🖨 印刷</button>` : ''}</div>
       ${carrierLine}
-      ${sec.list.length ? `<div style="margin-bottom:10px">${groupRowsOf(sec.list)}</div>${sec.list.map(orderCard).join('')}` : '<div class="az-empty">この日に出荷する注文はありません</div>'}
+      ${sec.list.length ? `<div style="margin-bottom:6px">${groupRowsOf(sec.list)}</div>${needCards}${toggle}${open ? restCards : ''}` : '<div class="az-empty">この日に出荷する注文はありません</div>'}
     </div>`;
   };
 
@@ -23110,6 +23128,7 @@ function azRender() {
       ${recentAll.length > 10 ? `<div style="text-align:center;margin-top:8px"><button class="az-btn small" onclick="AZ.showAllRecent=!AZ.showAllRecent;azRender()">${AZ.showAllRecent ? '閉じる' : `すべて表示（${recentAll.length}件）`}</button></div>` : ''}
     </div>`;
 }
+function azToggleDay(day) { if (AZ.openDays.has(day)) AZ.openDays.delete(day); else AZ.openDays.add(day); azRender(); }
 async function azSetIdsLoc(ids, loc) {
   await Promise.all(String(ids).split(',').filter(Boolean).map(id => azSetLoc(id, loc)));
   azRender();
