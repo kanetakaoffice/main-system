@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-05e">
+<meta name="app-build" content="2026-11-05h">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1074,6 +1074,18 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div style="font-size:12px;color:var(--text-muted);line-height:1.7;padding:0 16px 10px">仕入先からもらった領収書・請求書のPDFを選ぶと（何枚でも）、日付・仕入先・合計金額を読み取ります。仕入先ごとに書き方が違うので、登録する前に一覧で確認・修正してください。PDFはアプリに保存しません。</div>
       <div id="pi-review" style="padding:0 16px 6px"></div>
     </div>
+    <!-- 量販店のレシートの写真をAI（AnthropicのClaude Haiku）で読み取って仕入を登録する。
+         APIの鍵はアプリに置かず、GoogleのApps Script（rcGASに説明）に置く。アプリにはApps ScriptのURLと合言葉だけを保存 -->
+    <div class="card" id="rc-card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px">レシートの写真から登録
+        <button type="button" class="btn btn-secondary" style="flex:none;padding:7px 12px;font-size:13px" onclick="rcPick()">📷 写真を選ぶ</button></div>
+      <input type="file" id="rc-file" accept="image/*" multiple style="display:none" onchange="rcOnFiles(this)">
+      <input type="file" id="rc-file-long" accept="image/*" multiple style="display:none" onchange="rcOnLong(this)">
+      <div style="padding:0 16px 8px"><button type="button" class="btn btn-secondary" style="width:100%;padding:8px;font-size:12.5px" onclick="rcPick(true)">🧾 長いレシートを何枚かに分けて撮った写真を、1枚のレシートとして読む</button></div>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.7;padding:0 16px 10px">レシートの写真を選ぶと（何枚でも・スマホならその場で撮影も可）、AIが日付・店名・合計金額を読み取ります。読み取った内容は上の「PDFから登録」と同じ一覧に並ぶので、確認してから登録してください。写真はアプリに保存しません。<span id="rc-setup-link"></span></div>
+      <div id="rc-status" style="padding:0 16px 8px;font-size:12.5px;color:var(--text-muted)"></div>
+      <div id="rc-setup" style="display:none;padding:0 16px 14px"></div>
+    </div>
     <div class="card">
       <div class="card-title">仕入情報</div>
       <div class="field">
@@ -1151,10 +1163,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <!-- freeeで作った請求書のPDFから、国内の売上をまとめて登録する（要望：「freeeで作成した請求書をPDFで
          保存・相手に渡している。このPDFを読み込んで自動で売上を作れないか」への対応） -->
     <div class="card" id="fi-card">
-      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px">freeeの請求書PDFから登録
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px">請求書・インボイスのPDFから登録
         <button type="button" class="btn btn-secondary" style="flex:none;padding:7px 12px;font-size:13px" onclick="document.getElementById('fi-file').click()">📄 PDFを選ぶ</button></div>
       <input type="file" id="fi-file" accept="application/pdf,.pdf" multiple style="display:none" onchange="fiOnFiles(this)">
-      <div style="font-size:12px;color:var(--text-muted);line-height:1.7;padding:0 16px 10px">freeeで作った請求書のPDFを選ぶと（何枚でも）、取引先・請求日・請求書番号・請求金額（税込）を読み取って、国内（請求書）の売上として登録します。同じ請求書番号は二重に登録しません。PDFはアプリに保存しません。</div>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.7;padding:0 16px 10px">freeeで作った請求書（国内）や、輸出用のインボイス（国外）のPDFを選ぶと（何枚でも）、取引先・日付・番号・金額を読み取って売上として登録します。同じ請求書番号は二重に登録しません。PDFはアプリに保存しません。</div>
       <div id="fi-review" style="padding:0 16px 6px"></div>
     </div>
     <div class="card">
@@ -24744,6 +24756,35 @@ function fiParseInvoiceText(items) {
   return out;
 }
 
+// 同じ高さの文字を1行にまとめる
+function fiLines(items) {
+  const lines = {};
+  items.forEach(i => { const str = String(i.str || '').normalize('NFKC'); if (!str.trim()) return; const y = Math.round(i.transform[5] / 3); (lines[y] = lines[y] || []).push({ x: i.transform[4], str }); });
+  return Object.keys(lines).map(Number).sort((a, b) => b - a).map(y => lines[y].sort((a, b) => a.x - b.x).map(p => p.str).join(' ').replace(/\s+/g, ' ').trim());
+}
+// 英文インボイス（Export Desk）：DATE : October.1.2026 / NO. KNTK-20261001-1 / Consignee の次の行が取引先 / 金額は JPY の最大値（Total Amount）
+function fiParseExportInvoice(lines) {
+  const t = lines.join('\n');
+  const out = { client: '', date: '', due: '', no: '', subtotal: 0, tax: 0, total: 0 };
+  const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  const dm = t.match(/DATE\s*:?\s*([A-Za-z]+)[.\s]*(\d{1,2})[.,\s]*(\d{4})/);
+  if (dm && MON[dm[1].slice(0, 3).toLowerCase()]) out.date = `${dm[3]}-${String(MON[dm[1].slice(0, 3).toLowerCase()]).padStart(2, '0')}-${String(dm[2]).padStart(2, '0')}`;
+  const nm = t.match(/NO\.\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-_]+)/);
+  if (nm) out.no = nm[1];
+  const ci = lines.findIndex(l => /^Consignee/i.test(l));
+  if (ci >= 0) out.client = (lines[ci].replace(/^Consignee\s*:?\s*/i, '') || lines[ci + 1] || '').trim();
+  // 「JPY」と金額が別の行に分かれることがあるため、「1,976,800.00」のような小数2桁の金額のうち最大のもの（＝Total Amount）を使う
+  const amts = [...t.matchAll(/(?:^|[^0-9.,])([0-9]{1,3}(?:,[0-9]{3})+\.\d{2}|[0-9]{4,}\.\d{2})(?![0-9])/g)].map(m => Math.round(Number(m[1].replace(/,/g, '')) || 0));
+  if (amts.length) out.total = Math.max(...amts);
+  return out;
+}
+// 読み取った取引先名を、これまでの売上の取引先名（例：「ANGCO … COMPANY（香港）」）に合わせる
+function fiMatchClient(name, sales) {
+  const n = fiNorm(name).toUpperCase(); if (!n) return name;
+  const names = [...new Set((sales || []).map(x => x.client).filter(Boolean))];
+  const hit = names.find(c => fiNorm(c).toUpperCase() === n) || names.find(c => { const cn = fiNorm(c).toUpperCase(); return cn.startsWith(n) || n.startsWith(cn); });
+  return hit || name;
+}
 function fiNorm(s) { return String(s || '').replace(/[\s　]/g, '').replace(/[（(]株[)）]/g, '株式会社'); }
 async function fiOnFiles(input) {
   const files = [...(input.files || [])]; input.value = '';
@@ -24757,10 +24798,15 @@ async function fiOnFiles(input) {
     try {
       const doc = await lib.getDocument({ data: new Uint8Array(await f.arrayBuffer()), cMapUrl: FI_PDFJS + 'cmaps/', cMapPacked: true }).promise;
       const tc = await (await doc.getPage(1)).getTextContent();
-      const r = fiParseInvoiceText(tc.items.map(i => i.str));
+      // 輸出用のインボイス作成システム（Export Desk）の英文インボイスか、freeeの請求書かを見分ける
+      const lines = fiLines(tc.items);
+      const isExport = lines.some(l => /^INVOICE$/i.test(l.replace(/\s/g, ''))) && lines.some(l => /^Consignee/i.test(l));
+      const r = isExport ? fiParseExportInvoice(lines) : fiParseInvoiceText(tc.items.map(i => i.str));
+      r.salesType = isExport ? '国外（インボイス）' : '国内（請求書）';
+      r.client = fiMatchClient(r.client, sales);
       r.file = f.name;
       if (!r.no || !r.date || !r.total) { r.err = '読み取れない項目があります'; }
-      const sameNo = r.no && sales.find(x => x.invoiceNo === r.no || (x.note || '').includes('freee請求書 ' + r.no));
+      const sameNo = r.no && sales.find(x => x.invoiceNo === r.no || (x.note || '').includes(r.no));
       const sameVal = !sameNo && sales.find(x => x.date === r.date && Number(x.amount) === r.total && fiNorm(x.client) === fiNorm(r.client));
       r.status = sameNo ? 'done' : sameVal ? 'maybe' : 'new';
       r.on = r.status === 'new' && !r.err;
@@ -24768,6 +24814,8 @@ async function fiOnFiles(input) {
       rows.push(r);
     } catch (e) { rows.push({ file: f.name, err: 'このPDFは読めませんでした', status: 'err', on: false }); }
   }
+  // 選んだ順ではなく、請求日の古い順に並べる（読めなかったものは最後）
+  rows.sort((a, b) => (a.date || '9999') .localeCompare(b.date || '9999') || String(a.no || '').localeCompare(String(b.no || '')));
   _fiRows = rows; fiRender();
 }
 function fiRender() {
@@ -24780,7 +24828,7 @@ function fiRender() {
       <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
         <input type="checkbox" ${r.on ? 'checked' : ''} ${r.status === 'err' ? 'disabled' : ''} onchange="_fiRows[${i}].on=this.checked;fiRender()" style="width:17px;height:17px;margin-top:3px;flex-shrink:0">
         <div style="flex:1;min-width:0">
-          <div style="font-size:13.5px;font-weight:700">${escapeHtmlMain(r.client || '（取引先不明）')} <span style="font-size:10.5px;padding:1px 6px;border-radius:4px;color:${L[1]};background:${L[2]}">${L[0]}</span></div>
+          <div style="font-size:13.5px;font-weight:700">${r.salesType === '国外（インボイス）' ? '<span style="font-size:10.5px;padding:1px 6px;border-radius:4px;background:#e8f0fe;color:#1a56b0;margin-right:4px">国外</span>' : ''}${escapeHtmlMain(r.client || '（取引先不明）')} <span style="font-size:10.5px;padding:1px 6px;border-radius:4px;color:${L[1]};background:${L[2]}">${L[0]}</span></div>
           <div style="font-size:12px;color:var(--text-muted)">${r.date ? fmtDateJP(r.date) : '日付不明'}・No.${escapeHtmlMain(r.no || '—')}・<b style="color:var(--text)">¥${(Number(r.total) || 0).toLocaleString('ja-JP')}</b>${r.tax ? `（うち消費税 ¥${r.tax.toLocaleString('ja-JP')}）` : ''}${r.due ? `・入金期日 ${fmtDateJP(r.due)}` : ''}</div>
           ${r.err ? `<div style="font-size:11.5px;color:var(--danger)">${escapeHtmlMain(r.err)}（${escapeHtmlMain(r.file)}）</div>` : ''}
           ${r.status === 'maybe' ? '<div style="font-size:11.5px;color:#b35400">取引先・日付・金額が同じ売上がすでにあります（手入力した分かもしれません）。二重にならないよう、確認してから登録してください</div>' : ''}
@@ -24796,8 +24844,9 @@ async function fiCommit() {
   try {
     for (const r of rows) {
       if (typeof ensureWholesaleClient === 'function' && r.client) await ensureWholesaleClient(r.client);
-      await window._fbPushSales({ type: 'sales', date: r.date, salesType: '国内（請求書）', client: r.client, amount: r.total, due: r.due || '',
-        note: 'freee請求書 ' + r.no, invoiceNo: r.no, payStatus: '未入金', submittedAt: new Date().toLocaleDateString('ja-JP'), enteredBy: currentSessionEmail(), fromFreeePdf: true });
+      const ovs = r.salesType === '国外（インボイス）';
+      await window._fbPushSales({ type: 'sales', date: r.date, salesType: r.salesType || '国内（請求書）', client: r.client, amount: r.total, due: r.due || '',
+        note: (ovs ? 'インボイス ' : 'freee請求書 ') + r.no, invoiceNo: r.no, payStatus: '未入金', submittedAt: new Date().toLocaleDateString('ja-JP'), enteredBy: currentSessionEmail(), fromFreeePdf: true });
     }
     _fiRows = []; fiRender();
     showToast(`${rows.length}件の売上を登録しました`);
@@ -24913,6 +24962,7 @@ async function piOnFiles(input) {
       rows.push(r);
     } catch (e) { rows.push({ file: f.name, err: 'このPDFは読めませんでした', on: false, status: 'err' }); }
   }
+  rows.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
   _piRows = rows; piRender();
 }
 function piSet(i, k, v) { const r = _piRows[i]; if (!r) return; r[k] = k === 'amount' ? (parseInt(v, 10) || 0) : v; piRender(true); }
@@ -24959,6 +25009,130 @@ async function piCommit() {
     showToast(`${rows.length}件の仕入を登録しました`);
   } catch (e) { console.error(e); showToast('登録に失敗しました。もう一度お試しください'); }
 }
+</script>
+<script>
+// ============================================================
+// レシートの写真をAIで読み取って仕入を登録する
+// 流れ：写真を縮小（長い辺1600px・JPEG）→ Apps Script（Googleの無料の仕組み）に送る →
+//       Apps ScriptがAnthropicのAPI（claude-haiku-5-5）で 日付・店名・合計 を読み取って返す →
+//       「PDFから登録」と同じ確認一覧（_piRows / piRender）に追加 → 確認して登録。
+// 設定：/appSettings/receiptAi { url: Apps ScriptのウェブアプリのURL, secret: 合言葉 }
+//       APIの鍵はApps Scriptのスクリプトプロパティにだけ置き、アプリやデータベースには置かない。
+// ============================================================
+const RC = { cfg: null, busy: false };
+async function rcLoadCfg() {
+  if (RC.cfg) return RC.cfg;
+  try { RC.cfg = await fetch(authedUrl('/appSettings/receiptAi.json')).then(r => r.json()) || {}; } catch (e) { RC.cfg = {}; }
+  return RC.cfg;
+}
+async function rcPick(long) {
+  const c = await rcLoadCfg();
+  if (!c.url || !c.secret) { rcShowSetup(); showToast('先にAIの読み取りの設定をしてください'); return; }
+  document.getElementById(long ? 'rc-file-long' : 'rc-file').click();
+}
+// 長いレシートを上から順に何枚かに分けて撮った写真を、まとめて1件として読み取る
+// （AIに複数の写真を一度に渡す。写真は選んだ順＝上から順に並べて送る）
+async function rcOnLong(input) {
+  const files = [...(input.files || [])]; input.value = '';
+  if (!files.length || RC.busy) return;
+  if (files.length > 6) { showToast('1枚のレシートとして読めるのは6枚までです'); return; }
+  files.sort((a, b) => (a.lastModified || 0) - (b.lastModified || 0));
+  await rcOnFiles({ files: [files], value: '' }, true);
+}
+function rcShowSetup() {
+  const box = document.getElementById('rc-setup'); if (!box) return;
+  const c = RC.cfg || {};
+  box.style.display = 'block';
+  box.innerHTML = `<div style="border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface)">
+    <div style="font-size:13px;font-weight:700;margin-bottom:6px">AIの読み取りの設定</div>
+    <div style="font-size:11.5px;color:var(--text-muted);line-height:1.6;margin-bottom:8px">Apps Scriptで作ったウェブアプリのURLと、Apps Scriptに設定した合言葉を入れてください。</div>
+    <input type="url" id="rc-url" placeholder="https://script.google.com/macros/s/……/exec" value="${escapeHtmlMain(c.url || '')}" style="width:100%;box-sizing:border-box;padding:9px;font-size:13px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px">
+    <input type="text" id="rc-secret" placeholder="合言葉" value="${escapeHtmlMain(c.secret || '')}" style="width:100%;box-sizing:border-box;padding:9px;font-size:13px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:8px">
+    <div style="display:flex;gap:8px"><button type="button" class="btn btn-secondary" style="flex:1" onclick="document.getElementById('rc-setup').style.display='none'">閉じる</button>
+      <button type="button" class="btn btn-orange" style="flex:2" onclick="rcSaveCfg()">保存して接続を確認</button></div></div>`;
+}
+async function rcSaveCfg() {
+  const url = (document.getElementById('rc-url').value || '').trim(), secret = (document.getElementById('rc-secret').value || '').trim();
+  if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) { showToast('Apps ScriptのURL（https://script.google.com/…/exec）を入れてください'); return; }
+  if (!secret) { showToast('合言葉を入れてください'); return; }
+  try {
+    const r = await rcCall(url, { secret, ping: true });
+    if (!r || !r.ok) { showToast('接続できませんでした：' + ((r && r.error) || 'URLか合言葉を確認してください')); return; }
+    await fetch(authedUrl('/appSettings/receiptAi.json'), { method: 'PUT', body: JSON.stringify({ url, secret, updatedAt: Date.now() }) });
+    RC.cfg = { url, secret };
+    document.getElementById('rc-setup').style.display = 'none'; rcRenderLink();
+    showToast('接続できました。レシートの写真を選べます');
+  } catch (e) { showToast('接続できませんでした。URLを確認してください'); }
+}
+async function rcCall(url, payload) {
+  // Content-Type を text/plain にして、Apps Scriptに余分な確認（プリフライト）をさせない
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), redirect: 'follow' });
+  return res.json();
+}
+function rcResize(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(), u = URL.createObjectURL(file);
+    img.onload = () => {
+      const max = 1600, sc = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(u);
+      resolve(c.toDataURL('image/jpeg', 0.85).split(',')[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(u); reject(new Error('image')); };
+    img.src = u;
+  });
+}
+// 店名を、仕入先（「店舗（ヤマダデンキ）」など手入力と同じ書き方）に直す
+function rcStoreToSupplier(store) {
+  const s = String(store || '').normalize('NFKC');
+  if (!s.trim()) return '';
+  const map = [[/ヤマダ|YAMADA|LABI|テックランド/i, 'ヤマダデンキ'], [/エディオン|EDION/i, 'エディオン'], [/ケーズ|K'?S\s*DENKI|K’s/i, 'ケーズデンキ'], [/ジョーシン|JOSHIN|上新/i, 'ジョーシン']];
+  const hit = map.find(([re]) => re.test(s));
+  return '店舗（' + (hit ? hit[1] : s.replace(/\s+/g, ' ').trim()) + '）';
+}
+async function rcOnFiles(input, grouped) {
+  const files = grouped ? input.files : [...(input.files || [])]; if (!grouped) input.value = '';
+  if (!files.length || RC.busy) return;
+  const c = await rcLoadCfg();
+  const st = document.getElementById('rc-status');
+  RC.busy = true;
+  const purchases = (window._getPurchases && window._getPurchases()) || [];
+  const rows = []; let done = 0, failed = 0;
+  st.textContent = `読み取り中… 0 / ${files.length}`;
+  const work = async (f) => {
+    try {
+      const list = Array.isArray(f) ? f : [f];
+      const images = [];
+      for (const one of list) images.push(await rcResize(one));
+      const r = await rcCall(c.url, images.length > 1 ? { secret: c.secret, images, mediaType: 'image/jpeg' } : { secret: c.secret, image: images[0], mediaType: 'image/jpeg' });
+      f = { name: list.length > 1 ? `${list[0].name || 'レシート'} ほか${list.length - 1}枚（1枚のレシート）` : (list[0].name || 'レシート') };
+      if (!r || !r.ok) throw new Error((r && r.error) || 'error');
+      const row = { file: f.name || 'レシート', date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : '', amount: Math.round(Number(r.total) || 0), supplier: rcStoreToSupplier(r.store), note: '', fromReceipt: true };
+      const dupe = purchases.find(x => x.date === row.date && Number(x.amount) === row.amount && piNorm(x.supplier) === piNorm(row.supplier));
+      row.status = dupe ? 'maybe' : 'new';
+      row.on = !dupe && !!(row.date && row.amount && row.supplier);
+      if (!row.date || !row.amount || !row.supplier) row.warn = '読み取れなかった項目があります。入力してからチェックを付けてください';
+      rows.push(row);
+    } catch (e) { failed++; rows.push({ file: f.name || 'レシート', err: 'このレシートは読み取れませんでした（' + (e.message === 'image' ? '画像を開けません' : e.message) + '）。手入力してください', on: false, status: 'err' }); }
+    done++; st.textContent = `読み取り中… ${done} / ${files.length}`;
+  };
+  // 3枚ずつ同時に読み取る
+  const queue = files.slice();
+  await Promise.all([0, 1, 2].map(async () => { while (queue.length) await work(queue.shift()); }));
+  RC.busy = false;
+  // 同じレシートを2枚撮った場合など、今回の中での重なりも知らせる
+  rows.forEach((r, i) => { if (r.status !== 'err' && rows.slice(0, i).some(x => x.date === r.date && x.amount === r.amount && x.supplier === r.supplier)) { r.status = 'maybe'; r.on = false; } });
+  _piRows = (_piRows || []).concat(rows).sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
+  piRender();
+  st.textContent = `${files.length}枚を読み取りました${failed ? `（${failed}枚は読み取れませんでした）` : ''}。上の一覧で確認してから登録してください。`;
+  document.getElementById('pi-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function rcRenderLink() {
+  const el = document.getElementById('rc-setup-link'); if (!el) return;
+  el.innerHTML = isAdmin() ? ` <a href="javascript:void(0)" onclick="rcShowSetup()" style="color:var(--gold-dark)">${RC.cfg && RC.cfg.url ? 'AIの設定を変える' : 'AIの設定をする'}</a>` : '';
+}
+document.addEventListener('DOMContentLoaded', () => { setTimeout(() => { if (window._idToken) rcLoadCfg().then(rcRenderLink); }, 3000); });
 </script>
 </body>
 </html>
