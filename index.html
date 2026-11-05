@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-04p">
+<meta name="app-build" content="2026-11-05b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1138,6 +1138,15 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div id="sal-alert-box" class="alert">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <span id="sal-alert-msg"></span>
+    </div>
+    <!-- freeeで作った請求書のPDFから、国内の売上をまとめて登録する（要望：「freeeで作成した請求書をPDFで
+         保存・相手に渡している。このPDFを読み込んで自動で売上を作れないか」への対応） -->
+    <div class="card" id="fi-card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px">freeeの請求書PDFから登録
+        <button type="button" class="btn btn-secondary" style="flex:none;padding:7px 12px;font-size:13px" onclick="document.getElementById('fi-file').click()">📄 PDFを選ぶ</button></div>
+      <input type="file" id="fi-file" accept="application/pdf,.pdf" multiple style="display:none" onchange="fiOnFiles(this)">
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.7">freeeで作った請求書のPDFを選ぶと（何枚でも）、取引先・請求日・請求書番号・請求金額（税込）を読み取って、国内（請求書）の売上として登録します。同じ請求書番号は二重に登録しません。PDFはアプリに保存しません。</div>
+      <div id="fi-review"></div>
     </div>
     <div class="card">
       <div class="card-title">売上情報</div>
@@ -22620,6 +22629,10 @@ function caHomeTileHtml() {
   .az-cols { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:14px; align-items:start; }
   .az-cols > div > .az-card:last-child { margin-bottom:0; }
 }
+/* 1回の注文で同じ商品を複数個買っている場合の目印（まとめの行の内訳・注文カードの枠） */
+.az-multi { display:inline-block; margin-top:3px; font-size:11.5px; font-weight:700; color:#b35400; background:#fff3e0; border-radius:5px; padding:2px 7px; }
+.az-ord.multi { border:2px solid #e67e22; background:#fffaf3; }
+.az-qtybig { flex-shrink:0; align-self:flex-start; font-size:14px; font-weight:900; color:#fff; background:#e67e22; border-radius:6px; padding:3px 8px; white-space:nowrap; }
 .az-empty { text-align:center; padding:14px; color:var(--text-muted); font-size:12.5px; }
 .az-modal { display:none; position:fixed; inset:0; z-index:690; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; padding:24px; }
 .az-modal-box { background:var(--white); border-radius:16px; padding:18px; width:100%; max-width:420px; max-height:82vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.2); }
@@ -23138,8 +23151,8 @@ function azRender() {
     const groups = {};
     list.forEach(o => {
       const k = o.productKey || ('?' + (o.asin || o.title));
-      if (!groups[k]) groups[k] = { productKey: o.productKey, model: azModelOf(o), qty: 0, ids: [], locs: new Set(), packed: 0 };
-      groups[k].qty += Number(o.qty) || 0; groups[k].ids.push(o._id); groups[k].locs.add(o.loc);
+      if (!groups[k]) groups[k] = { productKey: o.productKey, model: azModelOf(o), qty: 0, ids: [], locs: new Set(), packed: 0, qtys: [] };
+      groups[k].qty += Number(o.qty) || 0; groups[k].ids.push(o._id); groups[k].locs.add(o.loc); groups[k].qtys.push(Number(o.qty) || 0);
       if (o.packed) groups[k].packed++;
     });
     return Object.values(groups).sort((a, b) => ((a.packed === a.ids.length) - (b.packed === b.ids.length)) || b.qty - a.qty).map(g => {
@@ -23150,6 +23163,7 @@ function azRender() {
       const short = p && (Number(p.stock) || 0) < g.qty;
       const locSel = p && g.locs.size === 1 ? azLocSelect([...g.locs][0], `azSetIdsLoc('${g.ids.join(',')}',this.value)`) : (p ? '<span class="az-sub">注文ごとに選択</span>' : '');
       return `<div class="az-grp ${done ? 'az-done' : ''}"><button class="az-chk ${done ? 'on' : ''}" title="梱包済みにする" onclick="azSetPacked('${g.ids.join(',')}',${done ? 'false' : 'true'})">${done ? '✓' : part ? `<span style="color:#2e7d32;font-size:11px">${g.packed}</span>` : ''}</button><div><div><b>${azEsc(g.model || '（型番不明）')}</b> <span class="az-qty ${g.qty > 1 ? 'multi' : ''}">×${g.qty}</span>${p ? ' ' + azCarrierTag({ productKey: g.productKey }) : ''}${part ? ` <span class="az-sub">${g.packed}/${g.ids.length}件 梱包済み</span>` : ''}</div>
+        ${azQtyBreakdownHtml(g.qtys)}
         <div class="az-sub">${p ? '在庫 ' + stockTxt : '<span class="az-tag">商品が未確認</span>'}${short ? ' <span class="az-tag">在庫不足</span>' : ''}</div></div>${locSel}</div>`;
     }).join('');
   };
@@ -23157,9 +23171,9 @@ function azRender() {
   const orderCard = o => {
     const p = azProduct(o.productKey);
     const promise = o.promise ? `<span>出荷期限 ${azEsc(azFmtTime(o.promise))}</span>` : '';
-    return `<div class="az-ord ${p ? '' : 'warn'} ${o.packed ? 'az-done' : ''}" ${o._late ? 'style="border-color:#e57373"' : ''}>
+    return `<div class="az-ord ${p ? '' : 'warn'} ${o.packed ? 'az-done' : ''} ${o.qty > 1 ? 'multi' : ''}" ${o._late ? 'style="border-color:#e57373"' : ''}>
       <div style="display:flex;justify-content:space-between;gap:8px"><button class="az-chk ${o.packed ? 'on' : ''}" title="梱包済みにする" onclick="azSetPacked('${o._id}',${o.packed ? 'false' : 'true'})">${o.packed ? '✓' : ''}</button><div style="min-width:0;flex:1"><div class="az-model">${azEsc(azModelOf(o) || '（型番不明）')} ${p ? azCarrierTag(o) : ''}${o._late ? ' <span class="az-tag">出荷遅れ</span>' : ''}</div>
-        <div class="az-title">${azEsc(o.title)}</div></div><div class="az-qty ${o.qty > 1 ? 'multi' : ''}" style="white-space:nowrap">×${o.qty}</div></div>
+        <div class="az-title">${azEsc(o.title)}</div></div>${o.qty > 1 ? `<span class="az-qtybig">1件で${o.qty}個</span>` : '<div class="az-qty" style="white-space:nowrap">×1</div>'}</div>
       <div class="az-meta"><span>注文 ${azEsc(azFmtTime(o.purchaseDate))}</span>${promise}${azSkuLine(o)}<span>${azEsc(o.orderId)}</span></div>
       <div class="az-row" style="flex-wrap:wrap">${p ? azLocSelect(o.loc, `azSetLoc('${o._id}',this.value)`) : '<span class="az-tag">在庫の商品が見つかりません</span>'}
         <span style="display:flex;gap:6px;margin-left:auto">${largeBtn(p)}<button class="az-btn small" onclick="azOpenMatch('${o._id}')">${p ? '商品を変更' : '商品を選ぶ'}</button></span></div></div>`;
@@ -23288,6 +23302,13 @@ async function azSetSalesFrom(v) {
   azRender();
 }
 
+// 1回の注文で同じ商品を複数個買っている場合に、型番のまとめの行へ注文の内訳を出す
+// 要望：「1人の方が同じ商品を3つ購入しているとき、上のまとめには合計の数しか出ないので、間違えないように」
+function azQtyBreakdownHtml(qtys) {
+  if (!qtys.some(q => q > 1)) return '';
+  const c = {}; qtys.forEach(q => { c[q] = (c[q] || 0) + 1; });
+  return `<div class="az-multi">⚠️ 注文の内訳：${Object.keys(c).map(Number).sort((a, b) => b - a).map(q => `${q}個の注文 ${c[q]}件`).join('／')}</div>`;
+}
 // HOME用：Amazonの注文だけを軽く読み込む（1分以内に読み込んでいれば読み直さない）
 async function azPrefetchHome() {
   if (AZ._homeAt && Date.now() - AZ._homeAt < 60000) return;
@@ -23391,7 +23412,7 @@ function azPrintPackList(day) {
   const { iframe, idoc } = preparePrintIframeDoc(fileName);
   const e = azEsc;
   const rows = list.map(o => { const p = azProduct(o.productKey); return `<tr><td style="text-align:center;font-size:16px">☐</td><td><b>${e(azModelOf(o) || '（型番不明）')}</b>${o._late ? ' <span class="late">出荷遅れ</span>' : ''}<div class="t">${e(String(o.title || '').slice(0, 60))}</div></td>
-    <td style="text-align:center;font-weight:800;${o.qty > 1 ? 'color:#c0392b' : ''}">${o.qty}</td><td>${e(locName(o.loc))}</td><td>${!p ? '未確認' : p.large ? '<span class="lg">西濃運輸</span>' : 'ヤマト運輸'}</td><td class="s">${e(o.sku)}</td><td class="s">${e(o.orderId)}</td></tr>`; }).join('');
+    <td style="text-align:center;font-weight:800;${o.qty > 1 ? 'color:#c0392b;font-size:15px' : ''}">${o.qty}${o.qty > 1 ? '<div style="font-size:9px">1件で' + o.qty + '個</div>' : ''}</td><td>${e(locName(o.loc))}</td><td>${!p ? '未確認' : p.large ? '<span class="lg">西濃運輸</span>' : 'ヤマト運輸'}</td><td class="s">${e(o.sku)}</td><td class="s">${e(o.orderId)}</td></tr>`; }).join('');
   const total = list.reduce((s, o) => s + (Number(o.qty) || 0), 0);
   idoc.getElementById('ds-print-root').innerHTML = `<style>
       h1{font-size:18px;margin:0 0 4px} .m{font-size:11px;color:#666;margin-bottom:10px}
@@ -24581,20 +24602,21 @@ function hkaHtml() {
 
   const groupRows = list => {
     const g = {};
-    list.forEach(o => { const k = o.itemKey || ('?' + (o.asin || o.title)); if (!g[k]) g[k] = { itemKey: o.itemKey, model: hkaModel(o), qty: 0, ids: [], packed: 0 }; g[k].qty += Number(o.qty) || 0; g[k].ids.push(o._id); if (o.packed) g[k].packed++; });
+    list.forEach(o => { const k = o.itemKey || ('?' + (o.asin || o.title)); if (!g[k]) g[k] = { itemKey: o.itemKey, model: hkaModel(o), qty: 0, ids: [], packed: 0, qtys: [] }; g[k].qty += Number(o.qty) || 0; g[k].ids.push(o._id); g[k].qtys.push(Number(o.qty) || 0); if (o.packed) g[k].packed++; });
     return Object.values(g).sort((a, b) => ((a.packed === a.ids.length) - (b.packed === b.ids.length)) || b.qty - a.qty).map(x => {
       const it = hkaItem(x.itemKey), done = x.packed === x.ids.length, part = x.packed && !done, have = it ? Number(it.qty) || 0 : 0;
       return `<div class="az-grp ${done ? 'az-done' : ''}"><button class="az-chk ${done ? 'on' : ''}" onclick="hkaSetPacked('${x.ids.join(',')}',${done ? 'false' : 'true'})">${done ? '✓' : part ? `<span style="color:#2e7d32;font-size:11px">${x.packed}</span>` : ''}</button>
         <div><div><b>${hkEsc(x.model || '（型番不明）')}</b> <span class="az-qty ${x.qty > 1 ? 'multi' : ''}">×${x.qty}</span>${part ? ` <span class="hk-note">${x.packed}/${x.ids.length}件 梱包済み</span>` : ''}</div>
+        ${azQtyBreakdownHtml(x.qtys)}
         <div class="hk-note">${it ? `在庫 ${have}` : '<span class="az-tag">商品が未確認</span>'}${it && have < x.qty ? ' <span class="az-tag">在庫不足</span>' : ''}</div></div></div>`;
     }).join('');
   };
   const orderCard = o => {
     const it = hkaItem(o.itemKey);
-    return `<div class="az-ord ${it ? '' : 'warn'} ${o.packed ? 'az-done' : ''}" ${o._late ? 'style="border-color:#e57373"' : ''}>
+    return `<div class="az-ord ${it ? '' : 'warn'} ${o.packed ? 'az-done' : ''} ${o.qty > 1 ? 'multi' : ''}" ${o._late ? 'style="border-color:#e57373"' : ''}>
       <div style="display:flex;justify-content:space-between;gap:8px"><button class="az-chk ${o.packed ? 'on' : ''}" onclick="hkaSetPacked('${o._id}',${o.packed ? 'false' : 'true'})">${o.packed ? '✓' : ''}</button>
         <div style="min-width:0;flex:1"><div class="az-model">${hkEsc(hkaModel(o) || '（型番不明）')}${o._late ? ' <span class="az-tag">出荷遅れ</span>' : ''}</div><div class="az-title">${hkEsc(o.title)}</div></div>
-        <div class="az-qty ${o.qty > 1 ? 'multi' : ''}" style="white-space:nowrap">×${o.qty}</div></div>
+        ${o.qty > 1 ? `<span class="az-qtybig">1件で${o.qty}個</span>` : '<div class="az-qty" style="white-space:nowrap">×1</div>'}</div>
       <div class="az-meta"><span>注文 ${hkEsc(azFmtTime(o.purchaseDate))}</span><span>SKU ${hkEsc(o.sku)}</span><span>${hkEsc(o.orderId)}</span></div>
       <div class="az-row">${it ? '' : '<span class="az-tag">在庫の商品が見つかりません</span>'}<button class="hk-btn" style="margin-left:auto" onclick="hkaOpenMatch('${o._id}')">${it ? '商品を変更' : '商品を選ぶ'}</button></div></div>`;
   };
@@ -24632,7 +24654,7 @@ function hkaPrint(day) {
   hkPrintDoc('HAK_Amazon梱包リスト_' + day, `<style>h1{font-size:18px;margin:0 0 4px}.m{font-size:11px;color:#666;margin-bottom:10px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #bbb;padding:6px;vertical-align:top}th{background:#eee;font-size:11px}.t{font-size:10px;color:#666}.s{font-size:10px;word-break:break-all}</style>
     <h1>HAK Amazon 梱包リスト　${hkEsc(azDayLabel(day))}出荷分</h1><div class="m">${list.length}件・${total}個（清洲・ヤマト運輸）</div>
     <table><thead><tr><th style="width:28px">✓</th><th>型番・商品名</th><th style="width:40px">数量</th><th style="width:120px">SKU</th><th style="width:130px">注文番号</th></tr></thead><tbody>
-    ${list.map(o => `<tr><td style="text-align:center;font-size:16px">☐</td><td><b>${hkEsc(hkaModel(o) || '（型番不明）')}</b><div class="t">${hkEsc(String(o.title || '').slice(0, 60))}</div></td><td style="text-align:center;font-weight:800">${o.qty}</td><td class="s">${hkEsc(o.sku)}</td><td class="s">${hkEsc(o.orderId)}</td></tr>`).join('')}</tbody></table>`);
+    ${list.map(o => `<tr><td style="text-align:center;font-size:16px">☐</td><td><b>${hkEsc(hkaModel(o) || '（型番不明）')}</b><div class="t">${hkEsc(String(o.title || '').slice(0, 60))}</div></td><td style="text-align:center;font-weight:800;${o.qty > 1 ? 'color:#c0392b;font-size:15px' : ''}">${o.qty}${o.qty > 1 ? '<div style="font-size:9px">1件で' + o.qty + '個</div>' : ''}</td><td class="s">${hkEsc(o.sku)}</td><td class="s">${hkEsc(o.orderId)}</td></tr>`).join('')}</tbody></table>`);
 }
 
 // ── 売上（Amazon・卸売・KANETAKA向け）──
@@ -24672,5 +24694,106 @@ function hkSalesHtml() {
 }
 </script>
 
+<script>
+// ============================================================
+// freeeの請求書PDFから売上を登録する
+// PDFの文字はブラウザの中で読み取る（pdf.jsをこの機能を使うときだけ読み込む）。PDF自体は保存しない。
+// 読み取るのは1ページ目の 取引先（「○○ 御中」）・請求日・請求書番号・小計＋消費税＝請求金額。
+// 売上は {type:'sales', salesType:'国内（請求書）', client, date, amount=請求金額（税込）, due, invoiceNo, note} で登録。
+// 同じ請求書番号の売上があれば登録しない。手入力の売上と「取引先・日付・金額」が同じものは、
+// 二重の可能性があるのでチェックを外した状態で表示する。
+// ============================================================
+const FI_PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/';
+let _fiRows = [];
+function fiLoadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return new Promise((res, rej) => {
+    const sc = document.createElement('script'); sc.src = FI_PDFJS + 'build/pdf.min.js';
+    sc.onload = () => { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = FI_PDFJS + 'build/pdf.worker.min.js'; res(window.pdfjsLib); } catch (e) { rej(e); } };
+    sc.onerror = () => rej(new Error('pdf.js load failed'));
+    document.head.appendChild(sc);
+  });
+}
+// freeeの請求書PDF（1ページ目の文字）から 取引先・請求日・請求書番号・金額 を読み取る
+function fiParseInvoiceText(items) {
+  const strs = items.map(s => String(s || '').trim()).filter(Boolean);
+  const joined = strs.join(' ');
+  const out = { client: '', date: '', due: '', no: '', subtotal: 0, tax: 0, total: 0 };
+  const ix = strs.findIndex(s => /御中$/.test(s));
+  if (ix >= 0) out.client = (strs[ix] === '御中' ? strs[ix - 1] : strs[ix].replace(/\s*御中$/, '')) || '';
+  const dates = strs.filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s));
+  out.date = dates[0] || '';
+  if (dates[1]) out.due = dates[1];
+  const di = strs.indexOf(out.date);
+  const no = strs.find(s => /^\d{6}-\d+$/.test(s)) || (di >= 0 && /^[0-9A-Za-z][0-9A-Za-z\-_]{2,}$/.test(strs[di + 1] || '') && !/^T\d{13}$/.test(strs[di + 1]) ? strs[di + 1] : '');
+  out.no = no || '';
+  const amts = [...joined.matchAll(/([\d,]+)\s*円/g)].map(m => Number(m[1].replace(/,/g, '')) || 0);
+  // 「小計＋消費税＝請求金額」になる3つを探す（並び順はPDFによって違うため）。いちばん大きい組み合わせを使う
+  amts.forEach((z, k) => { if (z <= out.total) return; amts.forEach((x, i) => amts.forEach((y, j) => {
+    if (i !== j && i !== k && j !== k && x >= y && x + y === z && z > out.total) { out.subtotal = x; out.tax = y; out.total = z; } })); });
+  if (!out.total && amts.length) out.total = Math.max(...amts);
+  return out;
+}
+
+function fiNorm(s) { return String(s || '').replace(/[\s　]/g, '').replace(/[（(]株[)）]/g, '株式会社'); }
+async function fiOnFiles(input) {
+  const files = [...(input.files || [])]; input.value = '';
+  if (!files.length) return;
+  const box = document.getElementById('fi-review');
+  box.innerHTML = '<div style="padding:10px;font-size:12.5px;color:var(--text-muted)">読み取り中…</div>';
+  let lib; try { lib = await fiLoadPdfJs(); } catch (e) { box.innerHTML = ''; showToast('PDFを読む部品を読み込めませんでした。通信状況を確認してください'); return; }
+  const sales = (window._getSales && window._getSales()) || [];
+  const rows = [];
+  for (const f of files) {
+    try {
+      const doc = await lib.getDocument({ data: new Uint8Array(await f.arrayBuffer()), cMapUrl: FI_PDFJS + 'cmaps/', cMapPacked: true }).promise;
+      const tc = await (await doc.getPage(1)).getTextContent();
+      const r = fiParseInvoiceText(tc.items.map(i => i.str));
+      r.file = f.name;
+      if (!r.no || !r.date || !r.total) { r.err = '読み取れない項目があります'; }
+      const sameNo = r.no && sales.find(x => x.invoiceNo === r.no || (x.note || '').includes('freee請求書 ' + r.no));
+      const sameVal = !sameNo && sales.find(x => x.date === r.date && Number(x.amount) === r.total && fiNorm(x.client) === fiNorm(r.client));
+      r.status = sameNo ? 'done' : sameVal ? 'maybe' : 'new';
+      r.on = r.status === 'new' && !r.err;
+      if (rows.some(x => x.no && x.no === r.no)) { r.status = 'dup'; r.on = false; }
+      rows.push(r);
+    } catch (e) { rows.push({ file: f.name, err: 'このPDFは読めませんでした', status: 'err', on: false }); }
+  }
+  _fiRows = rows; fiRender();
+}
+function fiRender() {
+  const box = document.getElementById('fi-review'); if (!box) return;
+  if (!_fiRows.length) { box.innerHTML = ''; return; }
+  const lbl = { new: ['新規', '#2e7d32', '#e8f5e9'], done: ['登録済み', '#666', '#eee'], maybe: ['同じ内容の売上あり', '#b35400', '#fff3e0'], dup: ['同じPDFが2つ', '#666', '#eee'], err: ['読めません', '#c0392b', '#fdecea'] };
+  const n = _fiRows.filter(r => r.on).length, sum = _fiRows.filter(r => r.on).reduce((t, r) => t + (Number(r.total) || 0), 0);
+  box.innerHTML = `<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">
+    ${_fiRows.map((r, i) => { const L = lbl[r.status] || lbl.err; return `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+      <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+        <input type="checkbox" ${r.on ? 'checked' : ''} ${r.status === 'err' ? 'disabled' : ''} onchange="_fiRows[${i}].on=this.checked;fiRender()" style="width:17px;height:17px;margin-top:3px;flex-shrink:0">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:700">${escapeHtmlMain(r.client || '（取引先不明）')} <span style="font-size:10.5px;padding:1px 6px;border-radius:4px;color:${L[1]};background:${L[2]}">${L[0]}</span></div>
+          <div style="font-size:12px;color:var(--text-muted)">${r.date ? fmtDateJP(r.date) : '日付不明'}・No.${escapeHtmlMain(r.no || '—')}・<b style="color:var(--text)">¥${(Number(r.total) || 0).toLocaleString('ja-JP')}</b>${r.tax ? `（うち消費税 ¥${r.tax.toLocaleString('ja-JP')}）` : ''}${r.due ? `・入金期日 ${fmtDateJP(r.due)}` : ''}</div>
+          ${r.err ? `<div style="font-size:11.5px;color:var(--danger)">${escapeHtmlMain(r.err)}（${escapeHtmlMain(r.file)}）</div>` : ''}
+          ${r.status === 'maybe' ? '<div style="font-size:11.5px;color:#b35400">取引先・日付・金額が同じ売上がすでにあります（手入力した分かもしれません）。二重にならないよう、確認してから登録してください</div>' : ''}
+        </div></label></div>`; }).join('')}
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button type="button" class="btn btn-secondary" style="flex:1" onclick="_fiRows=[];fiRender()">やめる</button>
+      <button type="button" class="btn btn-primary" style="flex:2" ${n ? '' : 'disabled'} onclick="fiCommit()">${n}件（¥${sum.toLocaleString('ja-JP')}）を登録する</button>
+    </div></div>`;
+}
+async function fiCommit() {
+  const rows = _fiRows.filter(r => r.on && r.date && r.total);
+  if (!rows.length) return;
+  try {
+    for (const r of rows) {
+      if (typeof ensureWholesaleClient === 'function' && r.client) await ensureWholesaleClient(r.client);
+      await window._fbPushSales({ type: 'sales', date: r.date, salesType: '国内（請求書）', client: r.client, amount: r.total, due: r.due || '',
+        note: 'freee請求書 ' + r.no, invoiceNo: r.no, payStatus: '未入金', submittedAt: new Date().toLocaleDateString('ja-JP'), enteredBy: currentSessionEmail(), fromFreeePdf: true });
+    }
+    _fiRows = []; fiRender();
+    showToast(`${rows.length}件の売上を登録しました`);
+  } catch (e) { console.error(e); showToast('登録に失敗しました。もう一度お試しください'); }
+}
+</script>
 </body>
 </html>
