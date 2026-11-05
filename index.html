@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-05b">
+<meta name="app-build" content="2026-11-05c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1065,6 +1065,15 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <span id="pur-alert-msg"></span>
     </div>
+    <!-- 仕入先からPDFでもらった領収書・請求書から、仕入をまとめて登録する（要望：「レシートや領収書を毎月
+         手入力していて膨大な時間がかかる。PDFでもらう仕入先の分を読み込めるようにしたい」への対応） -->
+    <div class="card" id="pi-card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px">領収書・請求書のPDFから登録
+        <button type="button" class="btn btn-secondary" style="flex:none;padding:7px 12px;font-size:13px" onclick="document.getElementById('pi-file').click()">📄 PDFを選ぶ</button></div>
+      <input type="file" id="pi-file" accept="application/pdf,.pdf" multiple style="display:none" onchange="piOnFiles(this)">
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.7;padding:0 16px 10px">仕入先からもらった領収書・請求書のPDFを選ぶと（何枚でも）、日付・仕入先・合計金額を読み取ります。仕入先ごとに書き方が違うので、登録する前に一覧で確認・修正してください。PDFはアプリに保存しません。</div>
+      <div id="pi-review" style="padding:0 16px 6px"></div>
+    </div>
     <div class="card">
       <div class="card-title">仕入情報</div>
       <div class="field">
@@ -1145,8 +1154,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px">freeeの請求書PDFから登録
         <button type="button" class="btn btn-secondary" style="flex:none;padding:7px 12px;font-size:13px" onclick="document.getElementById('fi-file').click()">📄 PDFを選ぶ</button></div>
       <input type="file" id="fi-file" accept="application/pdf,.pdf" multiple style="display:none" onchange="fiOnFiles(this)">
-      <div style="font-size:12px;color:var(--text-muted);line-height:1.7">freeeで作った請求書のPDFを選ぶと（何枚でも）、取引先・請求日・請求書番号・請求金額（税込）を読み取って、国内（請求書）の売上として登録します。同じ請求書番号は二重に登録しません。PDFはアプリに保存しません。</div>
-      <div id="fi-review"></div>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.7;padding:0 16px 10px">freeeで作った請求書のPDFを選ぶと（何枚でも）、取引先・請求日・請求書番号・請求金額（税込）を読み取って、国内（請求書）の売上として登録します。同じ請求書番号は二重に登録しません。PDFはアプリに保存しません。</div>
+      <div id="fi-review" style="padding:0 16px 6px"></div>
     </div>
     <div class="card">
       <div class="card-title">売上情報</div>
@@ -24792,6 +24801,151 @@ async function fiCommit() {
     }
     _fiRows = []; fiRender();
     showToast(`${rows.length}件の売上を登録しました`);
+  } catch (e) { console.error(e); showToast('登録に失敗しました。もう一度お試しください'); }
+}
+</script>
+<script>
+// ============================================================
+// 仕入先の領収書・請求書PDFから仕入を登録する
+// 仕入先ごとにPDFの書き方が違うため、次の手がかりで読み取り、登録前に必ず一覧で確認・修正してもらう：
+//   日付   … 「発行日・請求日・領収日・日付・取引日」の近くの日付（無ければ最初の日付）。2026/10/28・2026年10月28日・令和8年10月28日など
+//   金額   … 「ご請求金額・領収金額・お支払金額・合計金額・税込合計・総合計・合計」の近くの金額（無ければいちばん大きい金額）
+//   仕入先 … これまでの仕入先名・店舗名がPDFの中にあればそれ。無ければ「株式会社〜」など自社（KANETAKA）以外の会社名
+// 登録は手入力と同じ {type:'purchase', date, supplier, amount, note} で1件ずつ。
+// 同じ日付・仕入先・金額の仕入がすでにあれば、二重の可能性としてチェックを外して表示する。
+// pdf.js は freeeの請求書PDFの読み込み（fiLoadPdfJs）と共通。
+// ============================================================
+let _piRows = [];
+function piKnownSuppliers() {
+  const set = new Set();
+  ((window._getSuppliers && window._getSuppliers()) || []).forEach(x => { if (x !== '店舗') set.add(x); });
+  ((window._getPurchases && window._getPurchases()) || []).forEach(x => { if (x && x.supplier) set.add(x.supplier); });
+  ['ヤマダデンキ', 'エディオン', 'ケーズデンキ', 'ジョーシン'].forEach(x => set.add('店舗（' + x + '）'));
+  return [...set];
+}
+function piNorm(s) {
+  return String(s || '').replace(/[\s　]/g, '').replace(/[（(]株[)）]/g, '株式会社').replace(/[（(]有[)）]/g, '有限会社')
+    .replace(/^店舗[（(](.*)[)）]$/, '$1').replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).toUpperCase();
+}
+function piParseDate(t) {
+  const conv = (y, m, d) => { y = Number(y); m = Number(m); d = Number(d); if (!y || m < 1 || m > 12 || d < 1 || d > 31) return ''; return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; };
+  const pats = [
+    [/令和\s*(元|\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/g, m => conv(2018 + (m[1] === '元' ? 1 : Number(m[1])), m[2], m[3])],
+    [/(20\d{2})\s*[年\/\-.]\s*(\d{1,2})\s*[月\/\-.]\s*(\d{1,2})\s*日?/g, m => conv(m[1], m[2], m[3])]
+  ];
+  const found = [];
+  pats.forEach(([re, f]) => { for (const m of t.matchAll(re)) { const d = f(m); if (d) found.push({ d, i: m.index }); } });
+  if (!found.length) return '';
+  found.sort((a, b) => a.i - b.i);
+  const lab = /(発行日|請求日|領収日|日付|取引日|お買上げ日|購入日)/g;
+  for (const m of t.matchAll(lab)) { const f = found.find(x => x.i >= m.index && x.i - m.index < 40); if (f) return f.d; }
+  return found[0].d;
+}
+function piParseAmount(t) {
+  const keys = ['ご請求金額', '請求金額', '領収金額', 'お支払金額', '支払金額', '合計金額', '税込合計', '総合計', '御請求額', 'ご請求額', '合計'];
+  const num = s => Number(String(s).replace(/[,，\s]/g, '')) || 0;
+  // 「小計＋消費税＝合計」になる3つの金額があれば、その合計を使う（表の見出しと金額が別の行にあるPDFでも正しく取れる）
+  const all = [...t.matchAll(/[¥￥]\s*([0-9][0-9,，]{2,})|([0-9][0-9,，]{2,})\s*円/g)].map(m => num(m[1] || m[2])).filter(x => x > 0);
+  let best = 0;
+  all.forEach((z, k) => all.forEach((x, i) => all.forEach((y, j) => { if (i !== j && i !== k && j !== k && x > y && y > 0 && x + y === z && y <= x * 0.11 && z > best) best = z; })));
+  if (best) return best;
+  for (const k of keys) {
+    const re = new RegExp(k + '[^0-9¥￥]{0,20}[¥￥]?\\s*([0-9][0-9,，]{2,})', 'g');
+    const v = [...t.matchAll(re)].map(m => num(m[1])).filter(x => x >= 100);
+    if (v.length) return Math.max(...v);
+  }
+  const v = [...t.matchAll(/[¥￥]\s*([0-9][0-9,，]{2,})|([0-9][0-9,，]{2,})\s*円/g)].map(m => num(m[1] || m[2]));
+  return v.length ? Math.max(...v) : 0;
+}
+function piParseSupplier(strs) {
+  const t = piNorm(strs.join(''));
+  const known = piKnownSuppliers().filter(x => piNorm(x).length >= 2).sort((a, b) => piNorm(b).length - piNorm(a).length);
+  const hit = known.find(x => t.includes(piNorm(x)));
+  if (hit) return hit;
+  // 宛名（〜御中・〜様）と自社名を除いた、最初の会社名
+  const cands = strs.map(s => s.trim()).filter(x => /(株式会社|有限会社|合同会社|\(株\)|（株）)/.test(x) && !/KANETAKA|カネタカ/i.test(x) && !/御中|様/.test(x));
+  if (!cands.length) return '';
+  const m = cands[0].match(/((?:株式会社|有限会社|合同会社|\(株\)|（株）)\s*[^\s　]+|[^\s　]+\s*(?:株式会社|有限会社|合同会社|\(株\)|（株）))/);
+  return (m ? m[1] : cands[0]).replace(/\s+/g, ' ');
+}
+async function piOnFiles(input) {
+  const files = [...(input.files || [])]; input.value = '';
+  if (!files.length) return;
+  const box = document.getElementById('pi-review');
+  box.innerHTML = '<div style="padding:10px;font-size:12.5px;color:var(--text-muted)">読み取り中…</div>';
+  let lib; try { lib = await fiLoadPdfJs(); } catch (e) { box.innerHTML = ''; showToast('PDFを読む部品を読み込めませんでした。通信状況を確認してください'); return; }
+  const purchases = (window._getPurchases && window._getPurchases()) || [];
+  const rows = [];
+  for (const f of files) {
+    try {
+      const doc = await lib.getDocument({ data: new Uint8Array(await f.arrayBuffer()), cMapUrl: FI_PDFJS + 'cmaps/', cMapPacked: true }).promise;
+      // 1文字ずつ分かれているPDFもあるため、同じ高さの文字を1行にまとめる（「⽉」のような部首の文字も普通の文字に直す）
+      const strs = [];
+      for (let pn = 1; pn <= Math.min(doc.numPages, 2); pn++) {
+        const tc = await (await doc.getPage(pn)).getTextContent();
+        const lines = {};
+        tc.items.forEach(i => { const str = String(i.str || '').normalize('NFKC'); if (!str.trim()) return; const y = Math.round(i.transform[5] / 3); (lines[y] = lines[y] || []).push({ x: i.transform[4], str, w: i.width || 0 }); });
+        Object.keys(lines).map(Number).sort((a, b) => b - a).forEach(y => {
+          const parts = lines[y].sort((a, b) => a.x - b.x);
+          let line = '', end = null;
+          parts.forEach(pt => { if (end != null && pt.x - end > 12) line += ' '; line += pt.str; end = pt.x + pt.w; });
+          strs.push(line.trim());
+        });
+      }
+      if (!strs.length) { rows.push({ file: f.name, err: '文字が入っていないPDFです（紙をスキャンしたものなど）。手入力してください', on: false, status: 'err' }); continue; }
+      const t = strs.join('\n');
+      const r = { file: f.name, date: piParseDate(t), amount: piParseAmount(t), supplier: piParseSupplier(strs), note: '' };
+      const dupe = purchases.find(x => x.date === r.date && Number(x.amount) === r.amount && piNorm(x.supplier) === piNorm(r.supplier));
+      r.status = dupe ? 'maybe' : 'new';
+      r.on = !dupe && !!(r.date && r.amount && r.supplier);
+      if (!r.date || !r.amount || !r.supplier) r.warn = '読み取れなかった項目があります。入力してからチェックを付けてください';
+      rows.push(r);
+    } catch (e) { rows.push({ file: f.name, err: 'このPDFは読めませんでした', on: false, status: 'err' }); }
+  }
+  _piRows = rows; piRender();
+}
+function piSet(i, k, v) { const r = _piRows[i]; if (!r) return; r[k] = k === 'amount' ? (parseInt(v, 10) || 0) : v; piRender(true); }
+function piRender(keepFocus) {
+  const box = document.getElementById('pi-review'); if (!box) return;
+  if (!_piRows.length) { box.innerHTML = ''; return; }
+  const act = keepFocus ? document.activeElement : null, actId = act && act.id, pos = act && act.selectionStart;
+  const sups = piKnownSuppliers();
+  const ok = r => r.on && r.date && r.amount > 0 && String(r.supplier || '').trim();
+  const n = _piRows.filter(ok).length, sum = _piRows.filter(ok).reduce((t, r) => t + r.amount, 0);
+  const inp = 'padding:6px 8px;font-size:13.5px;border:1.5px solid var(--border);border-radius:6px;box-sizing:border-box';
+  box.innerHTML = `<datalist id="pi-sups">${sups.map(x => `<option value="${escapeHtmlMain(x)}">`).join('')}</datalist>
+    <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:4px">
+    ${_piRows.map((r, i) => r.status === 'err' ? `<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;color:var(--danger)">${escapeHtmlMain(r.file)}：${escapeHtmlMain(r.err)}</div>` : `
+      <div style="padding:9px 0;border-bottom:1px solid var(--border)">
+        <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--text-muted);cursor:pointer;margin-bottom:5px">
+          <input type="checkbox" ${r.on ? 'checked' : ''} onchange="_piRows[${i}].on=this.checked;piRender()" style="width:17px;height:17px;flex-shrink:0">
+          <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(r.file)}</span>
+          ${r.status === 'maybe' ? '<span style="flex-shrink:0;font-size:10.5px;padding:1px 6px;border-radius:4px;color:#b35400;background:#fff3e0">同じ内容の仕入あり</span>' : ''}</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <input id="pi-d-${i}" type="date" value="${escapeHtmlMain(r.date || '')}" onchange="piSet(${i},'date',this.value)" style="${inp}">
+          <input id="pi-a-${i}" type="number" inputmode="numeric" placeholder="金額" value="${r.amount || ''}" oninput="piSet(${i},'amount',this.value)" style="${inp}">
+          <input id="pi-s-${i}" list="pi-sups" placeholder="仕入先" value="${escapeHtmlMain(r.supplier || '')}" oninput="piSet(${i},'supplier',this.value)" style="${inp};grid-column:1/-1">
+          <input id="pi-n-${i}" placeholder="メモ（任意）" value="${escapeHtmlMain(r.note || '')}" oninput="piSet(${i},'note',this.value)" style="${inp};grid-column:1/-1">
+        </div>
+        ${r.warn && !(r.date && r.amount && r.supplier) ? `<div style="font-size:11.5px;color:#b35400;margin-top:4px">${escapeHtmlMain(r.warn)}</div>` : ''}
+        ${r.status === 'maybe' ? '<div style="font-size:11.5px;color:#b35400;margin-top:4px">日付・仕入先・金額が同じ仕入がすでにあります（手入力した分かもしれません）</div>' : ''}
+      </div>`).join('')}
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button type="button" class="btn btn-secondary" style="flex:1" onclick="_piRows=[];piRender()">やめる</button>
+      <button type="button" class="btn btn-orange" style="flex:2" ${n ? '' : 'disabled'} onclick="piCommit()">${n}件（¥${sum.toLocaleString('ja-JP')}）を登録する</button>
+    </div></div>`;
+  if (actId) { const e = document.getElementById(actId); if (e) { e.focus(); try { if (pos != null) e.setSelectionRange(pos, pos); } catch (x) {} } }
+}
+async function piCommit() {
+  const rows = _piRows.filter(r => r.on && r.date && r.amount > 0 && String(r.supplier || '').trim());
+  if (!rows.length) return;
+  try {
+    for (const r of rows) {
+      await window._fbPushPurchase({ type: 'purchase', date: r.date, supplier: r.supplier.trim(), amount: r.amount, note: r.note || '',
+        submittedAt: new Date().toLocaleDateString('ja-JP'), enteredBy: currentSessionEmail(), fromPdf: true });
+    }
+    _piRows = []; piRender();
+    showToast(`${rows.length}件の仕入を登録しました`);
   } catch (e) { console.error(e); showToast('登録に失敗しました。もう一度お試しください'); }
 }
 </script>
