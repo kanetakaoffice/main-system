@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-06a">
+<meta name="app-build" content="2026-11-06b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1005,6 +1005,17 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div id="exp-alert-box" class="alert">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <span id="exp-alert-msg"></span>
+    </div>
+    <!-- 経費のレシートの写真をAIで読み取って登録する（仕入の「レシートの写真から登録」と同じApps Script・同じ設定を使う） -->
+    <div class="card" id="erc-card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px">レシートの写真から登録
+        <button type="button" class="btn btn-secondary" style="flex:none;padding:7px 12px;font-size:13px" onclick="ercPick()">📷 写真を選ぶ</button></div>
+      <input type="file" id="erc-file" accept="image/*" multiple style="display:none" onchange="ercOnFiles(this)">
+      <input type="file" id="erc-file-long" accept="image/*" multiple style="display:none" onchange="ercOnLong(this)">
+      <div style="padding:0 16px 8px"><button type="button" class="btn btn-secondary" style="width:100%;padding:8px;font-size:12.5px" onclick="ercPick(true)">🧾 長いレシートを何枚かに分けて撮った写真を、1枚のレシートとして読む</button></div>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.7;padding:0 16px 10px">レシートの写真を選ぶと（何枚でも・スマホならその場で撮影も可）、AIが日付・支払先・金額を読み取り、用途も分かるものは自動で選びます。下の一覧で確認してから登録してください。写真はアプリに保存しません。</div>
+      <div id="erc-status" style="padding:0 16px 8px;font-size:12.5px;color:var(--text-muted)"></div>
+      <div id="erc-review" style="padding:0 16px 6px"></div>
     </div>
     <div class="card">
       <div class="card-title">基本情報</div>
@@ -25141,6 +25152,124 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (tries > 300) clearInterval(t);
   }, 2000);
 });
+
+// ============================================================
+// 経費：レシートの写真をAIで読み取って登録する
+// 仕入と同じApps Script・同じ設定（/appSettings/receiptAi）を使う。AIが返すのは 日付・店名・合計 なので、
+// 用途（パーキング・ガソリンなど）は店名から推測し、分からないものは空欄にして選んでもらう。
+// ============================================================
+let _ercRows = [];
+async function ercPick(long) {
+  const c = await rcLoadCfg();
+  if (!c.url || !c.secret) { showToast(isAdmin() ? '先に仕入の画面の「AIの設定をする」で設定してください' : 'AIの読み取りがまだ設定されていません。管理者に連絡してください'); return; }
+  document.getElementById(long ? 'erc-file-long' : 'erc-file').click();
+}
+function ercCategories() {
+  const sel = document.getElementById('exp-category');
+  return sel ? [...sel.options].filter(o => o.value && o.value !== 'other').map(o => o.textContent).concat(['その他']) : ['その他'];
+}
+function ercGuessCategory(store) {
+  const s = String(store || '').normalize('NFKC');
+  const map = [
+    [/ENEOS|エネオス|コスモ|出光|シェル|apollo|アポロ|キグナス|宇佐美|石油|ガソリン|オイル/i, 'ガソリン'],
+    [/タイムズ|Times|パーキング|駐車|リパーク|NPC|名鉄協商|コインパ|PARK/i, 'パーキング'],
+    [/タクシー|TAXI|ハイヤー/i, 'タクシー'],
+    [/ヤマト運輸|佐川|日本郵便|郵便局|ゆうパック|西濃|福山通運/i, '配送'],
+    [/ダイソー|セリア|キャンドゥ|ホームセンター|カインズ|コーナン|DCM|ロフト|ハンズ|アスクル|モノタロウ/i, '備品・業務用品']
+  ];
+  const hit = map.find(([re]) => re.test(s));
+  return hit ? hit[1] : '';
+}
+async function ercOnLong(input) {
+  const files = [...(input.files || [])]; input.value = '';
+  if (!files.length || RC.busy) return;
+  if (files.length > 6) { showToast('1枚のレシートとして読めるのは6枚までです'); return; }
+  files.sort((a, b) => (a.lastModified || 0) - (b.lastModified || 0));
+  await ercOnFiles({ files: [files], value: '' }, true);
+}
+async function ercOnFiles(input, grouped) {
+  const files = grouped ? input.files : [...(input.files || [])]; if (!grouped) input.value = '';
+  if (!files.length || RC.busy) return;
+  const c = await rcLoadCfg();
+  const st = document.getElementById('erc-status');
+  RC.busy = true;
+  const expenses = (window._getExpenses && window._getExpenses()) || [];
+  const rows = []; let done = 0, failed = 0;
+  st.textContent = `読み取り中… 0 / ${files.length}`;
+  const work = async (f) => {
+    const list = Array.isArray(f) ? f : [f];
+    const name = list.length > 1 ? `${list[0].name || 'レシート'} ほか${list.length - 1}枚（1枚のレシート）` : (list[0].name || 'レシート');
+    try {
+      const images = [];
+      for (const one of list) images.push(await rcResize(one));
+      const r = await rcCall(c.url, images.length > 1 ? { secret: c.secret, images, mediaType: 'image/jpeg' } : { secret: c.secret, image: images[0], mediaType: 'image/jpeg' });
+      if (!r || !r.ok) throw new Error((r && r.error) || 'error');
+      const payee = String(r.store || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
+      const row = { file: name, date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : '', amount: Math.round(Number(r.total) || 0), payee, category: ercGuessCategory(payee), note: '' };
+      const dupe = expenses.find(x => x.date === row.date && Number(x.amount) === row.amount && piNorm(x.payee) === piNorm(row.payee));
+      row.status = dupe ? 'maybe' : 'new';
+      row.on = !dupe && !!(row.date && row.amount && row.payee && row.category);
+      rows.push(row);
+    } catch (e) { failed++; rows.push({ file: name, err: 'このレシートは読み取れませんでした（' + (e.message === 'image' ? '画像を開けません' : e.message) + '）。手入力してください', on: false, status: 'err' }); }
+    done++; st.textContent = `読み取り中… ${done} / ${files.length}`;
+  };
+  const queue = files.slice();
+  await Promise.all([0, 1, 2].map(async () => { while (queue.length) await work(queue.shift()); }));
+  RC.busy = false;
+  rows.forEach((r, i) => { if (r.status !== 'err' && rows.slice(0, i).some(x => x.date === r.date && x.amount === r.amount && x.payee === r.payee)) { r.status = 'maybe'; r.on = false; } });
+  _ercRows = _ercRows.concat(rows).sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
+  ercRender();
+  st.textContent = `${files.length}枚を読み取りました${failed ? `（${failed}枚は読み取れませんでした）` : ''}。下の一覧で確認してから登録してください。`;
+}
+function ercSet(i, k, v) { const r = _ercRows[i]; if (!r) return; r[k] = k === 'amount' ? (parseInt(v, 10) || 0) : v; ercRender(true); }
+function ercRender(keepFocus) {
+  const box = document.getElementById('erc-review'); if (!box) return;
+  if (!_ercRows.length) { box.innerHTML = ''; return; }
+  const act = keepFocus ? document.activeElement : null, actId = act && act.id, pos = act && act.selectionStart;
+  const cats = ercCategories();
+  const full = r => r.date && r.amount > 0 && String(r.payee || '').trim() && r.category;
+  const ok = r => r.on && full(r);
+  const n = _ercRows.filter(ok).length, sum = _ercRows.filter(ok).reduce((t, r) => t + r.amount, 0);
+  const inp = 'padding:6px 8px;font-size:13.5px;border:1.5px solid var(--border);border-radius:6px;box-sizing:border-box;width:100%';
+  box.innerHTML = `<div style="margin-top:4px;border-top:1px solid var(--border);padding-top:4px">
+    ${_ercRows.map((r, i) => r.status === 'err' ? `<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;color:var(--danger)">${escapeHtmlMain(r.file)}：${escapeHtmlMain(r.err)}</div>` : `
+      <div style="padding:9px 0;border-bottom:1px solid var(--border)">
+        <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--text-muted);cursor:pointer;margin-bottom:5px">
+          <input type="checkbox" ${r.on ? 'checked' : ''} onchange="_ercRows[${i}].on=this.checked;ercRender()" style="width:17px;height:17px;flex-shrink:0">
+          <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(r.file)}</span>
+          ${r.status === 'maybe' ? '<span style="flex-shrink:0;font-size:10.5px;padding:1px 6px;border-radius:4px;color:#b35400;background:#fff3e0">同じ内容の経費あり</span>' : ''}</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <input id="erc-d-${i}" type="date" value="${escapeHtmlMain(r.date || '')}" onchange="ercSet(${i},'date',this.value)" style="${inp}">
+          <input id="erc-a-${i}" type="number" inputmode="numeric" placeholder="金額" value="${r.amount || ''}" oninput="ercSet(${i},'amount',this.value)" style="${inp}">
+          <input id="erc-p-${i}" placeholder="支払先" value="${escapeHtmlMain(r.payee || '')}" oninput="ercSet(${i},'payee',this.value)" style="${inp}">
+          <select id="erc-c-${i}" onchange="ercSet(${i},'category',this.value);if(this.value&&_ercRows[${i}].status!=='maybe'){_ercRows[${i}].on=true;ercRender()}" style="${inp};${r.category ? '' : 'border-color:#e0a050'}">
+            <option value="">用途を選ぶ</option>${cats.map(x => `<option ${x === r.category ? 'selected' : ''}>${escapeHtmlMain(x)}</option>`).join('')}</select>
+          <input id="erc-n-${i}" placeholder="詳細メモ（任意）" value="${escapeHtmlMain(r.note || '')}" oninput="ercSet(${i},'note',this.value)" style="${inp};grid-column:1/-1">
+        </div>
+        ${!full(r) ? `<div style="font-size:11.5px;color:#b35400;margin-top:4px">${r.category ? '読み取れなかった項目があります。' : '用途を選んでください。'}入力するとチェックを付けられます</div>` : ''}
+        ${r.status === 'maybe' ? '<div style="font-size:11.5px;color:#b35400;margin-top:4px">日付・支払先・金額が同じ経費がすでにあります（手入力した分かもしれません）</div>' : ''}
+      </div>`).join('')}
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button type="button" class="btn btn-secondary" style="flex:1" onclick="_ercRows=[];ercRender();document.getElementById('erc-status').textContent=''">やめる</button>
+      <button type="button" class="btn btn-purple" style="flex:2" ${n ? '' : 'disabled'} onclick="ercCommit()">${n}件（¥${sum.toLocaleString('ja-JP')}）を登録する</button>
+    </div></div>`;
+  if (actId) { const e = document.getElementById(actId); if (e) { e.focus(); try { if (pos != null) e.setSelectionRange(pos, pos); } catch (x) {} } }
+}
+async function ercCommit() {
+  const rows = _ercRows.filter(r => r.on && r.date && r.amount > 0 && String(r.payee || '').trim() && r.category);
+  if (!rows.length) return;
+  try {
+    for (const r of rows) {
+      const note = (r.note || '').trim();
+      const content = r.category === 'その他' ? (note || 'その他') : r.category + (note ? '（' + note + '）' : '');
+      await window._fbPushExpense({ type: 'expense', date: r.date, payee: r.payee.trim(), category: r.category, note, content, amount: r.amount,
+        submittedAt: new Date().toLocaleDateString('ja-JP'), enteredBy: currentSessionEmail(), fromReceipt: true });
+    }
+    _ercRows = _ercRows.filter(r => !rows.includes(r)); ercRender();
+    document.getElementById('erc-status').textContent = '';
+    showToast(`${rows.length}件の経費を登録しました`);
+  } catch (e) { console.error(e); showToast('登録に失敗しました。もう一度お試しください'); }
+}
 </script>
 </body>
 </html>
