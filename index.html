@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-06g">
+<meta name="app-build" content="2026-11-07a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -24971,7 +24971,10 @@ async function fiOnFiles(input) {
       r.client = fiMatchClient(r.client, sales);
       r.file = f.name;
       if (!r.no || !r.date || !r.total) { r.err = '読み取れない項目があります'; }
-      const sameNo = r.no && sales.find(x => x.invoiceNo === r.no || (x.note || '').includes(r.no));
+      // 請求書番号が同じ売上があれば登録済み。メモの中を探すときは、番号の一部だけが重なるもの
+      // （例：国内の「261105-1」と、国外インボイスの「KNTK-20261105-1」）を同じとみなさないよう、前後が区切りのときだけ一致にする
+      const noRe = r.no ? new RegExp('(^|[^0-9A-Za-z-])' + r.no.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^0-9A-Za-z-])') : null;
+      const sameNo = r.no && sales.find(x => x.invoiceNo === r.no || (!x.invoiceNo && noRe.test(x.note || '')));
       const sameVal = !sameNo && sales.find(x => x.date === r.date && Number(x.amount) === r.total && fiNorm(x.client) === fiNorm(r.client));
       r.status = sameNo ? 'done' : sameVal ? 'maybe' : 'new';
       r.on = r.status === 'new' && !r.err;
