@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-06e">
+<meta name="app-build" content="2026-11-06g">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -355,6 +355,8 @@ body.wh-drag-active { cursor:grabbing; user-select:none; -webkit-user-select:non
    ようにする。 */
 .side-nav { display: none; }
 .home-col-side { display: none; }
+.home-wide-only { display: none; }
+@media (min-width: 1280px) { .home-wide-only { display: block; } }
 @media (min-width: 1280px) {
   .bottom-nav { display: none !important; }
   .side-nav { display: flex; flex-direction: column; position: fixed; left: 0; bottom: 0; top: var(--side-nav-top, 60px); width: 200px; z-index: 100; padding: 12px 10px 24px; overflow-y: auto; background: linear-gradient(180deg, #b8b8b8, #a4a4a4); border-right: 2px solid #c8c8c8; box-shadow: 2px 0 12px rgba(0,0,0,0.10); }
@@ -941,6 +943,9 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <button onclick="requestConsignNotifyPermission()" style="flex-shrink:0;padding:6px 10px;font-size:12px;font-weight:700;border:1.5px solid var(--gold-dark);border-radius:8px;background:var(--white);color:var(--gold-dark);cursor:pointer">🔔 通知を有効にする</button>
     </div>
     <div id="home-today-card"></div>
+    <!-- パソコンの広い画面だけ：左列の「今日やること」の下に、今日のAmazon出荷の一覧を出す
+         （要望「右列ばかり長く、在庫アラートがスクロールしないと見えない」への対応） -->
+    <div id="home-main-panels" class="home-wide-only"></div>
     <div id="home-summary"></div>
     </div>
     <aside class="home-col-side" id="home-side-col" style="position:static"><div id="home-side-panels"></div></aside>
@@ -16408,11 +16413,16 @@ function renderHomeSidePanels() {
     `<div class="home-side-row"><span class="home-side-row-main">${esc(a.p.model || a.p.name)}${a.p.model && a.p.name ? `<span style="color:var(--text-muted)">　${esc(a.p.name)}</span>` : ''}</span><span class="home-side-row-sub">${esc(locName(a.loc))}→${esc(locName(a.home))}　${a.qty}個</span></div>`
   ).join('');
 
+  // 左右の列の長さをそろえるため、今日のAmazon出荷は左列（今日やることの下）に出し、在庫アラートは右列に残す。
+  // 取引先からの連絡・運び待ちは、0件のときは出さない（あるときだけ右列に出る）。
+  const left = document.getElementById('home-main-panels');
+  const shipCard = card('🚚 今日のAmazon出荷', ship.length, shipRows, '出荷待ちの商品はありません', '出荷管理を開く', "goHomeToInv('inv-packec')");
+  const lowCard = card('⚠️ 在庫アラート（在庫が少ない商品）', low.length, lowRows, '在庫が少ない商品はありません', '在庫一覧を開く', "goHomeToInv('inv-list')");
   el.innerHTML =
-    card('🔔 取引先からの連絡（確認待ち）', pending.length, consignRows, '確認待ちの連絡はありません', '委託リストを開く', "goHomeToInv('inv-wholesale');setTimeout(()=>switchWhTab('consign'),200)") +
-    card('🚚 運び待ち（定位置以外の事務所にある商品）', away.length, awayRows, '運び待ちの商品はありません', 'まとめて移動する', "openBulkTransferModal()") +
-    card('🚚 今日のAmazon出荷', ship.length, shipRows, '出荷待ちの商品はありません', '出荷管理を開く', "goHomeToInv('inv-packec')") +
-    card('⚠️ 在庫アラート（在庫が少ない商品）', low.length, lowRows, '在庫が少ない商品はありません', '在庫一覧を開く', "goHomeToInv('inv-list')");
+    (pending.length ? card('🔔 取引先からの連絡（確認待ち）', pending.length, consignRows, '確認待ちの連絡はありません', '委託リストを開く', "goHomeToInv('inv-wholesale');setTimeout(()=>switchWhTab('consign'),200)") : '') +
+    (away.length ? card('🚚 運び待ち（定位置以外の事務所にある商品）', away.length, awayRows, '運び待ちの商品はありません', 'まとめて移動する', "openBulkTransferModal()") : '') +
+    (left ? '' : shipCard) + lowCard;
+  if (left) left.innerHTML = shipCard;
 }
 
 function showAlert(boxId, msgId, msg, type) {
