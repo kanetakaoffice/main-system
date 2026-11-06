@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-06d">
+<meta name="app-build" content="2026-11-06e">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -478,6 +478,29 @@ body.wh-drag-active { cursor:grabbing; user-select:none; -webkit-user-select:non
 .card-title { font-size: 11px; font-weight: 700; color: var(--gold-dark); letter-spacing: 0.1em; text-transform: uppercase; padding: 14px 16px 0; margin-bottom: 12px; }
 .home-action-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 14px 4px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); color: var(--text); cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .home-action-btn:active { background: var(--gold-bg); border-color: var(--gold); }
+/* 管理者のHOME：Quick Menuを小さく（パソコンは横1列、スマホは3つずつ2行） */
+.home-qm { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; padding: 0 12px 12px; }
+.home-qm .home-action-btn { padding: 8px 2px; gap: 3px; position: relative; }
+.home-qm .home-icon { font-size: 18px; }
+.home-qm .home-label { font-size: 11px; white-space: nowrap; }
+@media (max-width: 640px) { .home-qm { grid-template-columns: repeat(3, 1fr); } }
+/* 管理者のHOME：一番上の数字のまとめ */
+.home-kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+.home-kpi:empty { display: none; }
+.home-kpi-tile { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; cursor: pointer; min-width: 0; }
+.home-kpi-tile .l { font-size: 11px; color: var(--text-muted); }
+.home-kpi-tile .v { font-size: 17px; font-weight: 700; color: #4a4a4a; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-kpi-tile .s { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 640px) { .home-kpi { grid-template-columns: repeat(2, 1fr); } }
+/* 管理者のHOME：今日やることの下の「期限切れ・みんなの課題…」を1行にまとめた表示 */
+.home-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 16px 14px; }
+.home-chip { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); white-space: nowrap; font-family: inherit; }
+.home-chip.danger { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+.home-chip.warn { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
+.home-chip.info { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+.home-today-head { display: flex; align-items: center; justify-content: space-between; }
+.home-today-add { margin-right: 12px; padding: 3px 10px; font-size: 12px; font-weight: 700; border: 1.5px solid var(--border); border-radius: 8px; background: var(--white); color: var(--text); cursor: pointer; font-family: inherit; }
+.home-today-more { display: block; width: 100%; text-align: right; background: none; border: none; color: var(--gold-dark); font-size: 12px; font-weight: 700; cursor: pointer; padding: 6px 0 2px; font-family: inherit; }
 .home-icon { font-size: 22px; }
 .home-label { font-size: 12px; font-weight: 700; font-family: 'Hiragino Maru Gothic ProN', 'Hiragino Maru Gothic Pro', 'Yu Gothic', 'Noto Sans CJK JP', sans-serif; }
 .home-stat-card { cursor: pointer; -webkit-tap-highlight-color: transparent; }
@@ -897,9 +920,12 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
          右列（home-col-side）は表示せず、今まで通り1列のまま。 -->
     <div class="home-grid">
     <div class="home-col-main">
+    <!-- 要望「今日やることが長くて、下の仕入・売上の推移や売掛金が見られない」への対応：
+         大事な数字（今月の売上・仕入・未回収売掛金・今日のAmazon出荷）を一番上に小さく並べる -->
+    <div id="home-kpi" class="home-kpi"></div>
     <div class="card">
       <div class="card-title">Quick Menu</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 16px 16px">
+      <div class="home-qm">
         <!-- 要望「Quick Menuの項目が多すぎて見にくい。よく使う卸売管理・タスク・予定・みんなの状況・HAK在庫に絞りたい」への対応。
              入出庫・出荷管理は在庫モードの下のメニュー、仕入・経費・出張は業務モードの下のメニューから開ける -->
         <button class="home-action-btn" onclick="goHomeToInv('inv-wholesale')"><span class="home-icon">📦</span><span class="home-label">卸売管理</span></button>
@@ -917,7 +943,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div id="home-today-card"></div>
     <div id="home-summary"></div>
     </div>
-    <aside class="home-col-side" id="home-side-panels"></aside>
+    <aside class="home-col-side" id="home-side-col" style="position:static"><div id="home-side-panels"></div></aside>
     </div>
   </div>
 
@@ -14951,6 +14977,8 @@ async function renderHomeScreen() {
   if (typeof azPrefetchHome === 'function') needs.push(azPrefetchHome());
   if (needs.length) { try { await Promise.all(needs); } catch(e) {} }
   renderHomeSummary();
+  try { renderHomeKpi(); } catch (e) { console.error('home kpi error', e); }
+  homePlaceSummary();
   // HOMEを開いた時点のスタッフ登録件数を既読にし、通知許可の案内バナーの表示も更新する
   markBizEntriesSeen();
   updateConsignNotifyPromptVisibility();
@@ -15153,6 +15181,40 @@ function buildHomeTrendChart(purchases, sales, ecSales) {
   </div>`;
 }
 
+// ── 管理者のHOME：一番上の数字のまとめ ──
+function renderHomeKpi() {
+  const el = document.getElementById('home-kpi');
+  if (!el) return;
+  const purchases = window._getPurchases ? window._getPurchases() : [];
+  const sales     = window._getSales     ? window._getSales()     : [];
+  const ecSales   = window._getEcSales   ? window._getEcSales()   : [];
+  const today = todayStr(), ym = today.slice(0, 7);
+  const purMonth = purchases.filter(p => p.date?.startsWith(ym)).reduce((s, p) => s + p.amount, 0);
+  const salMonth = sales.filter(s => s.date?.startsWith(ym)).reduce((s, a) => s + a.amount, 0)
+                 + ecSales.filter(e => e.date?.startsWith(ym)).reduce((s, e) => s + e.amount, 0);
+  const profit = salMonth - purMonth;
+  const unpaid = sales.filter(s => s.payStatus !== '入金済み');
+  const recv = unpaid.reduce((s, a) => s + a.amount, 0);
+  const overdue = unpaid.filter(s => s.due && s.due < today).length;
+  const ship = typeof azHomeShipToday === 'function' ? azHomeShipToday().length : 0;
+  const tile = (label, value, sub, onclick, color) => `<div class="home-kpi-tile home-stat-card" onclick="${onclick}"><div class="l">${label}</div><div class="v" style="${color ? 'color:' + color : ''}">${value}</div><div class="s">${sub || '&nbsp;'}</div></div>`;
+  el.innerHTML =
+    tile('今月の売上', yen(salMonth), `粗利 <span style="color:${profit >= 0 ? 'var(--success)' : 'var(--danger)'};font-weight:700">${yen(profit)}</span>`, "showScreen('list')", 'var(--teal)') +
+    tile('今月の仕入', yen(purMonth), '', "showScreen('list')") +
+    tile('未回収売掛金', yen(recv), overdue ? `<span style="color:var(--danger);font-weight:700">期日超過 ${overdue}件</span>` : '', "showScreen('receivable')") +
+    tile('今日のAmazon出荷', ship + '件', '', "goHomeToInv('inv-packec')");
+}
+// パソコンの広い画面（HOMEが左右2列になるとき）は、グラフ・数字の欄を右列の一番上に移し、
+// 左列は「数字のまとめ・Quick Menu・今日やること」だけにして、スクロールしなくても両方見えるようにする
+function homePlaceSummary() {
+  const sum = document.getElementById('home-summary'), side = document.getElementById('home-side-col'), main = document.querySelector('#screen-home .home-col-main');
+  if (!sum || !side || !main) return;
+  const wide = window.matchMedia && window.matchMedia('(min-width: 1280px)').matches;
+  if (wide && sum.parentNode !== side) side.insertBefore(sum, side.firstChild);
+  else if (!wide && sum.parentNode !== main) main.appendChild(sum);
+}
+window.addEventListener('resize', () => { try { if (isAdmin()) homePlaceSummary(); } catch (e) {} });
+
 function renderHomeSummary() {
   const el = document.getElementById('home-summary');
   if (!el) return;
@@ -15183,31 +15245,12 @@ function renderHomeSummary() {
 
   el.innerHTML = `
     ${buildHomeTrendChart(purchases, sales, ecSales)}
-    <div class="card home-stat-card" onclick="showScreen('list')">
-      <div class="card-title">今月の実績</div>
-      <div style="display:flex;padding:0 16px 16px;gap:8px;text-align:center">
-        <div style="flex:1"><div style="font-size:11px;color:var(--text-muted)">仕入</div><div style="font-size:16px;font-weight:700;color:#4a4a4a">${yen(purMonth)}</div></div>
-        <div style="flex:1"><div style="font-size:11px;color:var(--text-muted)">売上</div><div style="font-size:16px;font-weight:700;color:var(--teal)">${yen(salMonth)}</div></div>
-        <div style="flex:1"><div style="font-size:11px;color:var(--text-muted)">粗利益</div><div style="font-size:16px;font-weight:700;color:${profitMonth>=0?'var(--success)':'var(--danger)'}">${yen(profitMonth)}</div></div>
-      </div>
-    </div>
-    <div class="card home-stat-card" onclick="showScreen('receivable')">
-      <div class="card-title">未回収売掛金</div>
-      <div style="padding:0 16px 16px">
-        <div style="font-size:18px;font-weight:700;color:#4a4a4a">${yen(recvTotal)}</div>
-        ${(overdueCount||dueSoonCount) ? `<div style="margin-top:6px;display:flex;gap:10px;flex-wrap:wrap;font-size:11px">${overdueCount?`<span style="color:var(--danger);font-weight:700">期日超過 ${overdueCount}件</span>`:''}${dueSoonCount?`<span style="color:var(--warning);font-weight:700">7日以内に期日 ${dueSoonCount}件</span>`:''}</div>` : ''}
-      </div>
-    </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px">
       ${typeof kaHomeTileHtml === 'function' ? kaHomeTileHtml() : ''}
       ${typeof caHomeTileHtml === 'function' ? caHomeTileHtml() : ''}
       <div class="home-stat-card" onclick="goHomeToInv('inv-list')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">在庫アラート</div>
         <div style="font-size:18px;font-weight:700;color:${lowStockCount?'var(--warning)':'#4a4a4a'}">${lowStockCount}件</div>
-      </div>
-      <div class="home-stat-card" onclick="goHomeToInv('inv-packec')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">今日のAmazon出荷</div>
-        <div style="font-size:18px;font-weight:700;color:#4a4a4a">${pendingShipCount}件</div>
       </div>
       <div class="home-stat-card" onclick="goHomeToInv('inv-packec','amazon')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">EC本日の売上</div>
@@ -20927,6 +20970,27 @@ async function tkEnableNotify() {
   tkRefreshAll();
 }
 
+const HOME_TODAY_MAX = 5;
+function homeTodayCompactHtml(o) {
+  const { today, evs, myOverdue, myToday, teamOverdue, unassigned, row, banner } = o;
+  let html = `<div class="card"><div class="home-today-head"><div class="card-title">今日やること</div><button type="button" class="home-today-add" onclick="tkOpenTaskModal()">＋ タスク</button></div>` + banner;
+  const co = tkCompanyOff(today), ps = tkPersonOffs(today);
+  if (co || ps.length) html += `<div class="tk-offbar ${co ? 'co' : ''}" style="margin-bottom:8px" onclick="openTasksScreen('cal')">${co ? `<b>🏢 今日は会社のお休み${co.note ? '（' + tkEsc(co.note) + '）' : ''}</b>　` : ''}${ps.length ? '🌴 今日のお休み：' + ps.map(x => tkEsc(tkOffShort(x))).join('、') : ''}</div>`;
+  const more = (n, onclick) => n > 0 ? `<button type="button" class="home-today-more" onclick="${onclick}">ほか${n}件 →</button>` : '';
+  const evRow = e => `<div class="tk-today-row"><span class="tm">${tkEsc(e.start || '終日')}</span><span class="t" onclick="tkOpenEventView('${e.id}')">${tkEsc(e.title)}${e.place ? ' <span style="color:var(--text-muted);font-size:11px">📍' + tkEsc(e.place) + '</span>' : ''}</span></div>`;
+  html += `<div class="tk-today-sec"><div class="h">📅 今日の予定</div>${evs.length ? evs.slice(0, HOME_TODAY_MAX).map(evRow).join('') + more(evs.length - HOME_TODAY_MAX, "openTasksScreen('cal')") : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">予定はありません</div>'}</div>`;
+  html += `<div class="tk-today-sec"><div class="h">✅ 今日のタスク</div>${myToday.length ? myToday.slice(0, HOME_TODAY_MAX).map(row).join('') + more(myToday.length - HOME_TODAY_MAX, "TK.filter='mine';openTasksScreen('tasks')") : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0">今日が期限のタスクはありません</div>'}</div>`;
+  // 期限切れ（自分）は、今まで通りタップしたときだけ中身を開く
+  if (myOverdue.length && TK._homeOverdueOpen) html += `<div class="tk-today-sec"><div class="h danger">⚠️ 期限切れ</div>${myOverdue.map(row).join('')}</div>`;
+  const chips = [];
+  if (myOverdue.length) chips.push(`<button type="button" class="home-chip danger" onclick="TK._homeOverdueOpen=!TK._homeOverdueOpen;renderHomeTodayCard(true)">⚠️ 期限切れ ${myOverdue.length}件 ${TK._homeOverdueOpen ? '▲' : '▼'}</button>`);
+  if (teamOverdue) chips.push(`<button type="button" class="home-chip warn" onclick="TK.filter='people';openTasksScreen('tasks')">👥 ほかの人の期限切れ ${teamOverdue}件</button>`);
+  if (unassigned) chips.push(`<button type="button" class="home-chip warn" onclick="TK.filter='people';openTasksScreen('tasks')">担当者未定 ${unassigned}件</button>`);
+  const n = typeof isOpenCount === 'function' ? isOpenCount() : 0, nn = n ? isUnseenCount() : 0;
+  if (n) chips.push(`<button type="button" class="home-chip info" onclick="TK.tab='issues';openTasksScreen('issues')">📋 みんなの課題 ${n}件${nn ? `<span style="background:#2563eb;color:#fff;border-radius:8px;padding:0 6px;font-size:10px;margin-left:2px">新着 ${nn}</span>` : ''}</button>`);
+  html += chips.length ? `<div class="home-chips">${chips.join('')}</div>` : '<div style="height:6px"></div>';
+  return html + '</div>';
+}
 // ── HOMEの「今日やること」 ──
 async function renderHomeTodayCard(noFetch) {
   const box = document.getElementById('home-today-card');
@@ -20957,6 +21021,11 @@ async function renderHomeTodayCard(noFetch) {
     </div>`;
   // 管理者のHOMEには既存の「🔔 通知を有効にする」案内があるので、二重に出さない
   const banner = document.getElementById('home-notify-prompt') ? '' : tkNotifyBannerHtml();
+  // 要望「今日やることが多くて下に伸び、下の数字が見られない。下のボタンもQuick Menuと重なる」への対応（管理者のHOME）：
+  // 予定とタスクはそれぞれ5件まで出して残りは「ほか○件」に、期限切れ・ほかの人の期限切れ・みんなの課題は1行にまとめ、
+  // タスク一覧・カレンダーのボタンはQuick Menu（タスク・予定）と重なるので出さず、タスク追加は見出しの「＋」にする。
+  // 社員のHOMEは今まで通り（後で別に見直す）。
+  if (isAdmin()) { box.innerHTML = homeTodayCompactHtml({ me, today, evs, myOverdue, myToday, teamOverdue, unassigned, row, banner }); tkUpdateBadges(); return; }
   let html = '<div class="card"><div class="card-title">今日やること</div>' + banner;
   {
     const co = tkCompanyOff(today), ps = tkPersonOffs(today);
