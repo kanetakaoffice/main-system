@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-07b">
+<meta name="app-build" content="2026-11-07c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -421,6 +421,21 @@ body.wh-drag-active { cursor:grabbing; user-select:none; -webkit-user-select:non
 }
 .biz-side { display: none; }
 .chart-layout-main, .chart-layout-side { min-width: 0; }
+/* グラフ画面の右の表：月・仕入・売上・粗利益・粗利率・経費控除後 */
+.chart-trow { display: grid; grid-template-columns: 78px repeat(3, minmax(0, 1fr)) 46px minmax(0, 1fr); gap: 6px; align-items: center; }
+.chart-trow > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chart-trow > span:not(:first-child) { text-align: right; }
+@media (max-width: 640px) {
+  .chart-trow { grid-template-columns: 64px repeat(3, minmax(0, 1fr)) 38px; gap: 4px; font-size: 10.5px !important; }
+  .chart-trow > span { overflow: visible; text-overflow: clip; letter-spacing: -0.2px; }
+  .chart-col-net { display: none; }
+  .chart-mixpct { display: none !important; }
+  .chart-miss-full { display: none; }
+}
+@media (min-width: 641px) { .chart-miss-short { display: none; } }
+.chart-card { background: var(--white); border-radius: var(--radius); border: 1px solid var(--border); padding: 14px; margin-bottom: 16px; }
+.chart-card-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; font-weight: 700; color: #909090; }
+.chart-card-info { font-size: 12px; color: var(--text-muted); text-align: center; min-height: 18px; margin-bottom: 6px; line-height: 1.6; }
 @media (min-width: 1280px) {
   .biz-grid { display: grid; grid-template-columns: minmax(0, 600px) minmax(380px, 1fr); gap: 24px; align-items: start; max-width: 1380px; }
   .biz-grid > .biz-main { min-width: 0; }
@@ -15376,10 +15391,15 @@ function renderChart(container) {
     return type;
   }
 
+  // 決まった色のない仕入先（昇輝・川内大成など）は灰色で区別がつかなかったので、出てきた順に別々の色を割り当てる
+  const EXTRA_SUP_COLORS = ['#c4b5fd','#a78bfa','#fda4af','#d8b4fe','#f0abfc','#fb7185','#e9a3c9','#b4a7d6','#f9c2a0','#c48fb5'];
+  const _supColorMap = {};
   function getSupplierColor(s) {
     if (!s) return '#d1d5db';
     if (s.startsWith('店舗')) return SUPPLIER_COLORS['店舗'];
-    return SUPPLIER_COLORS[s] || '#d1d5db';
+    if (SUPPLIER_COLORS[s]) return SUPPLIER_COLORS[s];
+    if (!_supColorMap[s]) _supColorMap[s] = EXTRA_SUP_COLORS[Object.keys(_supColorMap).length % EXTRA_SUP_COLORS.length];
+    return _supColorMap[s];
   }
   function normalizeSupplier(s) { return s&&s.startsWith('店舗')?'店舗':s; }
 
@@ -15417,6 +15437,11 @@ function renderChart(container) {
   // 即時決済されるため、入金ステータス（payStatus）の概念がなく、ここには含めない。
   const allSalesData = window._getSales ? window._getSales() : [];
   const recv = months.map(m=>allSalesData.filter(s=>s.date && s.date>=months[0] && s.date<=m+'-31' && s.payStatus!=='入金済み').reduce((s,a)=>s+a.amount,0));
+  // 粗利率（%）。売上がない月は出さない
+  const grossRate = months.map((_,i)=>salCurr[i] ? profit[i]/salCurr[i]*100 : null);
+  // 仕入が未入力の月（売上はあるのに仕入が0円で、今月以前の月）。粗利が実際より大きく見えるので印をつける
+  const thisYm = ymKey(new Date());
+  const missingPur = months.map((m,i)=>salCurr[i]>0 && purCurr[i]===0 && m<=thisYm);
 
   // PC幅（1280px以上）ではグラフを縦長にして見やすくする（スマホ・画面半分では今まで通り）
   const barH = window.matchMedia('(min-width: 1280px)').matches ? 300 : 160;
@@ -15490,6 +15515,28 @@ function renderChart(container) {
     }).join('');
   }
 
+  // g5：粗利率（%）。0%を真ん中の点線にして、上下に余裕を持たせる
+  const maxRate = Math.max(...grossRate.filter((v,i)=>v!=null&&!missingPur[i]).map(Math.abs), 10) * 1.3;
+  function computeRateSvg(xFracs) {
+    // 仕入未入力の月は粗利率が100%近くに跳ね上がって見えるので、線には入れない
+    const pts = grossRate.map((v,i)=>v==null||missingPur[i]?null:[xFracs[i]*svgW, midY-(v/maxRate)*(svgH/2), v, i]).filter(Boolean);
+    if (!pts.length) return '';
+    const lastI = months.length - 1;
+    const line = `<polyline points="${pts.map(p=>p[0]+','+p[1]).join(' ')}" fill="none" stroke="#8b5cf6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const dots = pts.map(([x,y,v,i])=>{ const anchor=i===0?'start':(i===lastI?'end':'middle'); const lx=i===0?x+6:(i===lastI?x-6:x); const ly=y>20?y-18:y+14;
+      return `<g style="cursor:pointer;pointer-events:all" onclick="this.querySelector('.tip').style.display=this.querySelector('.tip').style.display==='none'?'block':'none'"><circle cx="${x}" cy="${y}" r="4" fill="${missingPur[i]?'#fff7ed':'white'}" stroke="${missingPur[i]?'#f59e0b':'#8b5cf6'}" stroke-width="2"/><text class="tip" x="${lx}" y="${ly}" text-anchor="${anchor}" font-size="9" fill="${v>=0?'#6d28d9':'#dc2626'}" font-weight="700" style="display:none">${v.toFixed(1)}%</text></g>`; }).join('');
+    return `<line x1="0" y1="${midY}" x2="${svgW}" y2="${midY}" stroke="#e5e7eb" stroke-width="1" stroke-dasharray="3 3"/>${line}${dots}`;
+  }
+  // g6：経費控除後利益（粗利益 − 経費）。粗利益ラインと同じく0円を真ん中にする
+  const maxNet = Math.ceil(Math.max(...netProfit.map(Math.abs), 1) * 1.4 / 10000) * 10000 || 10000;
+  function computeNetSvg(xFracs) {
+    const lastI = netProfit.length - 1;
+    const pts = netProfit.map((v,i)=>`${xFracs[i]*svgW},${midY-(v/maxNet)*(svgH/2)}`).join(' ');
+    const dots = netProfit.map((v,i)=>{ const x=xFracs[i]*svgW, y=midY-(v/maxNet)*(svgH/2); const anchor=i===0?'start':(i===lastI?'end':'middle'); const lx=i===0?x+6:(i===lastI?x-6:x); const ly=y>20?y-18:y+14;
+      return `<g style="cursor:pointer;pointer-events:all" onclick="this.querySelector('.tip').style.display=this.querySelector('.tip').style.display==='none'?'block':'none'"><circle cx="${x}" cy="${y}" r="4" fill="white" stroke="#4f46e5" stroke-width="2"/><text class="tip" x="${lx}" y="${ly}" text-anchor="${anchor}" font-size="9" fill="${v>=0?'#16a34a':'#dc2626'}" font-weight="700" style="display:none">${yen(v)}</text></g>`; }).join('');
+    return `<line x1="0" y1="${midY}" x2="${svgW}" y2="${midY}" stroke="#e5e7eb" stroke-width="1" stroke-dasharray="3 3"/><polyline points="${pts}" fill="none" stroke="#4f46e5" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
+  }
+
   // g3：累計もdisplayMaxの1.3倍に余裕を持たせる
   const maxCumulRaw=Math.max(...salCumul,...salCumulP,1);
   const maxCumul=Math.ceil(maxCumulRaw*1.3/10000)*10000||10000;
@@ -15511,7 +15558,9 @@ function renderChart(container) {
       g1:`${gridLines}<line x1="0" y1="${midY}" x2="${svgW}" y2="${midY}" stroke="#e5e7eb" stroke-width="1" stroke-dasharray="3 3"/><polyline points="${profitPts}" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${profitDots}`,
       g2:`${gridLines}${purPrevLine}${salPrevLine}${salPrevDots}`,
       g3:`${gridLines}${cumulLineP}${cumulLine}${cumulDots}`,
-      g4:`${gridLines}${recvLine}${recvDots}`
+      g4:`${gridLines}${recvLine}${recvDots}`,
+      g5:`${gridLines}${computeRateSvg(xFracs)}`,
+      g6:`${gridLines}${computeNetSvg(xFracs)}`
     };
   }
 
@@ -15523,9 +15572,9 @@ function renderChart(container) {
   window._chartMonthInfo = months.map((m,i)=>{
     const pd=purBySupplier.filter(x=>x.curr[i]>0).map(x=>`${x.supplier} ${yen(x.curr[i])}`).join('・');
     const sd=salByType.filter(x=>x.curr[i]>0).map(x=>`${salTypeLabel(x.type)} ${yen(x.curr[i])}`).join('・');
-    return `<b style="color:var(--text)">${m.slice(0,4)}年${parseInt(m.slice(5,7))}月</b>　仕入 <b style="color:#4a4a4a">${yen(purCurr[i])}</b>${pd?`<span style="color:#909090">（${pd}）</span>`:''}　売上 <b style="color:var(--teal)">${yen(salCurr[i])}</b>${sd?`<span style="color:#909090">（${sd}）</span>`:''}　粗利 <b style="color:${profit[i]>=0?'var(--success)':'var(--danger)'}">${yen(profit[i])}</b>`;
+    return `<b style="color:var(--text)">${m.slice(0,4)}年${parseInt(m.slice(5,7))}月</b>　仕入 <b style="color:#4a4a4a">${yen(purCurr[i])}</b>${pd?`<span style="color:#909090">（${pd}）</span>`:''}　売上 <b style="color:var(--teal)">${yen(salCurr[i])}</b>${sd?`<span style="color:#909090">（${sd}）</span>`:''}　粗利 <b style="color:${profit[i]>=0?'var(--success)':'var(--danger)'}">${yen(profit[i])}</b>${grossRate[i]!=null?`（${grossRate[i].toFixed(1)}%）`:''}　経費控除後 <b style="color:#4f46e5">${yen(netProfit[i])}</b>${missingPur[i]?'<br><span style="color:#d97706;font-weight:700">⚠ この月は仕入が未入力のため、粗利は実際より大きく出ています</span>':''}`;
   });
-  window._chartSelMonth = -1;
+  window._chartSelMonth = -1; window._chartMixSel = -1; window._chartTgSel = -1;
   const baseCols=months.map((m,i)=>`
     <div class="chart-mcol" onclick="chartSelMonth(${i})" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:1px;padding:0 2px;cursor:pointer">
       <div style="width:100%;display:flex;gap:2px;margin-bottom:2px;opacity:${i===0?1:0}"><div style="flex:1;min-width:0;text-align:center;font-size:8px;color:#9ca3af;white-space:nowrap;overflow:hidden">仕入</div><div style="flex:1;min-width:0;text-align:center;font-size:8px;color:#9ca3af;white-space:nowrap;overflow:hidden">売上</div></div>
@@ -15534,6 +15583,7 @@ function renderChart(container) {
         <div style="flex:1;min-width:0">${stackedSalBar(i)}</div>
       </div>
       <div style="font-size:9px;color:var(--text-muted);margin-top:3px">${parseInt(m.slice(5,7))}月</div>
+      <div style="font-size:8px;color:#d97706;font-weight:700;height:10px;line-height:10px;white-space:nowrap">${missingPur[i]?'<span class="chart-miss-full">仕入未入力</span><span class="chart-miss-short">⚠</span>':''}</div>
     </div>`).join('');
 
   const svgPatterns=buildSvgPatterns(naiveFracs);
@@ -15541,9 +15591,11 @@ function renderChart(container) {
     g1:`<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:20px;height:3px;background:#38bdf8;border-radius:2px"></span>粗利益</span>`,
     g2:`<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:20px;height:2px;border-top:2px dashed #9ca3af"></span>仕入(前年)</span><span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:20px;height:2px;border-top:2px dashed #0d9488"></span>売上(前年)</span>`,
     g3:`<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:20px;height:3px;background:#f59e0b;border-radius:2px"></span>累計売上(今年)</span><span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:20px;height:2px;border-top:2px dashed #fcd34d"></span>累計売上(前年)</span>`,
-    g4:`<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:20px;height:3px;background:#dc2626;border-radius:2px"></span>未回収売掛金</span>`
+    g4:`<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:20px;height:3px;background:#dc2626;border-radius:2px"></span>未回収売掛金</span>`,
+    g5:`<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:20px;height:3px;background:#8b5cf6;border-radius:2px"></span>粗利率（%・真ん中の点線が0%）</span>`,
+    g6:`<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:20px;height:3px;background:#4f46e5;border-radius:2px"></span>経費控除後利益（粗利益−経費・真ん中の点線が0円）</span>`
   };
-  const titles={g1:'粗利益ライン',g2:'前年比ライン',g3:'累計売上ライン',g4:'売掛金残高ライン'};
+  const titles={g1:'粗利益ライン',g5:'粗利率ライン',g6:'経費控除後利益ライン',g2:'前年比ライン',g3:'累計売上ライン',g4:'売掛金残高ライン'};
 
   const supplierLegend=sortedSuppliers.map(sup=>`<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:12px;background:${getSupplierColor(sup)};border-radius:2px"></span>${sup}</span>`).join('');
   const salTypeLegend=salByType.map(t=>`<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:12px;background:${t.color};border-radius:2px"></span>${salTypeLabel(t.type)}</span>`).join('');
@@ -15556,16 +15608,17 @@ function renderChart(container) {
     const ed=expByCategory.filter(c=>c.curr[i]>0).map(c=>`<span style="display:inline-flex;align-items:center;gap:3px;margin-right:8px;font-size:10px;color:#666"><span style="display:inline-block;width:8px;height:8px;background:${c.color};border-radius:2px"></span>${c.cat} ${yen(c.curr[i])}</span>`).join('');
     // 仕入先別・売上種別・経費カテゴリー別の内訳は、月ごとにタップで開閉できるようにする（他の画面と同じアコーディオン方式）。
     // これにより、まず12ヶ月分の合計を一覧でざっと比較でき、気になる月だけ内訳を開いて詳しく見られる。
-    const headerRow = `<div style="display:flex;justify-content:space-between;align-items:center;flex:1;font-size:12px"><span style="font-weight:600;color:var(--text)">${m.slice(0,4)}年${parseInt(m.slice(5,7))}月</span><span style="color:#4a4a4a">${yen(p)}</span><span style="color:var(--teal)">${yen(s)}</span><span style="font-weight:700;color:${pr>=0?'var(--success)':'var(--danger)'}">${yen(pr)}</span></div>`;
+    const rateCell = missingPur[i] ? '<span style="color:#b0b0b0">—</span>' : grossRate[i]==null ? '' : `<span style="color:${grossRate[i]>=0?'#6d28d9':'var(--danger)'}">${grossRate[i].toFixed(1)}%</span>`;
+    const headerRow = `<div class="chart-trow" style="flex:1;font-size:12px"><span style="font-weight:600;color:var(--text)">${m.slice(0,4)}年${parseInt(m.slice(5,7))}月</span><span style="color:#4a4a4a">${missingPur[i]?'<span style="font-size:10.5px;font-weight:700;color:#b45309;background:#fff7ed;border:1px solid #fcd34d;border-radius:4px;padding:0 4px">仕入未入力</span>':yen(p)}</span><span style="color:var(--teal)">${yen(s)}</span><span style="font-weight:700;color:${missingPur[i]?'#b0b0b0':pr>=0?'var(--success)':'var(--danger)'}">${yen(pr)}${missingPur[i]?'※':''}</span><span>${rateCell}</span><span class="chart-col-net" style="color:${netProfit[i]>=0?'#4f46e5':'var(--danger)'}">${yen(netProfit[i])}</span></div>`;
     if (!bd && !sd && !ed) {
-      return `<div style="border-bottom:1px solid var(--border);padding:8px 12px">${headerRow}</div>`;
+      return `<div style="border-bottom:1px solid var(--border);padding:8px 12px;display:flex;align-items:center">${headerRow}<span style="width:18px;flex-shrink:0"></span></div>`;
     }
     const accId = 'chart-m-' + m;
     const netP = netProfit[i];
     return `<div style="border-bottom:1px solid var(--border)">
       <div class="accordion-header" style="padding:8px 12px;border-bottom:none" onclick="toggleAccordion('${accId}')">
         ${headerRow}
-        <span class="accordion-arrow" id="acc-arrow-${accId}" style="font-size:10px;margin-left:8px;flex-shrink:0">▼</span>
+        <span class="accordion-arrow" id="acc-arrow-${accId}" style="font-size:10px;width:18px;text-align:right;flex-shrink:0">▼</span>
       </div>
       <div class="accordion-body" id="acc-body-${accId}">
         ${bd?`<div style="padding:0 12px 8px;flex-wrap:wrap;display:flex;align-items:center"><span style="font-size:10px;font-weight:700;color:#909090;margin-right:6px">仕入</span>${bd}</div>`:''}
@@ -15580,8 +15633,11 @@ function renderChart(container) {
   const yearPurTotal = purCurr.reduce((s,v)=>s+v,0);
   const yearSalTotal = salCurr.reduce((s,v)=>s+v,0);
   const yearProfitTotal = yearSalTotal - yearPurTotal;
-  const yearTotalRow = summaryRows ? `<div style="border-top:2px solid var(--border);padding:8px 12px;background:var(--gold-bg)"><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px"><span style="font-weight:700;color:var(--text)">年間合計</span><span style="font-weight:700;color:#4a4a4a">${yen(yearPurTotal)}</span><span style="font-weight:700;color:var(--teal)">${yen(yearSalTotal)}</span><span style="font-weight:700;color:${yearProfitTotal>=0?'var(--success)':'var(--danger)'}">${yen(yearProfitTotal)}</span></div></div>` : '';
-  const summaryTable=`<div style="background:var(--white);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;margin-bottom:16px"><div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--surface);font-size:11px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)"><span>月</span><span>仕入合計</span><span style="color:var(--teal)">売上合計</span><span>粗利益</span></div>${summaryRows||'<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">データがありません</div>'}${yearTotalRow}</div>`;
+  const yearRate = yearSalTotal ? yearProfitTotal / yearSalTotal * 100 : null;
+  const yearNet = netProfit.reduce((s,v)=>s+v,0);
+  const yearTotalRow = summaryRows ? `<div style="border-top:2px solid var(--border);padding:8px 12px;background:var(--gold-bg);display:flex;align-items:center"><div class="chart-trow" style="flex:1;font-size:12px;font-weight:700"><span style="color:var(--text)">年間合計</span><span style="color:#4a4a4a">${yen(yearPurTotal)}</span><span style="color:var(--teal)">${yen(yearSalTotal)}</span><span style="color:${yearProfitTotal>=0?'var(--success)':'var(--danger)'}">${yen(yearProfitTotal)}</span><span style="color:#6d28d9">${yearRate==null?'':yearRate.toFixed(1)+'%'}</span><span class="chart-col-net" style="color:${yearNet>=0?'#4f46e5':'var(--danger)'}">${yen(yearNet)}</span></div><span style="width:18px;flex-shrink:0"></span></div>` : '';
+  const missingNote = missingPur.some(Boolean) ? `<div style="padding:8px 12px;font-size:11px;color:#b45309;background:#fffbeb;border-top:1px solid #fcd34d">※「仕入未入力」の月は、売上はあるのに仕入が0円です。仕入を入力するまで、粗利益・粗利率は実際より大きく出ます。</div>` : '';
+  const summaryTable=`<div style="background:var(--white);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;margin-bottom:16px"><div style="padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center"><div class="chart-trow" style="flex:1;font-size:11px;font-weight:700;color:var(--text-muted)"><span>月</span><span>仕入合計</span><span style="color:var(--teal)">売上合計</span><span>粗利益</span><span>粗利率</span><span class="chart-col-net">経費控除後</span></div><span style="width:18px;flex-shrink:0"></span></div>${summaryRows||'<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">データがありません</div>'}${yearTotalRow}${missingNote}</div>`;
 
   container.innerHTML=`<div class="chart-layout"><div class="chart-layout-main">
   <div style="background:var(--white);border-radius:var(--radius);border:1px solid var(--border);padding:14px;margin-bottom:16px">
@@ -15611,8 +15667,14 @@ function renderChart(container) {
       </div>
       <div id="chart-legend" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">${legends.g1}</div>
     </div>
-  </div></div>
-  <div class="chart-layout-side">${summaryTable}</div></div>`;
+  </div>
+  ${chartMixCardHtml(months, salByType, salTypeLabel)}
+  <div id="chart-target-card"></div>
+  </div>
+  <div class="chart-layout-side">${summaryTable}${chartPayScheduleHtml(allSalesData)}</div></div>`;
+  window._chartTargetCtx = { months, salCurr };
+  chartRenderTargetCard();
+  chartLoadTargets();
 
   window._chartSvgPatterns=svgPatterns;
   window._chartLegends=legends;
@@ -15639,6 +15701,124 @@ function renderChart(container) {
       if (svgNow && window._currentChartKey) svgNow.innerHTML = correctedPatterns[window._currentChartKey];
     } catch(e) { console.error('chart overlay reposition error', e); }
   });
+}
+
+// ── グラフ画面：販路別の割合の推移（国内・国外・ECの割合を100%の積み上げで） ──
+function chartMixCardHtml(months, salByType, labelOf) {
+  const tot = months.map((_, i) => salByType.reduce((s, t) => s + t.curr[i], 0));
+  if (!tot.some(Boolean)) return '';
+  window._chartMixInfo = months.map((m, i) => tot[i] ? `<b style="color:var(--text)">${parseInt(m.slice(5, 7))}月</b>　` + salByType.filter(t => t.curr[i] > 0).map(t => `<span style="color:${t.color};font-weight:700">■</span>${labelOf(t.type)} ${Math.round(t.curr[i] / tot[i] * 100)}%（${yen(t.curr[i])}）`).join('　') : '');
+  const cols = months.map((m, i) => {
+    const segs = tot[i] ? [...salByType].reverse().filter(t => t.curr[i] > 0).map(t => { const pct = t.curr[i] / tot[i] * 100; return `<div style="height:${pct}%;background:${t.color};display:flex;align-items:center;justify-content:center;font-size:8.5px;color:#fff;font-weight:700;overflow:hidden"><span class="chart-mixpct">${pct >= 14 ? Math.round(pct) + '%' : ''}</span></div>`; }).join('') : '';
+    return `<div class="chart-mixcol" onclick="chartSelMix(${i})" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;cursor:pointer">
+      <div style="width:78%;height:120px;display:flex;flex-direction:column;justify-content:flex-end;border-radius:3px;overflow:hidden;background:${tot[i] ? 'transparent' : 'var(--surface)'}">${segs}</div>
+      <div style="font-size:9px;color:var(--text-muted);margin-top:3px">${parseInt(m.slice(5, 7))}月</div></div>`;
+  }).join('');
+  const legend = salByType.map(t => `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px"><span style="display:inline-block;width:12px;height:12px;background:${t.color};border-radius:2px"></span>${labelOf(t.type)}</span>`).join('');
+  return `<div class="chart-card"><div class="chart-card-h"><span>販路別の割合の推移（売上に占める国内・国外・ECの割合）</span></div>
+    <div class="chart-card-info" id="chart-mix-info">棒をタップすると、その月の割合と金額が出ます</div>
+    <div style="display:flex;gap:6px;align-items:flex-end">${cols}</div>
+    <div style="font-size:11px;margin-top:8px">${legend}</div></div>`;
+}
+function chartSelMix(i) {
+  window._chartMixSel = window._chartMixSel === i ? -1 : i;
+  const sel = window._chartMixSel;
+  document.querySelectorAll('.chart-mixcol').forEach((el, k) => { el.style.opacity = sel < 0 || sel == null || k === sel ? '1' : '0.45'; });
+  const el = document.getElementById('chart-mix-info');
+  if (el) el.innerHTML = sel < 0 ? '棒をタップすると、その月の割合と金額が出ます' : (window._chartMixInfo || [])[sel] || 'この月の売上はありません';
+}
+
+// ── グラフ画面：入金予定（未回収の売掛金を入金期日の月ごとに） ──
+function chartPayScheduleHtml(sales) {
+  const unpaid = (sales || []).filter(s => s.payStatus !== '入金済み' && Number(s.amount) > 0);
+  if (!unpaid.length) return '';
+  const today = todayStr(), thisYm = today.slice(0, 7);
+  const groups = {};
+  const add = (key, s) => { (groups[key] = groups[key] || []).push(s); };
+  unpaid.forEach(s => { if (!s.due) add('none', s); else if (s.due < today) add('over', s); else add(s.due.slice(0, 7), s); });
+  const keys = Object.keys(groups).filter(k => k !== 'over' && k !== 'none').sort();
+  const order = (groups.over ? ['over'] : []).concat(keys, groups.none ? ['none'] : []);
+  const total = unpaid.reduce((t, s) => t + Number(s.amount), 0);
+  const max = Math.max(...order.map(k => groups[k].reduce((t, s) => t + Number(s.amount), 0)), 1);
+  const label = k => k === 'over' ? '期日を過ぎた分' : k === 'none' ? '期日の入力なし' : `${k.slice(0, 4)}年${parseInt(k.slice(5, 7))}月${k === thisYm ? '（今月）' : ''}`;
+  const rows = order.map(k => {
+    const list = groups[k], sum = list.reduce((t, s) => t + Number(s.amount), 0);
+    const by = {}; list.forEach(s => { by[s.client || '（取引先なし）'] = (by[s.client || '（取引先なし）'] || 0) + Number(s.amount); });
+    const clients = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([c, v]) => `${escapeHtmlMain(c)} ${yen(v)}`).join('・');
+    const col = k === 'over' ? 'var(--danger)' : k === 'none' ? '#9ca3af' : 'var(--teal)';
+    const id = 'chart-pay-' + k;
+    return `<div style="padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer" onclick="const d=document.getElementById('${id}');d.style.display=d.style.display==='none'?'block':'none'">
+      <div style="display:flex;justify-content:space-between;font-size:12px;gap:8px"><span style="font-weight:600;color:${k === 'over' ? 'var(--danger)' : 'var(--text)'}">${label(k)}<span style="color:var(--text-muted);font-weight:400">　${list.length}件</span></span><b style="color:${col}">${yen(sum)}</b></div>
+      <div style="height:5px;background:var(--surface);border-radius:3px;margin-top:4px"><div style="height:5px;width:${Math.max(2, Math.round(sum / max * 100))}%;background:${col};border-radius:3px"></div></div>
+      <div id="${id}" style="display:none;font-size:11px;color:var(--text-muted);margin-top:5px;line-height:1.6">${clients}</div></div>`;
+  }).join('');
+  return `<div style="background:var(--white);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;margin-bottom:16px">
+    <div style="padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:var(--text-muted)"><span>入金予定（未回収の売掛金・入金期日の月ごと）</span><span>${yen(total)}</span></div>
+    ${rows}<div style="padding:6px 12px;font-size:10.5px;color:#b0b0b0">行をタップすると取引先ごとの金額が出ます</div></div>`;
+}
+
+// ── グラフ画面：月の売上目標と達成率 ──
+// 目標は /appSettings/salesTargets/{YYYY-MM} に金額（円）で保存する
+async function chartLoadTargets() {
+  try { window._salesTargets = await fetch(authedUrl('/appSettings/salesTargets.json')).then(r => r.json()) || {}; } catch (e) { window._salesTargets = window._salesTargets || {}; }
+  chartRenderTargetCard();
+}
+function chartRenderTargetCard() {
+  const el = document.getElementById('chart-target-card'), ctx = window._chartTargetCtx;
+  if (!el || !ctx) return;
+  const T = window._salesTargets || {}, { months, salCurr } = ctx;
+  if (window._chartTargetEdit) {
+    el.innerHTML = `<div class="chart-card"><div class="chart-card-h"><span>月の売上目標を設定（税込・万円）</span></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">${months.map(m => `<label style="font-size:12px;display:flex;align-items:center;gap:6px">${m.slice(0, 4)}/${parseInt(m.slice(5, 7))}月<input type="number" inputmode="numeric" data-ym="${m}" value="${T[m] ? Math.round(T[m] / 10000) : ''}" placeholder="—" style="width:100%;padding:5px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:12.5px;text-align:right">万</label>`).join('')}</div>
+      <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-secondary" style="flex:1" onclick="window._chartTargetEdit=false;chartRenderTargetCard()">やめる</button><button class="btn btn-primary" style="flex:2" onclick="chartSaveTargets()">保存する</button></div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px">空欄の月は目標なしになります。前の月と同じ金額にしたいときは、最初の月だけ入れて「同じ金額で埋める」を押してください。<button type="button" style="margin-left:6px;font-size:11px;border:1px solid var(--border);background:var(--white);border-radius:6px;padding:2px 8px;cursor:pointer" onclick="const ins=[...document.querySelectorAll('#chart-target-card input[data-ym]')];const v=ins.find(i=>i.value)?.value;if(v)ins.forEach(i=>{if(!i.value)i.value=v})">同じ金額で埋める</button></div></div>`;
+    return;
+  }
+  const has = months.some(m => T[m]);
+  if (!has) {
+    el.innerHTML = `<div class="chart-card"><div class="chart-card-h"><span>月の売上目標と達成率</span><button class="btn btn-secondary" style="flex:none;padding:5px 12px;font-size:12px" onclick="window._chartTargetEdit=true;chartRenderTargetCard()">目標を設定</button></div>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.7">月ごとの売上目標（税込）を入れると、目標の線と達成率、今月あといくら必要かが出ます。</div></div>`;
+    return;
+  }
+  const thisYm = ymKey(new Date());
+  const max = Math.max(...months.map((m, i) => Math.max(salCurr[i], T[m] || 0)), 1);
+  const H = 140;
+  window._chartTargetInfo = months.map((m, i) => { const t = T[m] || 0, v = salCurr[i]; return `<b style="color:var(--text)">${parseInt(m.slice(5, 7))}月</b>　実績 <b style="color:var(--teal)">${yen(v)}</b>${t ? `　目標 ${yen(t)}　達成率 <b style="color:${v >= t ? 'var(--success)' : '#d97706'}">${Math.round(v / t * 100)}%</b>${v < t ? `　あと ${yen(t - v)}` : ''}` : '　目標なし'}`; });
+  const cols = months.map((m, i) => {
+    const t = T[m] || 0, v = salCurr[i], ok = t && v >= t;
+    const bar = `<div style="position:relative;width:70%;height:${H}px;display:flex;flex-direction:column;justify-content:flex-end">
+        <div style="height:${Math.round(v / max * H)}px;background:${!t ? '#cbd5e1' : ok ? '#4caf82' : '#f6c26b'};border-radius:2px 2px 0 0"></div>
+        ${t ? `<div style="position:absolute;left:-15%;right:-15%;bottom:${Math.round(t / max * H)}px;border-top:2px dashed #374151"></div>` : ''}</div>`;
+    return `<div class="chart-tgcol" onclick="chartSelTarget(${i})" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;cursor:pointer">
+      <div style="font-size:9px;font-weight:700;height:12px;color:${ok ? 'var(--success)' : '#d97706'}">${t && v ? Math.round(v / t * 100) + '%' : ''}</div>${bar}
+      <div style="font-size:9px;color:${m === thisYm ? 'var(--text)' : 'var(--text-muted)'};font-weight:${m === thisYm ? 700 : 400};margin-top:3px">${parseInt(m.slice(5, 7))}月</div></div>`;
+  }).join('');
+  const ti = months.indexOf(thisYm), tt = T[thisYm] || 0, tv = ti >= 0 ? salCurr[ti] : 0;
+  const now = new Date(), dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(), left = dim - now.getDate() + 1;
+  const summary = tt ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <div style="flex:1;min-width:140px;background:var(--surface);border-radius:8px;padding:8px 10px"><div style="font-size:11px;color:var(--text-muted)">今月の達成率</div><div style="font-size:18px;font-weight:700;color:${tv >= tt ? 'var(--success)' : '#d97706'}">${Math.round(tv / tt * 100)}%</div><div style="font-size:10.5px;color:var(--text-muted)">${yen(tv)} ／ 目標 ${yen(tt)}</div></div>
+      <div style="flex:1;min-width:140px;background:var(--surface);border-radius:8px;padding:8px 10px"><div style="font-size:11px;color:var(--text-muted)">目標まであと</div><div style="font-size:18px;font-weight:700">${tv >= tt ? '達成！' : yen(tt - tv)}</div><div style="font-size:10.5px;color:var(--text-muted)">${tv >= tt ? '' : `残り${left}日・1日あたり ${yen(Math.ceil((tt - tv) / left))}`}</div></div></div>` : '';
+  el.innerHTML = `<div class="chart-card"><div class="chart-card-h"><span>月の売上目標と達成率</span><button class="btn btn-secondary" style="flex:none;padding:5px 12px;font-size:12px" onclick="window._chartTargetEdit=true;chartRenderTargetCard()">目標を変える</button></div>
+    ${summary}<div class="chart-card-info" id="chart-target-info">棒をタップすると、その月の目標と実績が出ます</div>
+    <div style="display:flex;gap:6px;align-items:flex-end">${cols}</div>
+    <div style="font-size:11px;margin-top:8px;color:var(--text-muted)"><span style="display:inline-block;width:18px;border-top:2px dashed #374151;vertical-align:middle;margin-right:4px"></span>目標　<span style="display:inline-block;width:10px;height:10px;background:#4caf82;border-radius:2px;vertical-align:middle"></span> 達成　<span style="display:inline-block;width:10px;height:10px;background:#f6c26b;border-radius:2px;vertical-align:middle"></span> 未達</div></div>`;
+}
+function chartSelTarget(i) {
+  window._chartTgSel = window._chartTgSel === i ? -1 : i;
+  const sel = window._chartTgSel;
+  document.querySelectorAll('.chart-tgcol').forEach((el, k) => { el.style.opacity = sel < 0 || k === sel ? '1' : '0.45'; });
+  const el = document.getElementById('chart-target-info');
+  if (el) el.innerHTML = sel < 0 ? '棒をタップすると、その月の目標と実績が出ます' : (window._chartTargetInfo || [])[sel] || '';
+}
+async function chartSaveTargets() {
+  const data = {};
+  document.querySelectorAll('#chart-target-card input[data-ym]').forEach(i => { const v = parseFloat(i.value); data[i.dataset.ym] = v > 0 ? Math.round(v * 10000) : null; });
+  try {
+    await fetch(authedUrl('/appSettings/salesTargets.json'), { method: 'PATCH', body: JSON.stringify(data) });
+    window._salesTargets = Object.assign({}, window._salesTargets || {});
+    Object.entries(data).forEach(([k, v]) => { if (v) window._salesTargets[k] = v; else delete window._salesTargets[k]; });
+    window._chartTargetEdit = false; chartRenderTargetCard(); showToast('売上目標を保存しました');
+  } catch (e) { showToast('保存に失敗しました'); }
 }
 
 function chartSelMonth(i) {
