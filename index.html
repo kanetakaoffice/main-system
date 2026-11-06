@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-07c">
+<meta name="app-build" content="2026-11-07d">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -15391,16 +15391,12 @@ function renderChart(container) {
     return type;
   }
 
-  // 決まった色のない仕入先（昇輝・川内大成など）は灰色で区別がつかなかったので、出てきた順に別々の色を割り当てる
-  const EXTRA_SUP_COLORS = ['#c4b5fd','#a78bfa','#fda4af','#d8b4fe','#f0abfc','#fb7185','#e9a3c9','#b4a7d6','#f9c2a0','#c48fb5'];
-  const _supColorMap = {};
-  function getSupplierColor(s) {
-    if (!s) return '#d1d5db';
-    if (s.startsWith('店舗')) return SUPPLIER_COLORS['店舗'];
-    if (SUPPLIER_COLORS[s]) return SUPPLIER_COLORS[s];
-    if (!_supColorMap[s]) _supColorMap[s] = EXTRA_SUP_COLORS[Object.keys(_supColorMap).length % EXTRA_SUP_COLORS.length];
-    return _supColorMap[s];
-  }
+  // 要望「仕入先ごとに色を分けると見にくい。売上が緑の3色なので、仕入はピンクの3色に」への対応：
+  // 仕入の棒は「店舗（量販店）」「電脳」「その他の取引先」の3つにまとめ、ピンクの濃淡で塗る。
+  // 仕入先ごとの金額は、棒をタップしたときの表示と右の表の内訳で見られる（色はその仕入先が入る分類の色）。
+  const PUR_CATS = [['店舗（量販店）','#e27aa0'],['電脳','#f6c3d5'],['その他の取引先','#c9567f']];
+  function purCatOf(s) { return !s ? 'その他の取引先' : s.startsWith('店舗') ? '店舗（量販店）' : s === '電脳' ? '電脳' : 'その他の取引先'; }
+  function getSupplierColor(s) { const c = PUR_CATS.find(x => x[0] === purCatOf(s)); return c ? c[1] : '#d1d5db'; }
   function normalizeSupplier(s) { return s&&s.startsWith('店舗')?'店舗':s; }
 
   const allSuppliers = [...new Set(purchases.filter(p=>months.includes(p.date?.slice(0,7))).map(p=>normalizeSupplier(p.supplier)).filter(Boolean))];
@@ -15411,6 +15407,8 @@ function renderChart(container) {
     ...allSuppliers.filter(s=>!SUPPLIER_ORDER.includes(s))
   ];
   const purBySupplier = sortedSuppliers.map(sup=>({ supplier:sup, color:getSupplierColor(sup), curr:months.map(m=>purchases.filter(p=>p.date?.startsWith(m)&&normalizeSupplier(p.supplier)===sup).reduce((s,p)=>s+p.amount,0)) }));
+  // グラフの棒と凡例に使う3つの分類
+  const purByCat = PUR_CATS.map(([cat,color])=>({ supplier:cat, color, curr:months.map(m=>purchases.filter(p=>p.date?.startsWith(m)&&purCatOf(p.supplier)===cat).reduce((s,p)=>s+p.amount,0)) })).filter(x=>x.curr.some(Boolean));
 
   // 売上：国内・国外で積み上げ、さらにEC売上（在庫管理の出荷管理で記録したAmazon・自社EC分）も同じ売上バーに積み上げる
   const salTypes = ['国内（請求書）','国外（インボイス）'];
@@ -15460,7 +15458,7 @@ function renderChart(container) {
 
   function stackedPurBar(mi) {
     if (purCurr[mi]===0) return `<div style="width:100%;height:${barH}px"></div>`;
-    const segs=purBySupplier.map(s=>({val:s.curr[mi],color:s.color})).filter(s=>s.val>0);
+    const segs=purByCat.map(s=>({val:s.curr[mi],color:s.color})).filter(s=>s.val>0);
     let bars=''; [...segs].reverse().forEach((seg,idx)=>{ const h=Math.round((seg.val/displayMax)*barH); bars+=`<div style="width:100%;height:${h}px;background:${seg.color};border-radius:${idx===segs.length-1?'3px 3px 0 0':'0'};min-height:${h>0?2:0}px"></div>`; });
     return `<div style="width:100%;height:${barH}px;display:flex;flex-direction:column;justify-content:flex-end">${bars}</div>`;
   }
@@ -15597,7 +15595,7 @@ function renderChart(container) {
   };
   const titles={g1:'粗利益ライン',g5:'粗利率ライン',g6:'経費控除後利益ライン',g2:'前年比ライン',g3:'累計売上ライン',g4:'売掛金残高ライン'};
 
-  const supplierLegend=sortedSuppliers.map(sup=>`<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:12px;background:${getSupplierColor(sup)};border-radius:2px"></span>${sup}</span>`).join('');
+  const supplierLegend=purByCat.map(c=>`<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:12px;background:${c.color};border-radius:2px"></span>${c.supplier}</span>`).join('');
   const salTypeLegend=salByType.map(t=>`<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:12px;background:${t.color};border-radius:2px"></span>${salTypeLabel(t.type)}</span>`).join('');
 
   const summaryRows=months.map((m,i)=>{
@@ -15642,7 +15640,7 @@ function renderChart(container) {
   container.innerHTML=`<div class="chart-layout"><div class="chart-layout-main">
   <div style="background:var(--white);border-radius:var(--radius);border:1px solid var(--border);padding:14px;margin-bottom:16px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">
-      <div style="font-size:12px;font-weight:700;color:#909090" id="chart-title">仕入（仕入先別） vs 売上（国内・国外）＋ 粗利益ライン</div>
+      <div style="font-size:12px;font-weight:700;color:#909090" id="chart-title">仕入（店舗・電脳・その他） vs 売上（国内・国外・EC）＋ 粗利益ライン</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         ${Object.entries(titles).map(([key,label])=>`<button onclick="switchChartLine('${key}')" id="chart-btn-${key}" style="padding:4px 10px;font-size:11px;font-weight:600;border:1.5px solid ${key==='g1'?'#3a3a3a':'#d1d5db'};border-radius:20px;background:${key==='g1'?'#3a3a3a':'none'};color:${key==='g1'?'#fff':'#909090'};cursor:pointer">${label}</button>`).join('')}
       </div>
@@ -15835,7 +15833,7 @@ function switchChartLine(key) {
   if (!svg||!window._chartSvgPatterns) return;
   svg.innerHTML=window._chartSvgPatterns[key];
   legend.innerHTML=window._chartLegends[key];
-  title.textContent='仕入（仕入先別） vs 売上（国内・国外）＋ '+window._chartTitles[key];
+  title.textContent='仕入（店舗・電脳・その他） vs 売上（国内・国外・EC）＋ '+window._chartTitles[key];
   Object.keys(window._chartSvgPatterns).forEach(k=>{ const btn=document.getElementById('chart-btn-'+k); if(!btn) return; btn.style.background=k===key?'#3a3a3a':'none'; btn.style.color=k===key?'#fff':'#909090'; btn.style.borderColor=k===key?'#3a3a3a':'#d1d5db'; });
   window._currentChartKey=key;
 }
