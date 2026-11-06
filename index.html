@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-07d">
+<meta name="app-build" content="2026-11-07e">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -15640,22 +15640,16 @@ function renderChart(container) {
   container.innerHTML=`<div class="chart-layout"><div class="chart-layout-main">
   <div style="background:var(--white);border-radius:var(--radius);border:1px solid var(--border);padding:14px;margin-bottom:16px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">
-      <div style="font-size:12px;font-weight:700;color:#909090" id="chart-title">仕入（店舗・電脳・その他） vs 売上（国内・国外・EC）＋ 粗利益ライン</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${Object.entries(titles).map(([key,label])=>`<button onclick="switchChartLine('${key}')" id="chart-btn-${key}" style="padding:4px 10px;font-size:11px;font-weight:600;border:1.5px solid ${key==='g1'?'#3a3a3a':'#d1d5db'};border-radius:20px;background:${key==='g1'?'#3a3a3a':'none'};color:${key==='g1'?'#fff':'#909090'};cursor:pointer">${label}</button>`).join('')}
-      </div>
+      <div style="font-size:12px;font-weight:700;color:#909090" id="chart-title">仕入（店舗・電脳・その他） vs 売上（国内・国外・EC）</div>
     </div>
     <div id="chart-info" style="font-size:12px;color:var(--text-muted);text-align:center;min-height:18px;margin-bottom:6px;line-height:1.6">棒をタップすると、その月の内訳が出ます</div>
     <div style="display:flex;gap:0">
       <div style="position:relative;width:32px;flex-shrink:0;height:${barH}px;margin-top:${LABEL_ROW_H}px">${yLabels}</div>
       <div style="flex:1;min-width:0;position:relative">
         <div style="display:flex;gap:8px;align-items:flex-end;overflow-x:hidden;padding-bottom:4px">${baseCols}</div>
-        <svg id="chart-svg-overlay" style="position:absolute;top:${LABEL_ROW_H}px;left:0;width:100%;height:${barH}px;pointer-events:none" viewBox="0 0 ${svgW} ${svgH}" preserveAspectRatio="none">
-          ${svgPatterns.g1}
-        </svg>
       </div>
     </div>
-    <div style="font-size:10px;color:#b0b0b0;margin-top:4px;margin-left:32px">※ 棒をタップするとその月の内訳、● をタップするとその点の金額が表示されます</div>
+
     <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;font-size:11px">
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
         <span style="font-size:10px;font-weight:700;color:#909090">仕入</span>${supplierLegend}
@@ -15663,14 +15657,21 @@ function renderChart(container) {
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
         <span style="font-size:10px;font-weight:700;color:#909090">売上</span>${salTypeLegend}
       </div>
-      <div id="chart-legend" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">${legends.g1}</div>
     </div>
   </div>
+  <div class="chart-card" id="chart-metric-card"></div>
   ${chartMixCardHtml(months, salByType, salTypeLabel)}
   <div id="chart-target-card"></div>
   </div>
   <div class="chart-layout-side">${summaryTable}${chartPayScheduleHtml(allSalesData)}</div></div>`;
   window._chartTargetCtx = { months, salCurr };
+  // 要望「グラフのラインが全部見にくい」への対応：ラインは棒に重ねず、下の「数字の推移」グラフに分けて
+  // 1つずつ切り替えて見る形にした（目盛りはそのグラフ専用・今月まで・金額はタップで上に出す）
+  {
+    const ci = months.indexOf(thisYm);
+    window._chartMetricCtx = { months, curIdx: ci < 0 ? (thisYm > months[11] ? 11 : -1) : ci, salCurr, salPrev, purCurr, profit, netProfit, expCurr, grossRate, missingPur, salCumul, salCumulP, recv };
+    chartRenderMetric();
+  }
   chartRenderTargetCard();
   chartLoadTargets();
 
@@ -15699,6 +15700,87 @@ function renderChart(container) {
       if (svgNow && window._currentChartKey) svgNow.innerHTML = correctedPatterns[window._currentChartKey];
     } catch(e) { console.error('chart overlay reposition error', e); }
   });
+}
+
+// ── グラフ画面：数字の推移（粗利・粗利率・前年比・累計売上・売掛金残高を1つずつ） ──
+function chartNiceStep(v) { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p; }
+function chartAxisLabel(v, unit) {
+  if (unit === '%') return Math.round(v) + '%';
+  const a = Math.abs(v), sg = v < 0 ? '-' : '';
+  if (a >= 1e8) return sg + (Math.round(a / 1e7) / 10) + '億';
+  if (a >= 1e4) return sg + Math.round(a / 1e4).toLocaleString('ja-JP') + '万';
+  return sg + a;
+}
+// 棒はHTML、折れ線はSVGで描く（文字はSVGに入れないので、横に引き伸ばされない）
+function chartMetricSvgHtml(o) {
+  const H = window.matchMedia('(min-width: 1280px)').matches ? 220 : 160, n = o.labels.length, upto = o.curIdx;
+  const vals = o.series.flatMap(s => s.values.slice(0, upto + 1).filter(v => v != null));
+  const max = Math.max(0, ...vals), min = Math.min(0, ...vals);
+  const step = chartNiceStep(((max - min) || 1) / 4);
+  const top = Math.max(step, Math.ceil(max / step) * step), bot = Math.floor(min / step) * step;
+  const range = (top - bot) || 1, y = v => (top - v) / range * H;
+  const ticks = []; for (let t = bot; t <= top + step * 1e-6; t += step) ticks.push(t);
+  const grid = ticks.map(t => `<div style="position:absolute;left:0;right:0;top:${y(t)}px;border-top:1px solid ${Math.abs(t) < step * 1e-6 ? '#9ca3af' : '#eef0f2'}"></div><div style="position:absolute;right:calc(100% + 6px);top:${y(t) - 7}px;font-size:9.5px;color:#9ca3af;white-space:nowrap">${chartAxisLabel(t, o.unit)}</div>`).join('');
+  const bars = o.series.filter(s => s.type === 'bar'), lines = o.series.filter(s => s.type === 'line');
+  const fade = i => o.sel >= 0 && o.sel !== i ? 0.35 : 1;
+  const cols = o.labels.map((m, i) => {
+    const inner = i > upto ? '' : bars.map(s => { const v = s.values[i]; if (v == null) return '<div style="flex:1"></div>'; const h = Math.abs(v) / range * H;
+      return `<div style="flex:1;position:relative;height:${H}px"><div style="position:absolute;left:0;right:0;top:${v >= 0 ? y(v) : y(0)}px;height:${Math.max(1, h)}px;background:${v < 0 ? '#ef4444' : s.color};border-radius:${v >= 0 ? '3px 3px 0 0' : '0 0 3px 3px'}"></div></div>`; }).join('');
+    return `<div onclick="chartMetricSel(${i})" style="flex:1;min-width:0;cursor:pointer;opacity:${fade(i)};display:flex;flex-direction:column;align-items:center">
+      <div style="width:72%;height:${H}px;display:flex;gap:2px">${inner}</div>
+      <div style="font-size:9.5px;color:${i === upto ? 'var(--text)' : '#9ca3af'};font-weight:${i === upto ? 700 : 400};margin-top:4px;white-space:nowrap">${m}</div></div>`;
+  }).join('');
+  const lineSvg = lines.map(s => { const segs = []; let cur = [];
+    s.values.forEach((v, i) => { if (v == null || i > upto) { if (cur.length) segs.push(cur); cur = []; } else cur.push([(i + 0.5) / n * 100, y(v)]); });
+    if (cur.length) segs.push(cur);
+    return segs.map(sg => `<polyline points="${sg.map(p => p[0] + ',' + p[1]).join(' ')}" fill="none" stroke="${s.color}" stroke-width="2.5" ${s.dash ? 'stroke-dasharray="5 4"' : ''} vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>`).join(''); }).join('');
+  const dots = lines.map(s => s.values.map((v, i) => v == null || i > upto ? '' : `<div style="position:absolute;left:calc(${(i + 0.5) / n * 100}% - 5px);top:${y(v) - 5}px;width:10px;height:10px;border-radius:50%;background:#fff;border:2.5px solid ${s.color};box-sizing:border-box;opacity:${fade(i)}"></div>`).join('')).join('');
+  return `<div style="position:relative;margin-left:44px">
+    <div style="position:absolute;left:0;right:0;top:0;height:${H}px">${grid}</div>
+    <div style="position:relative;display:flex">${cols}</div>
+    <svg viewBox="0 0 100 ${H}" preserveAspectRatio="none" style="position:absolute;left:0;top:0;width:100%;height:${H}px;pointer-events:none;overflow:visible">${lineSvg}</svg>
+    <div style="position:absolute;left:0;right:0;top:0;height:${H}px;pointer-events:none">${dots}</div></div>`;
+}
+const CHART_METRIC_TABS = [['profit', '粗利'], ['rate', '粗利率'], ['yoy', '前年比'], ['cum', '累計売上'], ['recv', '売掛金残高']];
+function chartMetricSel(i) { window._chartMetricSel = window._chartMetricSel === i ? -1 : i; chartRenderMetric(); }
+function chartMetricMode(k) { window._chartMetric = k; window._chartMetricSel = -1; chartRenderMetric(); }
+function chartRenderMetric() {
+  const el = document.getElementById('chart-metric-card'), c = window._chartMetricCtx;
+  if (!el || !c) return;
+  const mode = window._chartMetric || 'profit', sel = window._chartMetricSel == null ? -1 : window._chartMetricSel;
+  const L = c.months.map(m => parseInt(m.slice(5, 7)) + '月'), pad = a => a.map((v, i) => i > c.curIdx ? null : v);
+  const lg = (col, t, line, dash) => `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="display:inline-block;width:${line ? 20 : 12}px;height:${line ? 0 : 12}px;${line ? `border-top:3px ${dash ? 'dashed' : 'solid'} ${col}` : `background:${col}`};border-radius:2px"></span>${t}</span>`;
+  const sgn = v => (v >= 0 ? '+' : '') + yen(v);
+  let series, unit = '円', legend, info;
+  if (mode === 'profit') {
+    series = [{ color: '#4caf82', values: pad(c.profit), type: 'bar' }, { color: '#8b9cf6', values: pad(c.netProfit), type: 'bar' }];
+    legend = lg('#4caf82', '粗利（売上−仕入）') + lg('#8b9cf6', '経費控除後利益（粗利−経費）') + lg('#ef4444', 'マイナスの月');
+    info = i => `<b style="color:var(--text)">${L[i]}</b>　粗利 <b style="color:${c.profit[i] < 0 ? 'var(--danger)' : 'var(--success)'}">${yen(c.profit[i])}</b>　経費 ${yen(c.expCurr[i])}　経費控除後 <b style="color:${c.netProfit[i] < 0 ? 'var(--danger)' : '#4f46e5'}">${yen(c.netProfit[i])}</b>${c.missingPur[i] ? '<br><span style="color:#d97706;font-weight:700">⚠ 仕入が未入力の月なので、粗利は実際より大きく出ています</span>' : ''}`;
+  } else if (mode === 'rate') {
+    unit = '%';
+    series = [{ color: '#8b5cf6', values: pad(c.grossRate.map((v, i) => v == null || c.missingPur[i] ? null : Math.round(v * 10) / 10)), type: 'line' }];
+    legend = lg('#8b5cf6', '粗利率（粗利÷売上）', true) + (c.missingPur.some(Boolean) ? '<span style="color:#d97706">仕入が未入力の月は描いていません</span>' : '');
+    info = i => c.missingPur[i] ? `<b style="color:var(--text)">${L[i]}</b>　<span style="color:#d97706">仕入が未入力のため、粗利率は出していません</span>` : c.grossRate[i] == null ? `<b style="color:var(--text)">${L[i]}</b>　売上がありません` : `<b style="color:var(--text)">${L[i]}</b>　粗利率 <b style="color:#6d28d9">${c.grossRate[i].toFixed(1)}%</b>　（売上 ${yen(c.salCurr[i])}・粗利 ${yen(c.profit[i])}）`;
+  } else if (mode === 'yoy') {
+    series = [{ color: '#cbd5e1', values: pad(c.salPrev), type: 'bar' }, { color: '#4caf82', values: pad(c.salCurr), type: 'bar' }];
+    legend = lg('#cbd5e1', '前期の売上') + lg('#4caf82', '今期の売上');
+    info = i => { const d = c.salCurr[i] - c.salPrev[i]; return `<b style="color:var(--text)">${L[i]}</b>　今期 <b style="color:var(--success)">${yen(c.salCurr[i])}</b>　前期 ${yen(c.salPrev[i])}　<b style="color:${d >= 0 ? 'var(--success)' : 'var(--danger)'}">${sgn(d)}${c.salPrev[i] ? `（${d >= 0 ? '+' : ''}${Math.round(d / c.salPrev[i] * 100)}%）` : ''}</b>`; };
+  } else if (mode === 'cum') {
+    series = [{ color: '#cbd5e1', values: pad(c.salCumulP), type: 'line', dash: 1 }, { color: '#f59e0b', values: pad(c.salCumul), type: 'line' }];
+    legend = lg('#f59e0b', '今期の累計', true) + lg('#cbd5e1', '前期の累計（点線）', true, true);
+    info = i => { const d = c.salCumul[i] - c.salCumulP[i]; return `<b style="color:var(--text)">${L[i]}まで</b>　今期 <b style="color:#d97706">${yen(c.salCumul[i])}</b>　前期 ${yen(c.salCumulP[i])}　<b style="color:${d >= 0 ? 'var(--success)' : 'var(--danger)'}">${sgn(d)}</b>`; };
+  } else {
+    series = [{ color: '#dc2626', values: pad(c.recv), type: 'line' }];
+    legend = lg('#dc2626', '月末時点の未回収の売掛金', true);
+    info = i => `<b style="color:var(--text)">${L[i]}末</b>　未回収 <b style="color:var(--danger)">${yen(c.recv[i])}</b>`;
+  }
+  if (c.curIdx < 0) { el.innerHTML = '<div class="chart-card-h"><span>数字の推移（今期・3月〜）</span></div><div style="font-size:12px;color:var(--text-muted)">まだデータがありません</div>'; return; }
+  const tabs = CHART_METRIC_TABS.map(([k, t]) => `<button onclick="chartMetricMode('${k}')" style="padding:4px 11px;font-size:11.5px;font-weight:600;border:1.5px solid ${k === mode ? '#3a3a3a' : '#d1d5db'};border-radius:20px;background:${k === mode ? '#3a3a3a' : 'none'};color:${k === mode ? '#fff' : '#909090'};cursor:pointer;font-family:inherit">${t}</button>`).join('');
+  el.innerHTML = `<div class="chart-card-h"><span>数字の推移（今期・3月〜）</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${tabs}</div>
+    <div class="chart-card-info">${sel >= 0 && sel <= c.curIdx ? info(sel) : '棒・点をタップすると、その月の数字が出ます'}</div>
+    ${chartMetricSvgHtml({ labels: L, series, unit, curIdx: c.curIdx, sel })}
+    <div style="font-size:11px;margin-top:10px;color:var(--text-sub, #555);display:flex;flex-wrap:wrap;gap:4px 0">${legend}</div>`;
 }
 
 // ── グラフ画面：販路別の割合の推移（国内・国外・ECの割合を100%の積み上げで） ──
