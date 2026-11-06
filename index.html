@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-06b">
+<meta name="app-build" content="2026-11-06c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -23315,18 +23315,54 @@ async function azSyncSales(touched, forceDays) {
   await fetch(authedUrl('/ecSales.json'), { method: 'PATCH', body: JSON.stringify(write) });
   return `Amazon売上を${days.size}日分記録しました`;
 }
+// 要望：「Amazonの売上を手作業で入れていた期間も、レポートを読み込んで更新したい」への対応。
+// 開始日を前に動かしたとき、注文を取り込んである日については、手入力のAmazon売上を
+// /ecSalesReplaced に移して（消さずに取っておく）、自動の売上に入れ替える。二重に数えないため。
+// 開始日を後ろに戻したときは、取っておいた手入力の分を元に戻す。
 async function azSetSalesFrom(v) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v || '')) return;
   const old = AZ.meta.salesFrom || v;
-  const ok = await showConfirm(`Amazonの売上を、${v.replace(/-/g, '/')}以降の注文日から自動で記録します。\nこの日より前の自動記録は消し、手入力の分はそのまま残します。よろしいですか？`);
+  const known = new Set(Object.values(AZ.orders).map(azOrderDay));
+  let ec = {}, replaced = {};
+  try { ec = await fetch(authedUrl('/ecSales.json')).then(r => r.json()) || {}; } catch (e) {}
+  try { replaced = await fetch(authedUrl('/ecSalesReplaced.json')).then(r => r.json()) || {}; } catch (e) {}
+  // 入れ替える手入力の分（前に動かしたとき）／元に戻す分（後ろに戻したとき）
+  const toReplace = v < old ? Object.entries(ec).filter(([k, x]) => x && x.channel === 'Amazon' && !x.auto && !String(k).startsWith('az_') && x.date >= v && x.date < old && known.has(x.date)) : [];
+  const toRestore = v > old ? Object.entries(replaced).filter(([, x]) => x && x.date >= old && x.date < v) : [];
+  let msg = `Amazonの売上を、${v.replace(/-/g, '/')}以降の注文日から自動で記録します。`;
+  if (toReplace.length) {
+    const manualSum = toReplace.reduce((s, [, x]) => s + (Number(x.amount) || 0), 0);
+    const days = new Set(toReplace.map(([, x]) => x.date));
+    const autoSum = Object.values(AZ.orders).filter(o => o.status !== 'cancelled' && days.has(azOrderDay(o))).reduce((s, o) => s + (Number(o.price) || 0), 0);
+    msg += `\n\n手入力の売上${toReplace.length}件（${days.size}日分・¥${manualSum.toLocaleString('ja-JP')}）を、取り込んだレポートの売上（¥${Math.round(autoSum).toLocaleString('ja-JP')}）に入れ替えます。手入力の分は消さずに取っておき、開始日を戻せば元に戻ります。`;
+    const missing = [];
+    for (let d = new Date(v + 'T00:00:00'); ymdKey(d) < old; d.setDate(d.getDate() + 1)) if (!known.has(ymdKey(d))) missing.push(ymdKey(d));
+    if (missing.length) msg += `\n\n※注文を取り込んでいない日が${missing.length}日あります（${missing.slice(0, 3).map(d => d.slice(5).replace('-', '/')).join('、')}${missing.length > 3 ? ' など' : ''}）。その日の手入力の分はそのまま残します。`;
+  } else if (toRestore.length) {
+    msg += `\n\nこの日より前の自動記録は消し、入れ替えていた手入力の売上${toRestore.length}件を元に戻します。`;
+  } else {
+    msg += `\nこの日より前の自動記録は消し、手入力の分はそのまま残します。`;
+  }
+  const ok = await showConfirm(msg + '\nよろしいですか？');
   if (!ok) { azRender(); return; }
   AZ.meta.salesFrom = v;
   try {
     await fetch(authedUrl('/amazonMeta/salesFrom.json'), { method: 'PUT', body: JSON.stringify(v) });
+    if (toReplace.length) {
+      const keep = {}, del = {};
+      toReplace.forEach(([k, x]) => { keep[k] = Object.assign({}, x, { replacedAt: new Date().toISOString() }); del[k] = null; });
+      await fetch(authedUrl('/ecSalesReplaced.json'), { method: 'PATCH', body: JSON.stringify(keep) });
+      await fetch(authedUrl('/ecSales.json'), { method: 'PATCH', body: JSON.stringify(del) });
+    }
+    if (toRestore.length) {
+      const back = {}, del = {};
+      toRestore.forEach(([k, x]) => { const y = Object.assign({}, x); delete y.replacedAt; back[k] = y; del[k] = null; });
+      await fetch(authedUrl('/ecSales.json'), { method: 'PATCH', body: JSON.stringify(back) });
+      await fetch(authedUrl('/ecSalesReplaced.json'), { method: 'PATCH', body: JSON.stringify(del) });
+    }
     // 範囲が変わった日を計算し直す（前より早くした日は新しく書き、遅くした日は自動分を消す）
     const a = old < v ? old : v, b = old < v ? v : old, days = [];
     for (let d = new Date(a + 'T00:00:00'); ymdKey(d) <= b; d.setDate(d.getDate() + 1)) days.push(ymdKey(d));
-    const known = new Set(Object.values(AZ.orders).map(azOrderDay));
     await azSyncSales([], days.filter(d => known.has(d) || d < v));
     try { AZ.ec = await fetch(authedUrl('/ecSales.json')).then(r => r.json()) || {}; } catch (e) {}
     showToast('設定しました');
