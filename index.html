@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-07a">
+<meta name="app-build" content="2026-11-07b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -475,6 +475,11 @@ body.wh-drag-active { cursor:grabbing; user-select:none; -webkit-user-select:non
 .bz-days { display: flex; align-items: flex-end; gap: 2px; height: 70px; padding: 6px 16px 0; }
 .bz-day { flex: 1; min-width: 0; background: #b8bec6; border-radius: 2px 2px 0 0; }
 .bz-day.zero { background: transparent; }
+.bz-dinfo { font-size: 12px; color: var(--text-muted); text-align: center; min-height: 18px; padding: 2px 16px 6px; }
+.bz-days2 { display: flex; align-items: flex-end; gap: 2px; padding: 0 16px 10px; }
+.bz-dcol { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; cursor: pointer; height: 108px; }
+.bz-dbar { width: 72%; display: flex; flex-direction: column; justify-content: flex-end; }
+.bz-dlbl { font-size: 9px; color: #9ca3af; margin-top: 3px; height: 11px; line-height: 11px; }
 .bz-days-axis { display: flex; justify-content: space-between; padding: 3px 16px 12px; font-size: 10px; color: var(--text-muted); }
 .card { background: var(--white); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 .card-title { font-size: 11px; font-weight: 700; color: var(--gold-dark); letter-spacing: 0.1em; text-transform: uppercase; padding: 14px 16px 0; margin-bottom: 12px; }
@@ -15460,7 +15465,7 @@ function renderChart(container) {
       const anchor = i===0 ? 'start' : (i===lastI ? 'end' : 'middle');
       const lx = i===0 ? x+6 : (i===lastI ? x-6 : x);
       const ly=y>20?y-18:y+14;
-      return `<g style="cursor:pointer" onclick="this.querySelector('.tip').style.display=this.querySelector('.tip').style.display==='none'?'block':'none'"><circle cx="${x}" cy="${y}" r="4" fill="${color}" stroke="white" stroke-width="1.5"/><text class="tip" x="${lx}" y="${ly}" text-anchor="${anchor}" font-size="9" fill="${color}" font-weight="700" style="display:none">${yen(v)}</text></g>`;
+      return `<g style="cursor:pointer;pointer-events:all" onclick="this.querySelector('.tip').style.display=this.querySelector('.tip').style.display==='none'?'block':'none'"><circle cx="${x}" cy="${y}" r="4" fill="${color}" stroke="white" stroke-width="1.5"/><text class="tip" x="${lx}" y="${ly}" text-anchor="${anchor}" font-size="9" fill="${color}" font-weight="700" style="display:none">${yen(v)}</text></g>`;
     }).join('');
   }
 
@@ -15481,7 +15486,7 @@ function renderChart(container) {
       const anchor = i===0 ? 'start' : (i===lastI ? 'end' : 'middle');
       const lx = i===0 ? x+6 : (i===lastI ? x-6 : x);
       const ly=y>20?y-18:y+14;
-      return `<g style="cursor:pointer" onclick="this.querySelector('.tip').style.display=this.querySelector('.tip').style.display==='none'?'block':'none'"><circle cx="${x}" cy="${y}" r="4" fill="white" stroke="#38bdf8" stroke-width="2"/><text class="tip" x="${lx}" y="${ly}" text-anchor="${anchor}" font-size="9" fill="${col}" font-weight="700" style="display:none">${yen(v)}</text></g>`;
+      return `<g style="cursor:pointer;pointer-events:all" onclick="this.querySelector('.tip').style.display=this.querySelector('.tip').style.display==='none'?'block':'none'"><circle cx="${x}" cy="${y}" r="4" fill="white" stroke="#38bdf8" stroke-width="2"/><text class="tip" x="${lx}" y="${ly}" text-anchor="${anchor}" font-size="9" fill="${col}" font-weight="700" style="display:none">${yen(v)}</text></g>`;
     }).join('');
   }
 
@@ -15513,8 +15518,16 @@ function renderChart(container) {
   // 一番左（当期最初の月）の棒の上にだけ「仕入」「売上」の凡例ラベルを表示し、以降の月はその位置で判別できるようにする。
   // 全ての列に同じ高さのラベル行を確保（表示は1列目だけ）することで、列ごとの高さがずれてバー・グリッド線の位置が狂わないようにする。
   const LABEL_ROW_H = 13;
+  // 要望「グラフはAmazonの売上のグラフのように、タップしたら内訳が出るように」への対応：
+  // 月の棒をタップすると、グラフの上にその月の仕入（仕入先別）・売上（国内／国外／EC）・粗利を出す。もう一度タップで閉じる。
+  window._chartMonthInfo = months.map((m,i)=>{
+    const pd=purBySupplier.filter(x=>x.curr[i]>0).map(x=>`${x.supplier} ${yen(x.curr[i])}`).join('・');
+    const sd=salByType.filter(x=>x.curr[i]>0).map(x=>`${salTypeLabel(x.type)} ${yen(x.curr[i])}`).join('・');
+    return `<b style="color:var(--text)">${m.slice(0,4)}年${parseInt(m.slice(5,7))}月</b>　仕入 <b style="color:#4a4a4a">${yen(purCurr[i])}</b>${pd?`<span style="color:#909090">（${pd}）</span>`:''}　売上 <b style="color:var(--teal)">${yen(salCurr[i])}</b>${sd?`<span style="color:#909090">（${sd}）</span>`:''}　粗利 <b style="color:${profit[i]>=0?'var(--success)':'var(--danger)'}">${yen(profit[i])}</b>`;
+  });
+  window._chartSelMonth = -1;
   const baseCols=months.map((m,i)=>`
-    <div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:1px;padding:0 2px">
+    <div class="chart-mcol" onclick="chartSelMonth(${i})" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:1px;padding:0 2px;cursor:pointer">
       <div style="width:100%;display:flex;gap:2px;margin-bottom:2px;opacity:${i===0?1:0}"><div style="flex:1;min-width:0;text-align:center;font-size:8px;color:#9ca3af;white-space:nowrap;overflow:hidden">仕入</div><div style="flex:1;min-width:0;text-align:center;font-size:8px;color:#9ca3af;white-space:nowrap;overflow:hidden">売上</div></div>
       <div class="chart-bar-col" style="width:100%;display:flex;gap:2px;align-items:flex-end;height:${barH}px">
         <div style="flex:1;min-width:0">${stackedPurBar(i)}</div>
@@ -15578,16 +15591,17 @@ function renderChart(container) {
         ${Object.entries(titles).map(([key,label])=>`<button onclick="switchChartLine('${key}')" id="chart-btn-${key}" style="padding:4px 10px;font-size:11px;font-weight:600;border:1.5px solid ${key==='g1'?'#3a3a3a':'#d1d5db'};border-radius:20px;background:${key==='g1'?'#3a3a3a':'none'};color:${key==='g1'?'#fff':'#909090'};cursor:pointer">${label}</button>`).join('')}
       </div>
     </div>
+    <div id="chart-info" style="font-size:12px;color:var(--text-muted);text-align:center;min-height:18px;margin-bottom:6px;line-height:1.6">棒をタップすると、その月の内訳が出ます</div>
     <div style="display:flex;gap:0">
       <div style="position:relative;width:32px;flex-shrink:0;height:${barH}px;margin-top:${LABEL_ROW_H}px">${yLabels}</div>
       <div style="flex:1;min-width:0;position:relative">
         <div style="display:flex;gap:8px;align-items:flex-end;overflow-x:hidden;padding-bottom:4px">${baseCols}</div>
-        <svg id="chart-svg-overlay" style="position:absolute;top:${LABEL_ROW_H}px;left:0;width:100%;height:${barH}px;pointer-events:all" viewBox="0 0 ${svgW} ${svgH}" preserveAspectRatio="none">
+        <svg id="chart-svg-overlay" style="position:absolute;top:${LABEL_ROW_H}px;left:0;width:100%;height:${barH}px;pointer-events:none" viewBox="0 0 ${svgW} ${svgH}" preserveAspectRatio="none">
           ${svgPatterns.g1}
         </svg>
       </div>
     </div>
-    <div style="font-size:10px;color:#b0b0b0;margin-top:4px;margin-left:32px">※ ● をタップすると金額が表示されます</div>
+    <div style="font-size:10px;color:#b0b0b0;margin-top:4px;margin-left:32px">※ 棒をタップするとその月の内訳、● をタップするとその点の金額が表示されます</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;font-size:11px">
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
         <span style="font-size:10px;font-weight:700;color:#909090">仕入</span>${supplierLegend}
@@ -15627,6 +15641,13 @@ function renderChart(container) {
   });
 }
 
+function chartSelMonth(i) {
+  window._chartSelMonth = window._chartSelMonth === i ? -1 : i;
+  const sel = window._chartSelMonth;
+  document.querySelectorAll('.chart-mcol').forEach((el, k) => { el.style.opacity = sel < 0 || k === sel ? '1' : '0.45'; });
+  const info = document.getElementById('chart-info');
+  if (info) info.innerHTML = sel < 0 ? '棒をタップすると、その月の内訳が出ます' : (window._chartMonthInfo || [])[sel] || '';
+}
 function switchChartLine(key) {
   const svg=document.getElementById('chart-svg-overlay');
   const legend=document.getElementById('chart-legend');
@@ -18893,6 +18914,8 @@ function bzListMonth(tab) {
   const latest = items.map(a => (a.date || '').slice(0, 7)).filter(Boolean).sort().pop();
   return latest || ymKey(new Date());
 }
+const _bzSelDay = {};
+function bzSelDay(tab, d) { _bzSelDay[tab] = _bzSelDay[tab] === d ? '' : d; renderBzListSide(); }
 function bzListMonthShift(tab, delta) { _bzListMonth[tab] = bzShiftYM(bzListMonth(tab), delta); renderBzListSide(); }
 // 左側の月の見出しを開いたとき、右側もその月に合わせる
 function bzOnListMonthOpened(uid) {
@@ -18938,13 +18961,26 @@ function renderBzListSide() {
   const perDayA = Array.from({ length: days }, (_, i) => bzSum(curAmz.filter(a => parseInt((a.date || '').slice(8, 10), 10) === i + 1)));
   const perDay = perDayW.map((v, i) => v + perDayA[i]);
   const dayMax = Math.max(...perDay, 1);
-  // 売上は卸売（下）とAmazon（上）を色分けして積み上げる
+  // 要望「カーソルを置くと出る内訳を、Amazonの売上のグラフのようにタップで出してほしい。グラフも見やすく」への対応：
+  // 棒をタップするとグラフの上にその日の金額（売上は卸売／Amazonの内訳）を出す。選んだ日は濃い色、
+  // 今日は少し濃い色にし、棒の下に5日おきの日付を入れる。売上は卸売（下）とAmazon（上）を別の段で積み上げる。
+  const todayKey = todayStr();
+  const selDay = (_bzSelDay[tab] && _bzSelDay[tab].startsWith(ym)) ? _bzSelDay[tab] : '';
+  const dayKey = i => `${ym}-${String(i + 1).padStart(2, '0')}`;
   const dayBars = perDay.map((v, i) => {
-    const w = perDayW[i], a = perDayA[i], pct = v ? Math.round(w / v * 100) : 100;
-    const bg = isSales && a ? `linear-gradient(to top, ${color} 0 ${pct}%, ${BZ_AMZ_COLOR} ${pct}% 100%)` : color;
-    const tip = isSales && a ? `${mo}/${i + 1}　卸売 ${yen(w)}／Amazon ${yen(a)}` : `${mo}/${i + 1}　${yen(v)}`;
-    return `<div class="bz-day${v ? '' : ' zero'}" title="${tip}" style="height:${v ? Math.max(4, Math.round(v / dayMax * 100)) : 0}%;background:${bg}"></div>`;
+    const d = dayKey(i), w = perDayW[i], a = perDayA[i];
+    const isSel = d === selDay, isToday = d === todayKey;
+    const op = selDay ? (isSel ? 1 : 0.45) : 1;
+    const seg = (val, col, top) => val ? `<div style="height:${Math.max(2, Math.round(val / dayMax * 88))}px;background:${col};${top ? 'border-radius:2px 2px 0 0;' : ''}"></div>` : '';
+    const stack = isSales ? seg(a, BZ_AMZ_COLOR, true) + seg(w, color, !a) : seg(v, color, true);
+    const lbl = (i + 1) % 5 === 1 || days < 20 ? i + 1 : '';
+    return `<div class="bz-dcol" onclick="bzSelDay('${tab}','${d}')"><div class="bz-dbar" style="opacity:${op};${isToday && !isSel ? 'outline:1.5px solid #4a4a4a;outline-offset:1px;border-radius:2px;' : ''}">${stack}</div><div class="bz-dlbl" style="${isToday ? 'color:var(--text);font-weight:700' : ''}">${lbl}</div></div>`;
   }).join('');
+  let dayInfo = '棒をタップすると、その日の金額が出ます';
+  if (selDay) {
+    const i = parseInt(selDay.slice(8), 10) - 1, wd = '日月火水木金土'[new Date(selDay + 'T00:00:00').getDay()];
+    dayInfo = `<b style="color:var(--text)">${mo}/${i + 1}（${wd}）　${yen(perDay[i])}</b>` + (isSales ? `　<span style="color:${color}">卸売 ${yen(perDayW[i])}</span>／<span style="color:#c56a1a">Amazon ${yen(perDayA[i])}</span>` : `　${cur.filter(a => a.date === selDay).length}件`);
+  }
 
   let extraKpi = '';
   if (tab === 'sales') {
@@ -18971,8 +19007,8 @@ function renderBzListSide() {
   </div>
   <div class="bz-card">
     <div class="bz-head"><span>日ごとの推移</span><span class="bz-sub">${isSales ? `<span style="color:${color}">■</span>卸売 <span style="color:${BZ_AMZ_COLOR}">■</span>Amazon　` : ''}1日〜${days}日</span></div>
-    <div class="bz-days">${dayBars}</div>
-    <div class="bz-days-axis"><span>1日</span><span>10日</span><span>20日</span><span>${days}日</span></div>
+    <div class="bz-dinfo">${dayInfo}</div>
+    <div class="bz-days2">${dayBars}</div>
   </div>
   <div class="bz-card">
     <div class="bz-head"><span>${isSales ? '卸先・販路別' : bzGroupTitle(tab)}</span><span class="bz-sub">金額の多い順</span></div>
