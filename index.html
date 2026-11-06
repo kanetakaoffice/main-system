@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-06c">
+<meta name="app-build" content="2026-11-06d">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -22801,8 +22801,40 @@ async function azLoad() {
     fetch(authedUrl('/amazonMeta.json')).then(r => r.json()).catch(() => null)
   ]);
   AZ.orders = o || {}; AZ.asinMap = a || {}; AZ.meta = m || {}; AZ.loaded = true;
-  if (isAdmin()) { try { AZ.ec = await fetch(authedUrl('/ecSales.json')).then(r => r.json()) || {}; } catch (e) { AZ.ec = {}; } }
+  if (isAdmin()) {
+    try { AZ.ec = await fetch(authedUrl('/ecSales.json')).then(r => r.json()) || {}; } catch (e) { AZ.ec = {}; }
+    try { AZ.modelDaily = await fetch(authedUrl('/amazonModelDaily.json')).then(r => r.json()) || {}; } catch (e) { AZ.modelDaily = {}; }
+    // 型番別の日ごとのまとめがまだ無い日（この仕組みを入れる前に取り込んだ分）は、注文の記録が残っているうちに作っておく
+    try { const miss = [...new Set(Object.values(AZ.orders).map(azOrderDay))].filter(d => d && !AZ.modelDaily[d]); if (miss.length) await azSaveModelDaily(miss); } catch (e) { console.error(e); }
+  }
   if (!products || !products.length) await loadInventory();
+}
+// ── 型番別の売上を日ごとにまとめて残す ──
+// 注文の記録（/amazonOrders）は90日で整理するため、それより前の月の型番別が出なくなっていた
+// （要望：「5月のレポートを読み込んだら6月・7月の型番別が消えた」）。注文日ごとに
+// 型番・個数・金額のまとめを /amazonModelDaily/{YYYY-MM-DD} = [{k, q, a}] として別に残し、
+// 注文の記録が無くなった日はこちらを使う。
+function azModelSummary(list) {
+  const g = {};
+  list.forEach(o => { const k = azModelOf(o) || '（型番不明）'; if (!g[k]) g[k] = { k, q: 0, a: 0 }; g[k].q += Number(o.qty) || 0; g[k].a += Math.round(Number(o.price) || 0); });
+  return Object.values(g);
+}
+async function azSaveModelDaily(days, fresh) {
+  const all = Object.values(AZ.orders || {}), write = {};
+  // 90日の境目の日は注文の記録が一部だけ整理されていることがあるので、今回取り込んだ日（fresh）以外は、
+  // 古い日のまとめを作り直さない
+  const old = new Date(); old.setDate(old.getDate() - (AZ_KEEP_DAYS - 2)); const oldKey = ymdKey(old);
+  days.forEach(d => {
+    if (!(fresh && fresh.has(d)) && d < oldKey && AZ.modelDaily && AZ.modelDaily[d]) return;
+    const onDay = all.filter(o => azOrderDay(o) === d);
+    if (!onDay.length) return; // 注文の記録が無い日（整理済みの日）は、残してあるまとめをそのまま使う
+    const arr = azModelSummary(onDay.filter(o => o.status !== 'cancelled'));
+    write[d] = arr.length ? arr : null;
+  });
+  if (!Object.keys(write).length) return;
+  await fetch(authedUrl('/amazonModelDaily.json'), { method: 'PATCH', body: JSON.stringify(write) });
+  AZ.modelDaily = AZ.modelDaily || {};
+  Object.keys(write).forEach(d => { if (write[d]) AZ.modelDaily[d] = write[d]; else delete AZ.modelDaily[d]; });
 }
 
 async function azOpen() {
@@ -23297,6 +23329,7 @@ async function azEnsureSalesFrom() {
   return from;
 }
 async function azSyncSales(touched, forceDays) {
+  try { const fresh = new Set((touched || []).map(azOrderDay).filter(Boolean)); await azSaveModelDaily([...new Set([...fresh, ...(forceDays || [])])], fresh); } catch (e) { console.error('model daily error', e); }
   const from = await azEnsureSalesFrom();
   const days = new Set(forceDays || []);
   // 自動記録を始めた最初の回は、取り込み済みの注文の日をすべて記録する
@@ -23415,10 +23448,16 @@ function azSalesCardHtml() {
   const prevYm = ymKey(new Date(y, m - 2, 1)), nextYm = ymKey(new Date(y, m, 1));
   const prevTotal = sum(x => x.date.startsWith(prevYm));
   const delta = (a, b) => { if (!b) return a ? '<span class="az-sub">前月 ¥0</span>' : ''; const d = a - b, r = Math.round(d / b * 100); return `<span style="color:${d >= 0 ? '#2e7d32' : '#c0392b'};font-weight:700">${d >= 0 ? '+' : '−'}${yen(Math.abs(d))}（${d >= 0 ? '+' : ''}${r}%）</span>`; };
-  // 型番別（その月の注文日の分。注文の記録は90日分を残しているので、それより前の月は出ない）
-  const ordersIn = mm => Object.values(AZ.orders || {}).filter(o => o.status !== 'cancelled' && azOrderDay(o).startsWith(mm));
-  const byModel = (list) => { const g = {}; list.forEach(o => { const k = azModelOf(o) || '（型番不明）'; if (!g[k]) g[k] = { k, qty: 0, amt: 0 }; g[k].qty += Number(o.qty) || 0; g[k].amt += Number(o.price) || 0; }); return g; };
-  const cm = byModel(ordersIn(ym)), pm = byModel(ordersIn(prevYm));
+  // 型番別（その月の注文日の分）
+  // 注文の記録が残っている日は注文から、整理済みの日は残してある日ごとのまとめ（AZ.modelDaily）から数える
+  const byModel = mm => {
+    const g = {}, add = (k, q, a) => { if (!g[k]) g[k] = { k, qty: 0, amt: 0 }; g[k].qty += q; g[k].amt += a; };
+    const live = new Set();
+    Object.values(AZ.orders || {}).forEach(o => { const d = azOrderDay(o); if (!d.startsWith(mm)) return; live.add(d); if (o.status !== 'cancelled') add(azModelOf(o) || '（型番不明）', Number(o.qty) || 0, Number(o.price) || 0); });
+    Object.entries(AZ.modelDaily || {}).forEach(([d, arr]) => { if (d.startsWith(mm) && !live.has(d)) (arr || []).forEach(x => x && add(x.k, Number(x.q) || 0, Number(x.a) || 0)); });
+    return g;
+  };
+  const cm = byModel(ym), pm = byModel(prevYm);
   const ranking = Object.values(cm).sort((a, b) => b.amt - a.amt);
   const rMax = Math.max(1, ...ranking.map(r => r.amt));
   const rTotal = ranking.reduce((t, r) => t + r.amt, 0) || 1;
@@ -23426,7 +23465,7 @@ function azSalesCardHtml() {
       <div style="display:flex;justify-content:space-between;gap:8px;font-size:13px"><span style="min-width:0"><b>${azEsc(r.k)}</b> <span class="az-sub">${r.qty}個・${Math.round(r.amt / rTotal * 100)}%${pm[r.k] ? '・前月比 ' + delta(r.amt, pm[r.k].amt) : '・前月なし'}</span></span><b style="white-space:nowrap">${yen(r.amt)}</b></div>
       <div style="height:5px;background:var(--surface);border-radius:3px;margin-top:4px"><div style="height:5px;width:${Math.max(2, Math.round(r.amt / rMax * 100))}%;background:#f0a35e;border-radius:3px"></div></div></div>`).join('')
     + (ranking.length > 10 ? `<div style="text-align:center;margin-top:6px"><button class="az-btn small" onclick="AZ.rankAll=!AZ.rankAll;azRender()">${AZ.rankAll ? '閉じる' : `すべて表示（${ranking.length}型番）`}</button></div>` : '')
-    : '<div class="az-empty">この月の注文の記録はありません（注文の記録は直近90日分です）</div>';
+    : '<div class="az-empty">この月の型番別の記録はありません（その月の全注文レポートを取り込むと出ます）</div>';
   return `<div class="az-card">
     <div class="az-h"><span>💴 Amazonの売上（税込）</span></div>
     <div class="az-sum" style="margin-top:0">
