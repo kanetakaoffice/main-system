@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-08e">
+<meta name="app-build" content="2026-11-08f">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -409,6 +409,7 @@ body.wh-drag-active { cursor:grabbing; user-select:none; -webkit-user-select:non
 .settings-toggle-arrow { font-size: 11px; color: var(--text-muted); transition: transform 0.2s; }
 .settings-collapse .settings-collapse-body { display: none; }
 .settings-collapse.open .settings-collapse-body { display: block; }
+#hk-settings-card.open .settings-collapse-body { display: flex; }
 .settings-collapse.open .settings-toggle { padding-bottom: 0; margin-bottom: 12px; }
 .settings-collapse.open .settings-toggle-arrow { transform: rotate(180deg); }
 /* スマホ・画面半分の幅では、ログアウトボタンが一番下に来るよう並べ替える（PC幅では左の列の一番下） */
@@ -1440,8 +1441,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div class="card-title">2段階認証</div>
       <div id="mfa-settings" style="padding:0 16px 16px"></div>
     </div>
-    <div class="card">
-      <div class="card-title">メールアドレスを変更する</div>
+    <!-- 要望「メールアドレス・パスワードの変更、HAKのアカウントは、間違えて押さないように折りたたみたい」への対応：最初は閉じておく -->
+    <div class="card settings-collapse">
+      <div class="card-title settings-toggle" role="button" tabindex="0" onclick="toggleSettingsCard(this)" onkeydown="if(event.key==='Enter')toggleSettingsCard(this)"><span>メールアドレスを変更する</span><span class="settings-toggle-arrow">▼</span></div>
+      <div class="settings-collapse-body">
       <div id="settings-alert" class="alert" style="margin:0 16px 12px">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span id="settings-alert-msg"></span>
@@ -1463,9 +1466,11 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div class="btn-row">
         <button onclick="doChangeEmail()" style="flex:1;padding:15px;background:linear-gradient(135deg,#d8d8d8,#a8a8a8);color:#1a1a1a;border:none;border-radius:var(--radius-sm);font-size:15px;font-weight:700;cursor:pointer">メールアドレスを変更する</button>
       </div>
+      </div>
     </div>
-    <div class="card">
-      <div class="card-title">パスワードを変更する</div>
+    <div class="card settings-collapse">
+      <div class="card-title settings-toggle" role="button" tabindex="0" onclick="toggleSettingsCard(this)" onkeydown="if(event.key==='Enter')toggleSettingsCard(this)"><span>パスワードを変更する</span><span class="settings-toggle-arrow">▼</span></div>
+      <div class="settings-collapse-body">
       <div id="pw-change-alert" class="alert" style="margin:0 16px 12px">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span id="pw-change-alert-msg"></span>
@@ -1486,6 +1491,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       </div>
       <div class="btn-row">
         <button onclick="doChangePassword()" style="flex:1;padding:15px;background:linear-gradient(135deg,#d8d8d8,#a8a8a8);color:#1a1a1a;border:none;border-radius:var(--radius-sm);font-size:15px;font-weight:700;cursor:pointer">パスワードを変更する</button>
+      </div>
       </div>
     </div>
     <div class="settings-logout" style="padding:0 16px 16px">
@@ -25366,12 +25372,12 @@ async function hkRenderSettingsCard() {
   const col = document.querySelector('#screen-settings .settings-col:last-child') || document.querySelector('#screen-settings .settings-col');
   if (!col) return;
   let card = document.getElementById('hk-settings-card');
-  if (!card) { card = document.createElement('div'); card.id = 'hk-settings-card'; card.className = 'card'; col.appendChild(card); }
+  if (!card) { card = document.createElement('div'); card.id = 'hk-settings-card'; card.className = 'card settings-collapse'; col.appendChild(card); }
   let users = {};
   try { users = (await hkReq('hakUsers')) || {}; } catch (e) {}
   const list = Object.values(users).map(u => u.email).filter(Boolean);
-  card.innerHTML = `<div class="card-title">HAKのアカウント</div>
-    <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:8px;font-size:13px">
+  card.innerHTML = `<div class="card-title settings-toggle" role="button" tabindex="0" onclick="toggleSettingsCard(this)" onkeydown="if(event.key==='Enter')toggleSettingsCard(this)"><span>HAKのアカウント</span><span class="settings-toggle-arrow">▼</span></div>
+    <div class="settings-collapse-body" style="padding:0 16px 16px;flex-direction:column;gap:8px;font-size:13px">
       <div style="font-size:12px;color:var(--text-muted);line-height:1.6">ここに登録したメールアドレスでログインすると、HAKの清洲在庫の画面だけが開きます（KANETAKAの売上・在庫などは見えません）。アカウント自体は、Firebaseの認証で先に作成してください。</div>
       ${list.length ? list.map(e => `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px"><span>${hkEsc(e)}</span><button onclick="hkRemoveHakUser('${hkEsc(e)}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px">削除</button></div>`).join('') : '<div style="color:var(--text-muted);font-size:12px">まだ登録されていません</div>'}
       <div style="display:flex;gap:6px"><input id="hk-add-user" type="email" placeholder="HAKの方のメールアドレス" style="flex:1;min-width:0;padding:9px 10px;border:1.5px solid var(--border);border-radius:8px;font:inherit;font-size:13px"><button onclick="hkAddHakUser()" style="padding:9px 14px;border:none;border-radius:8px;background:#0f766e;color:#fff;font-weight:700;cursor:pointer;font-family:inherit">追加</button></div>
