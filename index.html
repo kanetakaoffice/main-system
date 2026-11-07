@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-08b">
+<meta name="app-build" content="2026-11-08c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -24668,7 +24668,7 @@ function hkRender() {
     </div>
     <div class="hk-tabs">${tabs.map(([k, l]) => `<button class="${HK.tab === k ? 'on' : ''}" onclick="hkSetTab('${k}')">${l}</button>`).join('')}</div>
     <div class="hk-body">${body}</div>
-    ${HK.outJan ? hkOutModalHtml() : ''}${HK.modelEdit ? hkModelModalHtml() : ''}`;
+    ${HK.outJan ? hkOutModalHtml() : ''}${HK.allocJan ? hkAllocModalHtml() : ''}${HK.modelEdit ? hkModelModalHtml() : ''}`;
   if (HK.tab === 'stocktake') setTimeout(() => document.getElementById('hk-st-jan')?.focus(), 30);
 }
 
@@ -24676,13 +24676,72 @@ function hkRender() {
 function hkItemList() {
   return Object.entries(HK.items || {}).map(([k, v]) => ({ ...v, _k: k, qty: Number(v.qty) || 0, avgCost: Number(v.avgCost) || 0 }));
 }
+// ── 振り分け（HAKの清洲在庫を、KANETAKAとAのどちらが買い取るか個数ごとに分ける） ──
+// /hak/items/{k}/alloc = { kanetaka: 個数, a: 個数 }。残りは「未定」。在庫が減ったときは、KANETAKA → A の順に
+// 今の在庫数に収まるように表示する（保存している数は、振り分けを開いて保存し直すと整う）。HAKの担当の方も変更できる。
+const HK_ALLOC_A = 'A';
+function hkAlloc(i) {
+  const qty = Math.max(0, Number(i.qty) || 0), al = i.alloc || {};
+  const k = Math.min(Math.max(0, Number(al.kanetaka) || 0), qty);
+  const a = Math.min(Math.max(0, Number(al.a) || 0), qty - k);
+  return { k, a, u: qty - k - a };
+}
+function hkAllocCell(i) {
+  if (!(i.qty > 0)) return '';
+  const { k, a, u } = hkAlloc(i);
+  const chip = (n, label, st) => n ? `<span style="display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:9px;margin:1px 2px;white-space:nowrap;${st}">${label} ${n}</span>` : '';
+  return `<span onclick="hkOpenAlloc('${hkEsc(i._k)}')" style="cursor:pointer" title="押すと振り分けを変えられます">${chip(k, 'KANETAKA', 'background:#e0f2fe;color:#075985')}${chip(a, HK_ALLOC_A, 'background:#fef3c7;color:#92400e')}${chip(u, '未定', 'background:#f3f4f6;color:#6b7280')}</span>`;
+}
+// 他社相場（KANETAKA側の管理者だけ・KANETAKAに振り分けた分がある商品だけ）
+function hkBbHtml(i) {
+  if (!hkIsKanetaka() || typeof isAdmin !== 'function' || !isAdmin() || !(hkAlloc(i).k > 0)) return '';
+  if (!window._buybackPriceRef) { if (typeof bbEnsureLoaded === 'function') bbEnsureLoaded(hkRender); return ''; }
+  const hit = typeof bbHitForProduct === 'function' ? bbHitForProduct({ jan: i.jan, model: hkModelOf(i.jan, i.name, i.model), name: i.name }) : null;
+  if (!hit) return '';
+  const top = hit.rec.q[0][1], cost = Number(i.avgCost) || 0, d = cost ? top - cost : null;
+  return `<div style="font-size:11px;color:#0e7490;margin-top:2px;white-space:normal">相場 ${hit.rec.q.slice(0, 3).map(([n, v], x) => `${x ? '／' : ''}${hkEsc(n)} ¥${v.toLocaleString('ja-JP')}`).join('')}${d != null ? `<b style="margin-left:4px;color:${d >= 0 ? '#15803d' : '#b91c1c'}">（平均仕入と${d >= 0 ? '+' : '−'}¥${Math.abs(d).toLocaleString('ja-JP')}）</b>` : ''}</div>`;
+}
+function hkOpenAlloc(k) { HK.allocJan = k; hkRender(); setTimeout(() => document.getElementById('hk-al-k')?.select(), 30); }
+function hkAllocModalHtml() {
+  const it = HK.items[HK.allocJan]; if (!it) return '';
+  const qty = Number(it.qty) || 0, { k, a } = hkAlloc({ ...it, qty });
+  return `<div class="hk-modal" onclick="if(event.target===this){HK.allocJan=null;hkRender()}"><div>
+    <b>振り分け：${hkEsc(hkModelOf(it.jan, it.name, it.model))}</b><span class="hk-note">清洲の在庫 ${qty}個を、どちらが買い取るかで分けます。残りは「未定」になります。</span>
+    <div class="hk-row"><label>KANETAKA<input id="hk-al-k" type="number" min="0" max="${qty}" value="${k}" oninput="hkAllocLeft(${qty})"></label><label>${HK_ALLOC_A}<input id="hk-al-a" type="number" min="0" max="${qty}" value="${a}" oninput="hkAllocLeft(${qty})"></label></div>
+    <div id="hk-al-left" class="hk-note" style="font-weight:700">未定 ${qty - k - a}個</div>
+    <div class="hk-row" style="flex-wrap:wrap;gap:6px"><button class="hk-btn" onclick="hkAllocQuick(${qty},'k')">すべてKANETAKA</button><button class="hk-btn" onclick="hkAllocQuick(${qty},'a')">すべて${HK_ALLOC_A}</button><button class="hk-btn" onclick="hkAllocQuick(${qty},'')">すべて未定</button></div>
+    <div class="hk-row" style="justify-content:flex-end"><button class="cm-btn" onclick="HK.allocJan=null;hkRender()" style="flex:0 0 auto">キャンセル</button><button class="cm-btn primary" onclick="hkSaveAlloc(${qty})" style="flex:0 0 auto">保存</button></div>
+  </div></div>`;
+}
+function hkAllocLeft(qty) {
+  const k = parseInt(document.getElementById('hk-al-k').value) || 0, a = parseInt(document.getElementById('hk-al-a').value) || 0;
+  const el = document.getElementById('hk-al-left'); if (!el) return;
+  const left = qty - k - a;
+  el.textContent = left < 0 ? `合計が在庫（${qty}個）を${-left}個こえています` : `未定 ${left}個`;
+  el.style.color = left < 0 ? 'var(--danger,#b91c1c)' : '';
+}
+function hkAllocQuick(qty, who) {
+  document.getElementById('hk-al-k').value = who === 'k' ? qty : 0;
+  document.getElementById('hk-al-a').value = who === 'a' ? qty : 0;
+  hkAllocLeft(qty);
+}
+async function hkSaveAlloc(qty) {
+  const key = HK.allocJan, it = HK.items[key]; if (!it) return;
+  const k = Math.max(0, parseInt(document.getElementById('hk-al-k').value) || 0), a = Math.max(0, parseInt(document.getElementById('hk-al-a').value) || 0);
+  if (k + a > qty) { showToast(`合計が在庫（${qty}個）をこえています`); return; }
+  const alloc = { kanetaka: k, a, at: Date.now(), by: currentSessionEmail() };
+  try { await hkReq('hak/items/' + key + '/alloc', 'PUT', alloc); it.alloc = alloc; HK.allocJan = null; hkRender(); showToast('振り分けを保存しました'); }
+  catch (e) { showToast('保存できませんでした：' + e.message); }
+}
+
 function hkStockHtml() {
   const all = hkItemList();
   const inStock = all.filter(i => i.qty > 0);
   const q = HK.q.trim().toLowerCase();
   const lowCount = inStock.filter(hkIsLow).length, agedCount = inStock.filter(hkIsAged).length;
   const f = HK.stockFilter || 'all';
-  const list = (HK.showZero ? all : inStock).filter(i => (f === 'low' ? hkIsLow(i) : f === 'aged' ? hkIsAged(i) : true))
+  const alSum = inStock.reduce((s, i) => { const x = hkAlloc(i); s.k += x.k; s.a += x.a; s.u += x.u; return s; }, { k: 0, a: 0, u: 0 });
+  const list = (HK.showZero ? all : inStock).filter(i => (f === 'low' ? hkIsLow(i) : f === 'aged' ? hkIsAged(i) : f === 'al-k' ? hkAlloc(i).k > 0 : f === 'al-a' ? hkAlloc(i).a > 0 : f === 'al-u' ? hkAlloc(i).u > 0 : true))
     .filter(i => !q || String(i.name || '').toLowerCase().includes(q) || String(i.jan || '').includes(q) || hkModelOf(i.jan, i.name).toLowerCase().includes(q))
     .sort((a, b) => b.qty - a.qty || hkModelOf(a.jan, a.name).localeCompare(hkModelOf(b.jan, b.name), 'ja'));
   const units = inStock.reduce((s, i) => s + i.qty, 0);
@@ -24695,10 +24754,11 @@ function hkStockHtml() {
     <div class="hk-card">
       <div class="hk-row"><input id="hk-q" placeholder="🔍 型番・JAN・商品名で検索" value="${hkEsc(HK.q)}" oninput="HK.q=this.value;clearTimeout(HK._qt);HK._qt=setTimeout(()=>{hkRender();const e=document.getElementById('hk-q');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},300)" style="flex:3 1 220px">
         <label style="flex:0 0 auto;flex-direction:row;align-items:center;gap:6px;font-size:12px"><input type="checkbox" ${HK.showZero ? 'checked' : ''} onchange="HK.showZero=this.checked;hkRender()"> 在庫0も表示</label></div>
-      <div class="hk-tabs" style="padding:0;margin:0">${[['all', 'すべて'], ['low', `在庫少 ${lowCount}`], ['aged', `長期在庫 ${agedCount}`]].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" onclick="HK.stockFilter='${k}';hkRender()">${l}</button>`).join('')}</div>
-      <div class="hk-scroll"><table><thead><tr><th>型番</th><th>JAN</th><th class="r">在庫</th><th class="r">経過</th><th class="r">平均仕入</th><th class="r">金額</th><th></th></tr></thead><tbody>
-      ${list.length ? list.slice(0, 500).map(i => { const low = hkIsLow(i), age = hkAgeDays(i), aged = age != null && age >= hkAgeLimit(); return `<tr style="${low ? 'background:#fffbeb' : ''}"><td>${hkModelCell(i.jan, i.name, i.model, i._k)}${low ? ' <span class="hk-chip st">残りわずか</span>' : ''}</td><td class="jan">${hkEsc(i.jan)}</td><td class="r"><b style="${low ? 'color:#b45309' : ''}">${i.qty}</b></td><td class="r" style="${aged ? 'color:#b91c1c;font-weight:700' : ''}">${age == null ? '—' : age + '日'}</td><td class="r">${hkYen(i.avgCost)}</td><td class="r">${hkYen(i.qty * i.avgCost)}</td>
-        <td class="r">${i.qty > 0 ? `<button class="hk-btn" onclick="hkOpenOut('${hkEsc(i._k)}')">出庫</button>` : ''}</td></tr>`; }).join('') : '<tr><td colspan="7" class="tk-empty">該当する在庫はありません</td></tr>'}
+      <div class="hk-tabs" style="padding:0;margin:0">${[['all', 'すべて'], ['low', `在庫少 ${lowCount}`], ['aged', `長期在庫 ${agedCount}`], ['al-k', `KANETAKA分 ${alSum.k}点`], ['al-a', `${HK_ALLOC_A}分 ${alSum.a}点`], ['al-u', `未定 ${alSum.u}点`]].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" onclick="HK.stockFilter='${k}';hkRender()">${l}</button>`).join('')}</div>
+      <div class="hk-scroll"><table><thead><tr><th>型番</th><th>JAN</th><th class="r">在庫</th><th class="r">経過</th><th class="r">平均仕入</th><th class="r">金額</th><th>振り分け</th><th></th></tr></thead><tbody>
+      ${list.length ? list.slice(0, 500).map(i => { const low = hkIsLow(i), age = hkAgeDays(i), aged = age != null && age >= hkAgeLimit(); return `<tr style="${low ? 'background:#fffbeb' : ''}"><td>${hkModelCell(i.jan, i.name, i.model, i._k)}${low ? ' <span class="hk-chip st">残りわずか</span>' : ''}${hkBbHtml(i)}</td><td class="jan">${hkEsc(i.jan)}</td><td class="r"><b style="${low ? 'color:#b45309' : ''}">${i.qty}</b></td><td class="r" style="${aged ? 'color:#b91c1c;font-weight:700' : ''}">${age == null ? '—' : age + '日'}</td><td class="r">${hkYen(i.avgCost)}</td><td class="r">${hkYen(i.qty * i.avgCost)}</td>
+        <td>${hkAllocCell(i)}${i.qty > 0 ? ` <button class="hk-btn" onclick="hkOpenAlloc('${hkEsc(i._k)}')" style="padding:3px 8px;font-size:11px">振り分け</button>` : ''}</td>
+        <td class="r">${i.qty > 0 ? `<button class="hk-btn" onclick="hkOpenOut('${hkEsc(i._k)}')">出庫</button>` : ''}</td></tr>`; }).join('') : '<tr><td colspan="8" class="tk-empty">該当する在庫はありません</td></tr>'}
       </tbody></table></div>
       ${list.length > 500 ? `<p class="hk-note">先頭の500件を表示しています。検索で絞り込んでください。</p>` : ''}
       <p class="hk-note">黄色の行は在庫が少ない商品、赤い経過日数は${hkAgeLimit()}日以上置いている商品です。経過はいちばん古い1個を入庫してからの日数で、棚卸しより前の分は棚卸しの日から数えます。基準は「会社情報」タブで変えられます。</p>
@@ -25041,6 +25101,8 @@ async function hkTrCommit() {
     const it = HK.items[l.k]; const before = Number(it.qty) || 0;
     newQty[l.k] = before - l.qty;
     upd['items/' + l.k + '/qty'] = newQty[l.k]; upd['items/' + l.k + '/updatedAt'] = now;
+    // 港区へ移動した分は、KANETAKAに振り分けていた個数から減らす
+    if (it.alloc && Number(it.alloc.kanetaka) > 0) upd['items/' + l.k + '/alloc/kanetaka'] = Math.max(0, Number(it.alloc.kanetaka) - l.qty);
     upd['moves/' + hkNewId()] = { type: 'transfer', jan: it.jan, name: it.name, model: hkModelOf(it.jan, it.name, it.model), qty: -l.qty, before, after: newQty[l.k], unitPrice: Number(l.unitPrice), unitCost: Number(it.avgCost) || 0, dest: '株式会社KANETAKA（港区）', ref: no, date, at: now, by };
   });
   const transfer = { no, date, items: docLines, subtotal: t.sub, tax: t.tax, total: t.total, taxMode: mode, at: now, by, purchaseKey: null, kanetakaDone: false };
