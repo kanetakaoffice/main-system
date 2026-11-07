@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-07g">
+<meta name="app-build" content="2026-11-07h">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1435,6 +1435,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div class="field-label">現在のメールアドレス</div>
         <div id="current-email-display" style="padding:13px 14px;font-size:15px;font-weight:600;color:var(--text);background:var(--surface);border-radius:var(--radius-sm);border:1.5px solid var(--border)">—</div>
       </div>
+    </div>
+    <div class="card">
+      <div class="card-title">2段階認証</div>
+      <div id="mfa-settings" style="padding:0 16px 16px"></div>
     </div>
     <div class="card">
       <div class="card-title">メールアドレスを変更する</div>
@@ -17092,11 +17096,20 @@ async function doLogin() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, returnSecureToken: true })
     });
-    const d = await r.json();
+    let d = await r.json();
+    // 2段階認証を登録している人は、パスワードのあとに認証アプリの6桁の番号を聞く
+    if (!d.idToken && d.mfaPendingCredential) {
+      const em = d.email || email;
+      btn.textContent = '番号の確認中...';
+      const fin = await mfaFinishSignIn(d);
+      if (!fin) { btn.disabled = false; btn.textContent = 'ログイン'; return; }
+      d = { ...fin, email: em };
+    }
     if (d.idToken) {
-      sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ email: d.email, idToken: d.idToken, refreshToken: d.refreshToken, loggedInAt: Date.now() }));
+      sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ email: d.email || email, idToken: d.idToken, refreshToken: d.refreshToken, loggedInAt: Date.now() }));
       window._idToken = d.idToken;
       document.getElementById('login-screen').style.display = 'none';
+      await mfaAfterLogin();
       if (window._initApp) window._initApp();
     } else {
       throw new Error(d.error?.message || 'ログインに失敗しました');
@@ -17123,6 +17136,7 @@ function initSettingsScreen() {
     const el = document.getElementById('current-email-display');
     if (el) el.textContent = parsed.email || '—';
   }
+  mfaRenderSettings();
   // 保管場所（事務所）の一覧は、保存済みの最新の内容を読み込んでから表示する
   // （読み込む前の初期値のまま保存して、追加済みの事務所を消してしまわないようにするため）
   const locWrap = document.getElementById('stock-location-settings');
@@ -17143,12 +17157,226 @@ async function reAuth(email, password) {
     { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, returnSecureToken: true }) }
   );
-  const d = await r.json();
+  let d = await r.json();
+  if (!d.idToken && d.mfaPendingCredential) {
+    const fin = await mfaFinishSignIn(d);
+    if (!fin) throw new Error('2段階認証をやめました');
+    d = { ...fin, email: d.email || email };
+  }
   if (!d.idToken) throw new Error(d.error?.message || '認証エラー');
   window._idToken = d.idToken;
-  sessionStorage.setItem('kanetaka_auth_token', JSON.stringify({ email: d.email, idToken: d.idToken, loggedInAt: Date.now() }));
+  sessionStorage.setItem('kanetaka_auth_token', JSON.stringify({ email: d.email || email, idToken: d.idToken, refreshToken: d.refreshToken, loggedInAt: Date.now() }));
   return d;
 }
+
+// ============================================================
+// 2段階認証（認証アプリの6桁の番号）
+// 要望：AmazonのSP-API審査で「パスワード要件（多要素認証）」を満たすため、業務アプリのログインに
+// 2段階認証を付ける。Firebase Authentication（Identity Platform）のTOTP多要素認証をREST APIで使う。
+// ・ログイン：パスワードが合っていて2段階認証を登録済みなら、6桁の番号を入れてログインする
+// ・登録：/appSettings/mfaRequired が true のとき、未登録の人はログイン直後に登録画面が出る（HAKのアカウントは対象外）
+//   パソコンはQRコードを読み取り、スマホは「認証アプリに追加」ボタンか設定キーのコピーで登録する
+// ・必須にするかどうかは、管理者が設定画面で切り替える（Firebase側でTOTPを有効にしてから）
+// ============================================================
+const MFA_QR_URL = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+let _mfaQrLoad = null;
+function mfaLoadQr() {
+  if (window.qrcode) return Promise.resolve();
+  if (!_mfaQrLoad) _mfaQrLoad = new Promise((res, rej) => { const s = document.createElement('script'); s.src = MFA_QR_URL; s.onload = res; s.onerror = () => { _mfaQrLoad = null; rej(new Error('qr')); }; document.head.appendChild(s); });
+  return _mfaQrLoad;
+}
+async function mfaApi(path, body) {
+  const r = await fetch(`https://identitytoolkit.googleapis.com${path}?key=${AUTH_API_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.error) throw new Error((d.error && d.error.message) || ('HTTP ' + r.status));
+  return d;
+}
+function mfaSaveSession(email, d) {
+  const prev = JSON.parse(sessionStorage.getItem(AUTH_STORAGE_KEY) || '{}');
+  sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ ...prev, email: email || prev.email, idToken: d.idToken, refreshToken: d.refreshToken || prev.refreshToken, loggedInAt: Date.now() }));
+  window._idToken = d.idToken;
+}
+function mfaErrText(e) {
+  const m = String(e && e.message || e || '');
+  if (/INVALID_MFA_CODE|INVALID_CODE|INVALID_VERIFICATION_CODE|MISSING_CODE/.test(m)) return '番号が違います。認証アプリに今出ている番号を入れてください';
+  if (/SESSION_EXPIRED|MFA_PENDING_CREDENTIAL|INVALID_MFA_PENDING|EXPIRED/.test(m)) return '時間が切れました。もう一度ログインしてください';
+  if (/CREDENTIAL_TOO_OLD|TOKEN_EXPIRED|INVALID_ID_TOKEN/.test(m)) return '安全のため、一度ログアウトしてログインし直してから登録してください';
+  if (/OPERATION_NOT_ALLOWED|TOTP|NOT_ENABLED|UNSUPPORTED|CONFIGURATION/.test(m)) return '2段階認証がまだFirebaseで有効になっていません（管理者の設定待ち）';
+  return 'うまくいきませんでした（' + m + '）';
+}
+function mfaOverlay(html) {
+  let m = document.getElementById('mfa-overlay');
+  if (!m) {
+    m = document.createElement('div'); m.id = 'mfa-overlay';
+    m.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;padding:max(20px,env(safe-area-inset-top)) 16px max(20px,env(safe-area-inset-bottom))';
+    document.body.appendChild(m);
+  }
+  m.innerHTML = `<div style="background:var(--white);border-radius:18px;padding:24px 22px;width:100%;max-width:380px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.25)">${html}</div>`;
+  m.style.display = 'flex';
+  return m;
+}
+function mfaClose() { const m = document.getElementById('mfa-overlay'); if (m) { m.style.display = 'none'; m.innerHTML = ''; } }
+const MFA_INPUT = 'width:100%;box-sizing:border-box;padding:12px;font-size:22px;letter-spacing:6px;text-align:center;border:1.5px solid var(--border);border-radius:10px;font-family:inherit';
+const MFA_BTN = 'flex:1;padding:12px;border-radius:var(--radius-sm);font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit';
+// 6桁の番号を聞く。verify(code) が成功したらその結果を返す（やめたら null）
+function mfaAskCode(opt) {
+  return new Promise(resolve => {
+    mfaOverlay(`<div style="font-size:16px;font-weight:700;margin-bottom:6px">${opt.title || '2段階認証'}</div>
+      <div style="font-size:12.5px;color:var(--text-muted);line-height:1.7;margin-bottom:14px">${opt.note || '認証アプリに表示されている6桁の番号を入力してください。'}</div>
+      <input id="mfa-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="${MFA_INPUT}">
+      <div id="mfa-err" style="color:var(--danger);font-size:12.5px;min-height:18px;margin:8px 0 4px"></div>
+      <div style="display:flex;gap:8px"><button id="mfa-cancel" style="${MFA_BTN};background:var(--surface);border:1.5px solid var(--border);color:var(--text)">やめる</button>
+      <button id="mfa-ok" style="${MFA_BTN};flex:2;background:linear-gradient(135deg,#d8d8d8,#a8a8a8);border:none;color:#1a1a1a">確認する</button></div>`);
+    const inp = document.getElementById('mfa-code'), err = document.getElementById('mfa-err'), ok = document.getElementById('mfa-ok');
+    setTimeout(() => inp.focus(), 50);
+    const go = async () => {
+      const code = (inp.value || '').replace(/\D/g, '');
+      if (code.length !== 6) { err.textContent = '6桁の番号を入れてください'; return; }
+      ok.disabled = true; ok.textContent = '確認中…'; err.textContent = '';
+      try { const r = await opt.verify(code); mfaClose(); resolve(r); }
+      catch (e) { err.textContent = mfaErrText(e); ok.disabled = false; ok.textContent = '確認する'; inp.select(); }
+    };
+    ok.onclick = go;
+    inp.onkeydown = e => { if (e.key === 'Enter') go(); };
+    inp.oninput = () => { if (inp.value.replace(/\D/g, '').length === 6) go(); };
+    document.getElementById('mfa-cancel').onclick = () => { mfaClose(); resolve(null); };
+  });
+}
+// ログインのとき、2段階認証が必要なら番号を聞いてログインを完了する
+async function mfaFinishSignIn(d) {
+  const info = (d.mfaInfo || []).find(x => x.totpInfo) || (d.mfaInfo || [])[0];
+  if (!info) throw new Error('MFA_INFO_MISSING');
+  return mfaAskCode({ verify: code => mfaApi('/v2/accounts/mfaSignIn:finalize', { mfaPendingCredential: d.mfaPendingCredential, mfaEnrollmentId: info.mfaEnrollmentId, totpVerificationInfo: { verificationCode: code } }) });
+}
+async function mfaLookup() {
+  const d = await mfaApi('/v1/accounts:lookup', { idToken: window._idToken });
+  return ((d.users || [])[0] || {}).mfaInfo || [];
+}
+async function mfaIsRequiredFor(email) {
+  try {
+    const req = await fetch(authedUrl('/appSettings/mfaRequired.json')).then(r => r.json());
+    if (req !== true) return false;
+    const hak = await fetch(authedUrl('/hakUsers/' + tkKey(email) + '.json')).then(r => r.json()).catch(() => null);
+    return !hak; // HAKのアカウントは対象外
+  } catch (e) { return false; }
+}
+// ログイン直後（とアプリを開き直したとき）に呼ぶ。必須なのに未登録なら、登録が終わるまで先に進ませない
+async function mfaAfterLogin() {
+  try {
+    const email = currentSessionEmail();
+    if (!(await mfaIsRequiredFor(email))) return;
+    const list = await mfaLookup();
+    if (list.length) return;
+    await mfaEnrollFlow({ blocking: true });
+  } catch (e) { console.warn('mfa check', e); }
+}
+// 登録の画面。blocking のときは「やめる」の代わりに「ログアウト」を出す
+function mfaEnrollFlow(opt) {
+  opt = opt || {};
+  return new Promise(async resolve => {
+    const email = currentSessionEmail();
+    const done = v => { mfaClose(); resolve(v); };
+    const footer = opt.blocking
+      ? `<button id="mfa-x" style="${MFA_BTN};background:var(--surface);border:1.5px solid var(--border);color:var(--text)">ログアウト</button>`
+      : `<button id="mfa-x" style="${MFA_BTN};background:var(--surface);border:1.5px solid var(--border);color:var(--text)">やめる</button>`;
+    const bindX = () => { const x = document.getElementById('mfa-x'); if (x) x.onclick = () => { if (opt.blocking) { mfaClose(); doLogout(); } else done(false); }; };
+    mfaOverlay(`<div style="font-size:16px;font-weight:700;margin-bottom:6px">2段階認証の登録</div><div style="font-size:13px;color:var(--text-muted)">準備しています…</div>`);
+    let s;
+    try {
+      [s] = await Promise.all([mfaApi('/v2/accounts/mfaEnrollment:start', { idToken: window._idToken, totpEnrollmentInfo: {} }).then(r => r.totpSessionInfo), mfaLoadQr().catch(() => null)]);
+      if (!s || !s.sharedSecretKey) throw new Error('START_FAILED');
+    } catch (e) {
+      const notReady = /OPERATION_NOT_ALLOWED|TOTP|NOT_ENABLED|UNSUPPORTED|CONFIGURATION/.test(String(e.message));
+      mfaOverlay(`<div style="font-size:16px;font-weight:700;margin-bottom:8px">2段階認証の登録</div>
+        <div style="font-size:13px;line-height:1.7;color:var(--danger);margin-bottom:14px">${mfaErrText(e)}</div>
+        <div style="display:flex;gap:8px">${opt.blocking && notReady ? '' : footer}<button id="mfa-skip" style="${MFA_BTN};background:linear-gradient(135deg,#d8d8d8,#a8a8a8);border:none;color:#1a1a1a">${opt.blocking && notReady ? '今は使い始める' : '閉じる'}</button></div>`);
+      bindX(); document.getElementById('mfa-skip').onclick = () => done(false);
+      return;
+    }
+    const digits = s.verificationCodeLength || 6, period = s.periodSec || 30;
+    const uri = `otpauth://totp/${encodeURIComponent('KANETAKA:' + email)}?secret=${s.sharedSecretKey}&issuer=KANETAKA&algorithm=SHA1&digits=${digits}&period=${period}`;
+    let qrImg = '';
+    try { const q = window.qrcode(0, 'M'); q.addData(uri); q.make(); qrImg = `<img src="${q.createDataURL(5, 8)}" alt="QRコード" style="width:200px;height:200px;image-rendering:pixelated;border:1px solid var(--border);border-radius:8px">`; } catch (e) { qrImg = ''; }
+    const keyShow = s.sharedSecretKey.replace(/(.{4})/g, '$1 ').trim();
+    const isPhone = /iPhone|iPad|Android/i.test(navigator.userAgent);
+    mfaOverlay(`<div style="font-size:16px;font-weight:700;margin-bottom:6px">2段階認証の登録</div>
+      <div style="font-size:12.5px;color:var(--text-muted);line-height:1.7;margin-bottom:12px">スマホに認証アプリ（Google Authenticator など）を入れてから、次のどれかで登録してください。登録すると、次回からログインのときに6桁の番号を聞かれます。</div>
+      <div style="font-size:12.5px;font-weight:700;margin-bottom:6px">${isPhone ? '① このスマホで登録する' : '① スマホで読み取る（パソコンで開いているとき）'}</div>
+      ${isPhone ? `<a href="${uri}" style="display:block;text-align:center;padding:12px;border-radius:10px;background:var(--surface);border:1.5px solid var(--border);color:var(--text);font-weight:700;text-decoration:none;margin-bottom:12px">📲 認証アプリに追加</a>`
+        : `<div style="text-align:center;margin-bottom:12px">${qrImg || '<div style="font-size:12px;color:var(--text-muted)">QRコードを表示できませんでした。下の設定キーで登録してください</div>'}</div>`}
+      <div style="font-size:12.5px;font-weight:700;margin-bottom:6px">② うまくいかないときは、設定キーを入力</div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><code id="mfa-key" style="flex:1;font-size:13px;background:var(--surface);border-radius:8px;padding:8px 10px;word-break:break-all;letter-spacing:1px">${keyShow}</code>
+        <button id="mfa-copy" style="flex:none;padding:8px 12px;font-size:12.5px;font-weight:700;border-radius:8px;border:1.5px solid var(--border);background:var(--white);cursor:pointer;font-family:inherit">コピー</button></div>
+      <div style="font-size:11.5px;color:var(--text-muted);line-height:1.6;margin-bottom:14px">認証アプリの「設定キーを入力」で、アカウント名は「KANETAKA」、キーは上の文字（「時間ベース」）を入れます。</div>
+      ${isPhone && qrImg ? `<details style="margin:-6px 0 12px;font-size:12px;color:var(--text-muted)"><summary>QRコードを表示する（別の端末で読み取るとき）</summary><div style="text-align:center;margin-top:8px">${qrImg}</div></details>` : ''}
+      <div style="font-size:12.5px;font-weight:700;margin-bottom:6px">③ 認証アプリに出た${digits}桁の番号を入れる</div>
+      <input id="mfa-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="${digits}" placeholder="000000" style="${MFA_INPUT}">
+      <div id="mfa-err" style="color:var(--danger);font-size:12.5px;min-height:18px;margin:8px 0 4px"></div>
+      <div style="display:flex;gap:8px">${footer}<button id="mfa-ok" style="${MFA_BTN};flex:2;background:linear-gradient(135deg,#d8d8d8,#a8a8a8);border:none;color:#1a1a1a">登録する</button></div>`);
+    bindX();
+    document.getElementById('mfa-copy').onclick = async () => {
+      try { await navigator.clipboard.writeText(s.sharedSecretKey); showToast('設定キーをコピーしました'); }
+      catch (e) { const r = document.createRange(); r.selectNodeContents(document.getElementById('mfa-key')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); showToast('キーを選択しました。コピーしてください'); }
+    };
+    const inp = document.getElementById('mfa-code'), err = document.getElementById('mfa-err'), ok = document.getElementById('mfa-ok');
+    const go = async () => {
+      const code = (inp.value || '').replace(/\D/g, '');
+      if (code.length !== digits) { err.textContent = `${digits}桁の番号を入れてください`; return; }
+      ok.disabled = true; ok.textContent = '登録中…'; err.textContent = '';
+      try {
+        const d = await mfaApi('/v2/accounts/mfaEnrollment:finalize', { idToken: window._idToken, displayName: '認証アプリ', totpVerificationInfo: { sessionInfo: s.sessionInfo, verificationCode: code } });
+        if (d.idToken) mfaSaveSession(email, d);
+        showToast('2段階認証を登録しました');
+        done(true);
+      } catch (e) { err.textContent = mfaErrText(e); ok.disabled = false; ok.textContent = '登録する'; }
+    };
+    ok.onclick = go;
+    inp.onkeydown = e => { if (e.key === 'Enter') go(); };
+  });
+}
+
+// ── 設定画面の「2段階認証」カード ──
+async function mfaRenderSettings() {
+  const box = document.getElementById('mfa-settings'); if (!box) return;
+  box.innerHTML = '<div style="font-size:12.5px;color:var(--text-muted)">確認中…</div>';
+  let list = [], required = false, err = '';
+  try { list = await mfaLookup(); } catch (e) { err = mfaErrText(e); }
+  try { required = (await fetch(authedUrl('/appSettings/mfaRequired.json')).then(r => r.json())) === true; } catch (e) {}
+  const on = list.length > 0;
+  const b = (label, fn, sub) => `<button type="button" onclick="${fn}" style="padding:10px 14px;font-size:13.5px;font-weight:700;border-radius:var(--radius-sm);cursor:pointer;font-family:inherit;border:1.5px solid var(--border);background:${sub ? 'var(--white)' : 'linear-gradient(135deg,#d8d8d8,#a8a8a8)'};color:#1a1a1a">${label}</button>`;
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:13px;font-weight:700;padding:3px 10px;border-radius:999px;${on ? 'background:#ecfdf5;color:#047857' : 'background:#fff7ed;color:#b45309'}">${on ? '✓ 登録済み' : '未登録'}</span>
+      <span style="font-size:12px;color:var(--text-muted)">${on ? 'ログインのときに認証アプリの番号を聞かれます' : '登録すると、ログインのときに認証アプリの番号も必要になります'}</span></div>
+    ${err ? `<div style="font-size:12px;color:var(--danger);margin-bottom:8px">${err}</div>` : ''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${on ? b('スマホを替えたので登録し直す', 'mfaReEnroll()', true) : b('2段階認証を登録する', 'mfaEnrollFlow().then(mfaRenderSettings)')}</div>
+    ${isAdmin() ? `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer"><input type="checkbox" ${required ? 'checked' : ''} onchange="mfaSetRequired(this)" style="width:18px;height:18px;margin-top:1px;flex-shrink:0">
+      <span><b>全員に2段階認証を必須にする</b>（管理者だけの設定）<br><span style="font-size:11.5px;color:var(--text-muted);line-height:1.6">オンにすると、まだ登録していない人はログインのあとに登録画面が出て、登録するまで使えません。HAKのアカウントは対象外です。先に自分の登録を済ませてからオンにしてください。</span></span></label></div>` : ''}`;
+}
+async function mfaSetRequired(cb) {
+  const want = cb.checked;
+  if (want) {
+    let mine = [];
+    try { mine = await mfaLookup(); } catch (e) {}
+    if (!mine.length) { cb.checked = false; showToast('先に自分の2段階認証を登録してください'); return; }
+    if (!await showConfirm('全員に2段階認証を必須にします。\nまだ登録していない人は、次にログインしたときに登録画面が出ます。よろしいですか？')) { cb.checked = false; return; }
+  } else if (!await showConfirm('2段階認証の必須をやめます。登録済みの人は、これまでどおり番号を聞かれます。よろしいですか？')) { cb.checked = true; return; }
+  try { await fetch(authedUrl('/appSettings/mfaRequired.json'), { method: 'PUT', body: JSON.stringify(want) }); showToast(want ? '2段階認証を必須にしました' : '必須をやめました'); }
+  catch (e) { cb.checked = !want; showToast('保存に失敗しました'); }
+}
+async function mfaReEnroll() {
+  if (!await showConfirm('今の2段階認証の登録を消して、新しいスマホで登録し直します。\n途中でやめると、2段階認証なしの状態になります。よろしいですか？')) return;
+  try {
+    const list = await mfaLookup();
+    for (const m of list) {
+      const d = await mfaApi('/v2/accounts/mfaEnrollment:withdraw', { idToken: window._idToken, mfaEnrollmentId: m.mfaEnrollmentId });
+      if (d.idToken) mfaSaveSession(currentSessionEmail(), d);
+    }
+  } catch (e) { showToast(mfaErrText(e)); mfaRenderSettings(); return; }
+  await mfaEnrollFlow();
+  mfaRenderSettings();
+}
+
 
 async function doChangeEmail() {
   // HAKのアカウントは、メールアドレス・パスワードを変更できない（KANETAKAが管理する）
@@ -17565,7 +17793,7 @@ function checkAuth() {
       refreshIdToken();
     }
     document.getElementById('login-screen').style.display = 'none';
-    if (window._initApp) window._initApp();
+    mfaAfterLogin().then(() => { if (window._initApp) window._initApp(); });
   }
 }
 
