@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-07h">
+<meta name="app-build" content="2026-11-07i">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -17200,6 +17200,7 @@ function mfaErrText(e) {
   const m = String(e && e.message || e || '');
   if (/INVALID_MFA_CODE|INVALID_CODE|INVALID_VERIFICATION_CODE|MISSING_CODE/.test(m)) return '番号が違います。認証アプリに今出ている番号を入れてください';
   if (/SESSION_EXPIRED|MFA_PENDING_CREDENTIAL|INVALID_MFA_PENDING|EXPIRED/.test(m)) return '時間が切れました。もう一度ログインしてください';
+  if (/UNVERIFIED_EMAIL/.test(m)) return 'メールアドレスの確認が済んでいません';
   if (/CREDENTIAL_TOO_OLD|TOKEN_EXPIRED|INVALID_ID_TOKEN/.test(m)) return '安全のため、一度ログアウトしてログインし直してから登録してください';
   if (/OPERATION_NOT_ALLOWED|TOTP|NOT_ENABLED|UNSUPPORTED|CONFIGURATION/.test(m)) return '2段階認証がまだFirebaseで有効になっていません（管理者の設定待ち）';
   return 'うまくいきませんでした（' + m + '）';
@@ -17286,6 +17287,8 @@ function mfaEnrollFlow(opt) {
       [s] = await Promise.all([mfaApi('/v2/accounts/mfaEnrollment:start', { idToken: window._idToken, totpEnrollmentInfo: {} }).then(r => r.totpSessionInfo), mfaLoadQr().catch(() => null)]);
       if (!s || !s.sharedSecretKey) throw new Error('START_FAILED');
     } catch (e) {
+      // メールアドレスの確認がまだの人は、2段階認証を登録できない（Firebaseの決まり）。確認メールを送ってから登録し直す
+      if (/UNVERIFIED_EMAIL/.test(String(e.message))) { mfaClose(); resolve(await mfaVerifyEmailFlow(opt)); return; }
       const notReady = /OPERATION_NOT_ALLOWED|TOTP|NOT_ENABLED|UNSUPPORTED|CONFIGURATION/.test(String(e.message));
       mfaOverlay(`<div style="font-size:16px;font-weight:700;margin-bottom:8px">2段階認証の登録</div>
         <div style="font-size:13px;line-height:1.7;color:var(--danger);margin-bottom:14px">${mfaErrText(e)}</div>
@@ -17332,6 +17335,38 @@ function mfaEnrollFlow(opt) {
     };
     ok.onclick = go;
     inp.onkeydown = e => { if (e.key === 'Enter') go(); };
+  });
+}
+
+// メールアドレスの確認：確認メールを送り、メールのリンクを押してもらってから登録に戻る
+function mfaVerifyEmailFlow(opt) {
+  return new Promise(resolve => {
+    const email = currentSessionEmail();
+    const render = (msg, err) => {
+      mfaOverlay(`<div style="font-size:16px;font-weight:700;margin-bottom:8px">メールアドレスの確認</div>
+        <div style="font-size:13px;line-height:1.75;margin-bottom:10px">2段階認証を登録する前に、メールアドレス（<b>${email}</b>）が本人のものか確認する必要があります。</div>
+        <ol style="font-size:12.5px;line-height:1.8;color:var(--text-muted);padding-left:20px;margin:0 0 10px">
+          <li>「確認メールを送る」を押す</li><li>届いたメールのリンクを押す（迷惑メールに入ることがあります）</li><li>この画面に戻って「確認しました」を押す</li></ol>
+        <div id="mfa-vmsg" style="font-size:12.5px;min-height:18px;margin-bottom:10px;color:${err ? 'var(--danger)' : 'var(--success)'}">${msg || ''}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="mfa-vx" style="${MFA_BTN};background:var(--surface);border:1.5px solid var(--border);color:var(--text)">${opt && opt.blocking ? 'ログアウト' : 'やめる'}</button>
+          <button id="mfa-vsend" style="${MFA_BTN};background:var(--white);border:1.5px solid var(--border);color:var(--text)">確認メールを送る</button>
+          <button id="mfa-vdone" style="${MFA_BTN};flex-basis:100%;background:linear-gradient(135deg,#d8d8d8,#a8a8a8);border:none;color:#1a1a1a">確認しました（登録に進む）</button></div>`);
+      document.getElementById('mfa-vx').onclick = () => { mfaClose(); if (opt && opt.blocking) doLogout(); resolve(false); };
+      document.getElementById('mfa-vsend').onclick = async () => {
+        try { await mfaApi('/v1/accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: window._idToken }); render(`確認メールを送りました。${email} の受信箱を見てください。`); }
+        catch (e) { render(/TOO_MANY/.test(String(e.message)) ? '送信が続いたため、少し時間をおいてから送ってください' : mfaErrText(e), true); }
+      };
+      document.getElementById('mfa-vdone').onclick = async () => {
+        try {
+          const u = ((await mfaApi('/v1/accounts:lookup', { idToken: window._idToken })).users || [])[0] || {};
+          if (!u.emailVerified) { render('まだ確認が済んでいません。メールのリンクを押してから、もう一度押してください', true); return; }
+          await refreshIdToken(); // 確認済みの状態を新しいログイン情報に反映する
+          mfaClose(); resolve(await mfaEnrollFlow(opt));
+        } catch (e) { render(mfaErrText(e), true); }
+      };
+    };
+    render('');
   });
 }
 
