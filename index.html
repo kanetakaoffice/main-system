@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-08d">
+<meta name="app-build" content="2026-11-08e">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1557,18 +1557,26 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span id="inv-alert-msg"></span>
       </div>
+      <!-- 要望「商品登録の入力項目が多い」への対応（2026/11）：JANコードを一番上にして、読み取ると
+           メーカー・型番・商品名が自動で入るようにし、使っていない仕入値・在庫アラートのしきい値・商品画像は
+           入力欄から外した（値の受け渡しのため欄自体は非表示で残す）。定位置・置き場所メモ・備考は「その他の項目」に。 -->
       <div class="card">
         <div class="card-title">商品情報</div>
         <div class="field">
-          <div class="field-label">メーカー</div>
-          <select id="inv-maker-select" onchange="handleMakerSelectChange('inv')"></select>
-          <input type="hidden" id="inv-maker">
-          <input type="text" id="inv-maker-other" placeholder="新しいメーカー名を入力" oninput="handleMakerOtherInput('inv')" style="display:none;margin-top:8px">
-        </div>
-        <div class="field-divider"></div>
-        <div class="field" style="padding-top:16px">
-          <div class="field-label">商品名</div>
-          <input type="text" id="inv-name" placeholder="商品名を入力">
+          <div class="field-label">JANコード</div>
+          <div style="margin-bottom:6px">
+            <button class="scan-btn" onclick="startScan('inv-jan')" style="width:100%">📷 スキャンする</button>
+          </div>
+          <div style="position:relative">
+            <input type="text" id="inv-jan" placeholder="または手入力" oninput="lookupJan(); toggleInvJanClearBtn();" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupJanImmediate();}" style="padding-right:34px">
+            <button type="button" id="inv-jan-clear" onclick="clearInvJan()" aria-label="JANコードをクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
+          </div>
+          <input type="hidden" id="inv-existing-key">
+          <div id="jan-lookup-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
+          <!-- 要望：「買取スキャナーのCSVを取り込んで、他社の買取価格を参考にできるように
+               してほしい」への対応。JANコード欄に入力・スキャンされた時点で、取り込み済みの
+               他社買取価格データ（あれば）をここに表示する（renderBuybackJanRef参照）。 -->
+          <div id="buyback-jan-ref" style="display:none;margin-top:8px"></div>
         </div>
         <div class="field-divider"></div>
         <div class="field" style="padding-top:16px">
@@ -1589,57 +1597,34 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         </div>
         <div class="field-divider"></div>
         <div class="field" style="padding-top:16px">
-          <div class="field-label">JANコード</div>
-          <div style="margin-bottom:6px">
-            <button class="scan-btn" onclick="startScan('inv-jan')" style="width:100%">📷 スキャンする</button>
-          </div>
-          <div style="position:relative">
-            <input type="text" id="inv-jan" placeholder="または手入力" oninput="lookupJan(); toggleInvJanClearBtn();" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupJanImmediate();}" style="padding-right:34px">
-            <button type="button" id="inv-jan-clear" onclick="clearInvJan()" aria-label="JANコードをクリア" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer;padding:0">✕</button>
-          </div>
-          <input type="hidden" id="inv-existing-key">
-          <div id="jan-lookup-status" style="font-size:12px;margin-top:6px;color:var(--text-muted)"></div>
-          <!-- 要望：「買取スキャナーのCSVを取り込んで、他社の買取価格を参考にできるように
-               してほしい」への対応。JANコード欄に入力・スキャンされた時点で、取り込み済みの
-               他社買取価格データ（あれば）をここに表示する（renderBuybackJanRef参照）。 -->
-          <div id="buyback-jan-ref" style="display:none;margin-top:8px"></div>
+          <div class="field-label">メーカー</div>
+          <select id="inv-maker-select" onchange="handleMakerSelectChange('inv')"></select>
+          <input type="hidden" id="inv-maker">
+          <input type="text" id="inv-maker-other" placeholder="新しいメーカー名を入力" oninput="handleMakerOtherInput('inv')" style="display:none;margin-top:8px">
+        </div>
+        <div class="field-divider"></div>
+        <div class="field" style="padding-top:16px">
+          <div class="field-label">商品名</div>
+          <input type="text" id="inv-name" placeholder="商品名を入力">
         </div>
       </div>
       <div class="card">
-        <div class="card-title">在庫・価格</div>
+        <div class="card-title">在庫・分類</div>
         <div class="field">
           <div class="field-label" id="inv-stock-label">初期在庫数</div>
           <input type="number" id="inv-stock" placeholder="0" min="0">
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px">空欄の場合は0として登録されます。在庫数はあとから商品一覧の編集で変更できます</div>
         </div>
-        <!-- 保管場所（事務所）ごとの在庫：どの事務所に届いた（置いた）分かと、その商品の定位置 -->
         <div class="field-divider"></div>
         <div class="field" style="padding-top:16px">
           <div class="field-label">入荷先の事務所</div>
-          <select id="inv-in-loc" onchange="rememberInLoc(this.value)"></select>
+          <select id="inv-in-loc" onchange="rememberInLoc(this.value);invSyncHomeLoc()"></select>
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px">荷物が届いた（置いた）事務所を選んでください。この端末では次回も同じ事務所が選ばれた状態になります</div>
-        </div>
-        <div class="field-divider" id="inv-home-loc-divider"></div>
-        <div class="field" id="inv-home-loc-wrap" style="padding-top:16px">
-          <div class="field-label">定位置（普段置いておく事務所）</div>
-          <select id="inv-home-loc"></select>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">洗濯機・冷蔵庫など運ばずにそのまま置いておく大型商品は、届いた事務所（清洲など）を選んでください。定位置以外の事務所にある分は「運び待ち」として表示されます</div>
-        </div>
-        <div class="field-divider"></div>
-        <div class="field" style="padding-top:16px">
-          <div class="field-label">在庫アラートのしきい値</div>
-          <input type="number" id="inv-threshold" placeholder="未設定の場合は3個" min="0">
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">この個数以下になったら「残りわずか」と表示します（空欄なら共通の初期値3個）</div>
-        </div>
-        <div class="field-divider"></div>
-        <div class="field" style="padding-top:16px">
-          <div class="field-label">仕入値（円）</div>
-          <input type="number" id="inv-cost" placeholder="0" min="0">
         </div>
         <div class="field-divider"></div>
         <div class="field" style="padding-top:16px">
           <div class="field-label">カテゴリ</div>
-          <select id="inv-category" onchange="handleCategorySelectChange('inv-category','inv-subcategory')">
+          <select id="inv-category" onchange="handleCategorySelectChange('inv-category','inv-subcategory');invRememberCat()">
             <option value="家電">家電</option>
             <option value="家具">家具</option>
             <option value="車用品">車用品</option>
@@ -1650,7 +1635,16 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div class="field-divider"></div>
         <div class="field" style="padding-top:16px">
           <div class="field-label">サブカテゴリ</div>
-          <select id="inv-subcategory" onchange="handleSubcatSelectChange(this)"></select>
+          <select id="inv-subcategory" onchange="handleSubcatSelectChange(this);invRememberCat()"></select>
+        </div>
+      </div>
+      <details class="card" id="inv-more-card" style="padding-bottom:4px">
+        <summary class="card-title" style="cursor:pointer;list-style:none">その他の項目（任意）<span style="font-weight:400;color:var(--text-muted);font-size:11px;margin-left:6px">定位置・置き場所メモ・備考</span> ▾</summary>
+        <div id="inv-home-loc-divider"></div>
+        <div class="field" id="inv-home-loc-wrap">
+          <div class="field-label">定位置（普段置いておく事務所）</div>
+          <select id="inv-home-loc"></select>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">洗濯機・冷蔵庫など運ばずにそのまま置いておく大型商品は、届いた事務所（清洲など）を選んでください。定位置以外の事務所にある分は「運び待ち」として表示されます</div>
         </div>
         <div class="field-divider"></div>
         <div class="field" style="padding-top:16px">
@@ -1662,14 +1656,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
           <div class="field-label">備考</div>
           <input type="text" id="inv-memo" placeholder="特記事項など">
         </div>
-      </div>
-      <div class="card">
-        <div class="card-title">商品画像</div>
-        <div class="field">
-          <input type="file" id="inv-image" accept="image/*" capture="environment" style="display:none" onchange="previewImage()">
-          <button class="scan-btn" onclick="document.getElementById('inv-image').click()">📷 写真を撮る / 画像を選択</button>
-          <img id="inv-img-preview" class="img-preview">
-        </div>
+      </details>
+      <div style="display:none" aria-hidden="true">
+        <input type="number" id="inv-threshold"><input type="number" id="inv-cost">
+        <input type="file" id="inv-image" accept="image/*" onchange="previewImage()"><img id="inv-img-preview" class="img-preview">
       </div>
       <div class="btn-row">
         <button class="btn btn-gold" id="inv-submit-btn" onclick="submitProduct()">商品を登録する</button>
@@ -1852,7 +1842,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <div style="display:flex;align-items:center;gap:6px">
           <button type="button" onclick="toggleAllInvCats(true)" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:6px;background:var(--white);color:var(--text-muted);cursor:pointer">すべて展開</button>
           <button type="button" onclick="toggleAllInvCats(false)" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:6px;background:var(--white);color:var(--text-muted);cursor:pointer">すべて折りたたむ</button>
-          <div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden">
+          <div style="display:none;border:1px solid var(--border);border-radius:6px;overflow:hidden">
             <button type="button" id="inv-view-list-btn" onclick="setInvViewMode('list')" title="リスト表示" style="padding:4px 8px;font-size:12px;border:none;cursor:pointer">📋</button>
             <button type="button" id="inv-view-grid-btn" onclick="setInvViewMode('grid')" title="グリッド（写真）表示" style="padding:4px 8px;font-size:12px;border:none;cursor:pointer;border-left:1px solid var(--border)">🖼</button>
           </div>
@@ -3057,7 +3047,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div style="font-size:12px;color:var(--text-muted);margin-top:6px">合計 <span id="prod-edit-stock-total" style="font-weight:700;color:var(--text)">0</span>個</div>
       <input type="hidden" id="prod-edit-stock"></div>
     <div class="field-divider"></div>
-    <div class="field" style="padding-top:12px"><div class="field-label">在庫アラートのしきい値</div>
+    <div class="field" style="padding-top:12px;display:none"><div class="field-label">在庫アラートのしきい値</div>
       <input type="number" id="prod-edit-threshold" min="0" placeholder="未設定の場合は3個">
       <div style="font-size:11px;color:var(--text-muted);margin-top:4px">この個数以下で「残りわずか」表示（空欄なら共通の初期値3個）</div></div>
     <div class="field-divider"></div>
@@ -4147,7 +4137,10 @@ function showInvScreen(name) {
   // 画面ごとの追加処理
   if (name === 'inv-add') {
     renderMakerSelectUI('inv');
-    populateSubcatSelect('inv-subcategory', document.getElementById('inv-category')?.value || CATEGORY_LIST[0]);
+    // 初めて開いたときは前回のカテゴリ・サブカテゴリにする（入力途中で戻ってきたときは今の選択のまま）
+    if (!window._invCatRestored) { window._invCatRestored = true; invRestoreCat(); }
+    else populateSubcatSelect('inv-subcategory', document.getElementById('inv-category')?.value || CATEGORY_LIST[0], document.getElementById('inv-subcategory')?.value);
+    invSyncHomeLoc();
     const listCol = document.getElementById('inv-add-list-col');
     if (listCol) {
       listCol.style.display = window.innerWidth >= 768 ? 'block' : 'none';
@@ -9930,12 +9923,17 @@ function clearInvAddExistingMode() {
   if (btn) btn.textContent = '商品を登録する';
   setInvHomeLocVisible(true);
 }
+// 定位置は、入荷先の事務所と同じものを最初に選んでおく（違うときだけ「その他の項目」で変える）
+function invSyncHomeLoc() {
+  const inl = document.getElementById('inv-in-loc')?.value, h = document.getElementById('inv-home-loc');
+  if (inl && h && [...h.options].some(o => o.value === inl)) h.value = inl;
+}
 function setInvHomeLocVisible(show, found) {
   const wrap = document.getElementById('inv-home-loc-wrap');
   const div = document.getElementById('inv-home-loc-divider');
   if (wrap) wrap.style.display = show ? '' : 'none';
   if (div) div.style.display = show ? '' : 'none';
-  if (show) fillLocSelect('inv-home-loc', defaultHomeLoc());
+  if (show) { fillLocSelect('inv-home-loc', defaultHomeLoc()); invSyncHomeLoc(); }
   const label = document.getElementById('inv-stock-label');
   if (label && !show && found) {
     label.innerHTML = `入荷数（追加する数量） <span class="req">*</span><span style="font-weight:400;color:var(--text-muted);margin-left:6px;font-size:11px">現在：${escapeHtmlMain(locBreakdownText(found))}</span>`;
@@ -10657,8 +10655,7 @@ async function submitProduct() {
       }
       await Promise.all(updatePromises);
       ['inv-maker','inv-name','inv-model','inv-jan','inv-stock','inv-threshold','inv-cost','inv-location','inv-memo'].forEach(id => document.getElementById(id).value = '');
-      const catEl = document.getElementById('inv-category'); if(catEl) catEl.selectedIndex = 0;
-      populateSubcatSelect('inv-subcategory', CATEGORY_LIST[0]);
+      invRestoreCat();
       document.getElementById('inv-image').value = '';
       document.getElementById('inv-img-preview').style.display = 'none';
       clearInvAddExistingMode();
@@ -10718,12 +10715,11 @@ async function submitProduct() {
       })});
     }
     // 大型商品などで定位置を変えて登録したあと、次の商品まで同じ定位置にならないよう標準に戻す
-    fillLocSelect('inv-home-loc', defaultHomeLoc());
+    fillLocSelect('inv-home-loc', defaultHomeLoc()); invSyncHomeLoc();
     // 写真を撮らずに登録した商品には、楽天の商品写真を自動で付けておく（設定済みの場合のみ・裏で実行）
     if (newKey && data.jan && !data.image) autoAttachPhotoForNewProduct(newKey, data.jan);
     ['inv-maker','inv-name','inv-model','inv-jan','inv-stock','inv-threshold','inv-cost','inv-location','inv-memo'].forEach(id => document.getElementById(id).value = '');
-    const catEl = document.getElementById('inv-category'); if(catEl) catEl.selectedIndex = 0;
-    populateSubcatSelect('inv-subcategory', CATEGORY_LIST[0]);
+    invRestoreCat();
     document.getElementById('inv-image').value = '';
     document.getElementById('inv-img-preview').style.display = 'none';
     renderMakerSelectUI('inv');
@@ -11216,6 +11212,17 @@ function getDefaultInLoc() {
   if (stockLocations.some(l => l.id === 'kiyosu')) return 'kiyosu';
   return defaultHomeLoc();
 }
+// カテゴリ・サブカテゴリは、前回登録したものをこの端末で覚えておく
+const INV_LAST_CAT_KEY = 'kanetaka_inv_last_cat';
+function invRememberCat() {
+  try { localStorage.setItem(INV_LAST_CAT_KEY, JSON.stringify({ c: document.getElementById('inv-category')?.value || '', s: document.getElementById('inv-subcategory')?.value || '' })); } catch (e) {}
+}
+function invRestoreCat() {
+  let v = {}; try { v = JSON.parse(localStorage.getItem(INV_LAST_CAT_KEY) || '{}') || {}; } catch (e) {}
+  const catEl = document.getElementById('inv-category'); if (!catEl) return;
+  catEl.value = CATEGORY_LIST.includes(v.c) ? v.c : CATEGORY_LIST[0];
+  populateSubcatSelect('inv-subcategory', catEl.value, v.s || '');
+}
 function rememberInLoc(id) { try { localStorage.setItem(LAST_IN_LOC_KEY, id); } catch (e) {} }
 
 // 事務所ごとの個数を求める。byLoc: {事務所id: 個数}（全事務所ぶん）、locQty: 保存用（定位置以外で1個以上のもの）
@@ -11647,9 +11654,12 @@ async function autoAttachPhotoForNewProduct(key, jan) {
 
 // 商品カードのHTMLを生成する共通関数（在庫一覧／商品登録の右側リストで共通利用）
 // opts.editable が true かつ管理者の場合のみ編集・削除ボタンを表示する
+const INV_ALERTS_OFF = true;
 // 商品ごとの在庫アラートしきい値（未設定なら共通のデフォルト値を使う）
+// 要望「常に在庫を確保する商売ではないので、在庫アラートのしきい値は不要」への対応（2026/11）：
+// しきい値を0にして「残りわずか」を出さないようにした（在庫が0以下の「在庫切れ」だけ表示する）。元に戻すときは下の行を戻す。
 function getLowStockThreshold(p) {
-  return (typeof p.lowStock === 'number') ? p.lowStock : DEFAULT_LOW_STOCK_THRESHOLD;
+  return 0; // 以前：(typeof p.lowStock === 'number') ? p.lowStock : DEFAULT_LOW_STOCK_THRESHOLD
 }
 
 // 在庫一覧の「在庫あり／残りわずか／在庫切れ」絞り込みで使う、商品の在庫状態区分
@@ -11664,6 +11674,8 @@ function getInvStockStatus(p) {
 // 請求書類にすぎず、発行日に改めて在庫が動くわけではないため、ここではカウントしない。
 // 含めてしまうと、実際の出庫日ではなく請求書発行日を基準に出庫予測が二重にずれてしまう）
 function estimateStockoutForecast(p) {
+  // 在庫アラートをやめたので、「このペースだと○日で在庫切れ」と「発注目安」も出さない
+  if (INV_ALERTS_OFF) return null;
   // 要望「すでに在庫0個の商品に『このペースだと約0日で在庫切れの見込み』と出るのは分かりにくい」
   // への対応。在庫が0以下の商品はすでに「在庫切れ」と表示されているので、見込みは出さない。
   if (!(Number(p && p.stock) > 0)) return null;
@@ -11939,10 +11951,9 @@ let _invStatusFilter = '';
 const INV_STATUS_FILTERS = [
   { value: '', label: 'すべて' },
   { value: 'ok', label: '在庫あり' },
-  { value: 'low', label: '残りわずか' },
   { value: 'zero', label: '在庫切れ' },
   { value: 'aged', label: '長期在庫' },
-  { value: 'under', label: '相場割れ', admin: true },
+  // 「相場割れ」（相場＜仕入値）は、仕入値を入れない運用なので外した
 ];
 function buildInvStatusFilterBar() {
   return INV_STATUS_FILTERS.filter(f => !f.admin || isAdmin()).map(f =>
@@ -11975,7 +11986,8 @@ function toggleAllInvCats(open) {
 }
 
 // 在庫一覧の表示形式（リスト／グリッド）は端末ごとに記憶しておく
-let _invViewMode = (localStorage.getItem('kanetaka_inv_view_mode') === 'grid') ? 'grid' : 'list';
+// 写真（グリッド）表示は使っていないのでやめた（切り替えボタンも隠す）
+let _invViewMode = 'list';
 function setInvViewMode(mode) {
   _invViewMode = (mode === 'grid') ? 'grid' : 'list';
   localStorage.setItem('kanetaka_inv_view_mode', _invViewMode);
@@ -15342,10 +15354,6 @@ async function renderGeneralHomeScreen() {
     </div>
     <div id="home-today-card"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
-      <div class="home-stat-card" onclick="goHomeToInv('inv-list')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center">
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">在庫アラート</div>
-        <div style="font-size:22px;font-weight:700;color:${lowStockCount?'var(--warning)':'#4a4a4a'}">${lowStockCount}件</div>
-      </div>
       <div class="home-stat-card" onclick="goHomeToInv('inv-packec')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center">
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">今日のAmazon出荷</div>
         <div style="font-size:22px;font-weight:700;color:#4a4a4a">${pendingShipCount}件</div>
@@ -15474,10 +15482,6 @@ function renderHomeSummary() {
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px">
       ${typeof kaHomeTileHtml === 'function' ? kaHomeTileHtml() : ''}
       ${typeof caHomeTileHtml === 'function' ? caHomeTileHtml() : ''}
-      <div class="home-stat-card" onclick="goHomeToInv('inv-list')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">在庫アラート</div>
-        <div style="font-size:18px;font-weight:700;color:${lowStockCount?'var(--warning)':'#4a4a4a'}">${lowStockCount}件</div>
-      </div>
       <div class="home-stat-card" onclick="goHomeToInv('inv-packec','amazon')" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center">
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">EC本日の売上</div>
         <div style="font-size:18px;font-weight:700;color:#4a4a4a">${yen(ecTodayTotal)}</div>
@@ -16903,7 +16907,7 @@ function renderHomeSidePanels() {
   el.innerHTML =
     (pending.length ? card('🔔 取引先からの連絡（確認待ち）', pending.length, consignRows, '確認待ちの連絡はありません', '委託リストを開く', "goHomeToInv('inv-wholesale');setTimeout(()=>switchWhTab('consign'),200)") : '') +
     (away.length ? card('🚚 運び待ち（定位置以外の事務所にある商品）', away.length, awayRows, '運び待ちの商品はありません', 'まとめて移動する', "openBulkTransferModal()") : '') +
-    (left ? '' : shipCard) + lowCard;
+    (left ? '' : shipCard); // 在庫アラートはやめた（lowCardは出さない）
   if (left) left.innerHTML = shipCard;
 }
 
