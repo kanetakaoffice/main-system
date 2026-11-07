@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-08a">
+<meta name="app-build" content="2026-11-08b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -5540,6 +5540,33 @@ function whItemBuybackRec(it) {
   });
   return best ? { jan: best.jan, rec: best.rec, byName: true } : null;
 }
+// ── 在庫一覧・委託リストに他社相場を出す（要望「在庫一覧・委託リストにも他社相場を」） ──
+// 納品書と同じデータ（/buybackPriceRef）・同じ探し方（JAN → 型番が商品名に含まれるもの）を使う。管理者だけに出す。
+let _bbAuxLoading = false;
+function bbEnsureLoaded(rerender) {
+  if (window._buybackPriceRef || _bbAuxLoading || !isAdmin()) return;
+  _bbAuxLoading = true;
+  loadBuybackPriceRefIfNeeded().then(() => { _bbAuxLoading = false; try { rerender(); } catch (e) {} });
+}
+function bbHitForProduct(p) {
+  if (!p || !window._buybackPriceRef || !isAdmin()) return null;
+  const hit = whItemBuybackRec({ jan: p.jan, model: p.model, name: p.name, productKey: p._key });
+  return hit && hit.rec && hit.rec.q && hit.rec.q.length ? hit : null;
+}
+// 一覧の行の右に出す小さな表示（最高値）。仕入値より低いときは赤くする
+function bbChipHtml(hit, cost) {
+  if (!hit) return '';
+  const top = hit.rec.q[0][1], under = cost && top < cost;
+  return `<span title="他社相場の最高値（${escapeHtmlMain(hit.rec.q[0][0])}）${under ? '。仕入値より低くなっています' : ''}" style="font-size:10.5px;padding:2px 7px;border-radius:10px;white-space:nowrap;flex-shrink:0;font-weight:700;${under ? 'background:#fee2e2;color:#b91c1c' : 'background:#ecfeff;color:#0e7490'}">相場 ¥${top.toLocaleString('ja-JP')}${under ? ' ▼' : ''}</span>`;
+}
+// 開いたときの詳しい表示（上位3社＋Amazon最安、仕入値との差）
+function bbDetailHtml(hit, cost, costLabel) {
+  if (!hit) return '';
+  const q = hit.rec.q, top = q[0][1];
+  const diff = cost ? top - cost : null;
+  return `<div><span class="inv-row-detail-label">他社相場${hit.byName ? '（名前で一致）' : ''}</span>${q.slice(0, 3).map(([n, v], i) => `${i ? '／' : ''}${i === 0 ? '<b>' : ''}${escapeHtmlMain(n)} ¥${v.toLocaleString('ja-JP')}${i === 0 ? '</b>' : ''}`).join('')}${q.length > 3 ? `<span style="color:var(--text-muted)">（ほか${q.length - 3}社）</span>` : ''}${hit.rec.a ? `<span style="color:var(--text-muted)">／Amazon最安 ¥${hit.rec.a.toLocaleString('ja-JP')}</span>` : ''}${diff != null ? `<span style="margin-left:6px;font-weight:700;color:${diff >= 0 ? 'var(--success)' : 'var(--danger)'}">（${costLabel || '仕入値'}と${diff >= 0 ? '+' : '−'}¥${Math.abs(diff).toLocaleString('ja-JP')}）</span>` : ''}</div>`;
+}
+
 function whItemBuybackHtml(it, idx) {
   if (it._consignMarked) return '';
   if (!window._buybackPriceRef) return window._whBbLoading ? '<div class="wh-bb muted">他社相場を読み込み中…</div>' : '';
@@ -8081,6 +8108,8 @@ function renderWhConsignClientItemsList(idx) {
   let filtered = qNorm ? holding.filter(m => normalizeModelStr(consignItemModelLive(m)).includes(qNorm)) : holding;
   if (activeSub) filtered = filtered.filter(m => (subOf(m) || '未分類') === activeSub);
   const groups = consignModelGroupsOf(filtered);
+  bbEnsureLoaded(() => renderWhConsignClientItemsList(idx));
+  const prodOf = m => (products || []).find(x => x._key === m.productKey) || { jan: m.jan, model: consignItemModelLive(m), name: m.productName };
   if (_caSort === 'age') groups.sort((a, b) => caOldestDate(a.items).localeCompare(caOldestDate(b.items)));
   // 要望「NEWが複数あると、ぱっと見でどれが最新か分からない」への対応。この取引先で一番最近
   // 委託に追加した日（同じ日に何回か追加した場合はその日の分すべて）だけ背景を緑にする。
@@ -8150,11 +8179,12 @@ function renderWhConsignClientItemsList(idx) {
         <div onclick="toggleWhConsignModelGroup(${idx}, '${g.gk}')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 4px 9px 8px;cursor:pointer">
           <div style="min-width:0;flex:1;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlMain(consignItemModelLive(items[0]))}${newQty > 0 ? `<span class="wh-new-tag">NEW ${Array.from(new Set(newItems.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).map(m => consignAddedDayLabel(m.createdAt)))).join('・')}${items.length > 1 ? ' +' + newQty + '個' : ''}</span>` : ''}${newSlipNos.length ? `<span class="wh-slip-from">納品書 No.${escapeHtmlMain(newSlipNos.join('・'))} から</span>` : ''}</div>
           ${pendingQty > 0 ? `<span style="flex-shrink:0;font-size:11px;font-weight:700;color:#b8860b">⏳ ${pendingQty}個 ${pendingLabel}申請中</span>` : ''}
+          ${bbChipHtml(bbHitForProduct(prodOf(items[0])), items[0].costPrice || (prodOf(items[0]).cost || 0))}
           ${caChipHtml(Math.max(...items.map(caTier)), caOldestDate(items))}
           <span style="flex-shrink:0;font-size:13px;color:var(--text)">${g.qty}個</span>
           <span style="flex-shrink:0;color:var(--text-muted);font-size:14px;transition:transform .15s;${isOpen ? 'transform:rotate(90deg)' : ''}">›</span>
         </div>
-        ${isOpen ? `<div style="padding:4px 4px 12px;${items.length > 1 && newItems.some(isLatestNew) ? 'background:#fff;' : ''}">${pendingQty > 0 ? `<div style="font-size:11.5px;font-weight:700;color:#b8860b;margin-bottom:8px">このうち${pendingQty}個は取引先から${pendingLabel}の申請中です（確認すると正式にお預かり数から引かれます）</div>` : ''}${detail}</div>` : ''}
+        ${isOpen ? `<div style="padding:4px 4px 12px;${items.length > 1 && newItems.some(isLatestNew) ? 'background:#fff;' : ''}">${(() => { const h = bbHitForProduct(prodOf(items[0])); return h ? `<div class="inv-row-detail" style="font-size:12px;margin:0 0 6px;padding:0;border-top:none">${bbDetailHtml(h, items[0].costPrice || prodOf(items[0]).cost || 0, items[0].costPrice ? '原価' : '仕入値')}</div>` : ''; })()}${pendingQty > 0 ? `<div style="font-size:11.5px;font-weight:700;color:#b8860b;margin-bottom:8px">このうち${pendingQty}個は取引先から${pendingLabel}の申請中です（確認すると正式にお預かり数から引かれます）</div>` : ''}${detail}</div>` : ''}
       </div>`;
   }).join('');
 }
@@ -11802,6 +11832,7 @@ function buildInvRow(p) {
         ${p.cost ? `<div><span class="inv-row-detail-label">仕入値</span>¥${p.cost.toLocaleString('ja-JP')}</div>` : ''}
         ${totalVal > 0 ? `<div><span class="inv-row-detail-label">在庫金額</span>¥${totalVal.toLocaleString('ja-JP')}</div>` : ''}
         ${kaAgeDetailHtml(p)}
+        ${bbDetailHtml(bbHitForProduct(p), p.cost)}
         ${forecastHtml}
         ${editBtns}
       </div>` : '';
@@ -11814,6 +11845,7 @@ function buildInvRow(p) {
           ${missingBadgeHtml}
         </div>
         <div style="text-align:right;flex-shrink:0;display:flex;align-items:center;gap:8px">
+          ${bbChipHtml(bbHitForProduct(p), p.cost)}
           ${kaAgedChipHtml(p)}
           ${invRowLocChipHtml(p)}
           <span style="font-size:14px;font-weight:700;color:${p.stock<=threshold?'var(--danger)':'var(--text)'}">${invRowStockLabel(p)}</span>
@@ -11910,9 +11942,10 @@ const INV_STATUS_FILTERS = [
   { value: 'low', label: '残りわずか' },
   { value: 'zero', label: '在庫切れ' },
   { value: 'aged', label: '長期在庫' },
+  { value: 'under', label: '相場割れ', admin: true },
 ];
 function buildInvStatusFilterBar() {
-  return INV_STATUS_FILTERS.map(f =>
+  return INV_STATUS_FILTERS.filter(f => !f.admin || isAdmin()).map(f =>
     `<span class="inv-subcat-tab${_invStatusFilter === f.value ? ' active' : ''}" onclick="setInvStatusFilter('${f.value}')">${f.label}</span>`
   ).join('');
 }
@@ -11977,7 +12010,11 @@ function renderInventoryList() {
   const qModelNorm = normalizeModelStr(q);
   let matched = products.filter(p => !q || p.name?.toLowerCase().includes(q) || (qModelNorm && normalizeModelStr(p.model).includes(qModelNorm)) || (p.maker||'').toLowerCase().includes(q));
   // 在庫状態（在庫あり／残りわずか／在庫切れ）での絞り込み
+  // 他社相場（管理者だけ）：まだ読み込んでいなければ読み込んでから描き直す
+  bbEnsureLoaded(renderInventoryList);
   if (_invStatusFilter === 'aged') matched = matched.filter(p => kaIsAged(p));
+  // 相場割れ：他社相場の最高値が仕入値より低い、在庫のある商品
+  else if (_invStatusFilter === 'under') matched = matched.filter(p => { const h = bbHitForProduct(p); return p.stock > 0 && p.cost && h && h.rec.q[0][1] < p.cost; });
   else if (_invStatusFilter) matched = matched.filter(p => getInvStockStatus(p) === _invStatusFilter);
   // 要望：「型番とJANコードのみで登録し、後でメーカー・商品名をまとめて入力したい」への対応。
   // メーカーまたは商品名が未入力の商品だけを一括で抽出できるようにする。
