@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-07i">
+<meta name="app-build" content="2026-11-07j">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -17224,7 +17224,8 @@ function mfaAskCode(opt) {
   return new Promise(resolve => {
     mfaOverlay(`<div style="font-size:16px;font-weight:700;margin-bottom:6px">${opt.title || '2段階認証'}</div>
       <div style="font-size:12.5px;color:var(--text-muted);line-height:1.7;margin-bottom:14px">${opt.note || '認証アプリに表示されている6桁の番号を入力してください。'}</div>
-      <input id="mfa-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="${MFA_INPUT}">
+      <form id="mfa-form" onsubmit="return false" autocomplete="on"><input type="email" name="username" autocomplete="username" value="${(opt.email || '').replace(/"/g,'&quot;')}" readonly style="position:absolute;opacity:0;width:1px;height:1px;pointer-events:none" tabindex="-1">
+      <input id="mfa-code" name="otp" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="${MFA_INPUT}"></form>
       <div id="mfa-err" style="color:var(--danger);font-size:12.5px;min-height:18px;margin:8px 0 4px"></div>
       <div style="display:flex;gap:8px"><button id="mfa-cancel" style="${MFA_BTN};background:var(--surface);border:1.5px solid var(--border);color:var(--text)">やめる</button>
       <button id="mfa-ok" style="${MFA_BTN};flex:2;background:linear-gradient(135deg,#d8d8d8,#a8a8a8);border:none;color:#1a1a1a">確認する</button></div>`);
@@ -17247,7 +17248,7 @@ function mfaAskCode(opt) {
 async function mfaFinishSignIn(d) {
   const info = (d.mfaInfo || []).find(x => x.totpInfo) || (d.mfaInfo || [])[0];
   if (!info) throw new Error('MFA_INFO_MISSING');
-  return mfaAskCode({ verify: code => mfaApi('/v2/accounts/mfaSignIn:finalize', { mfaPendingCredential: d.mfaPendingCredential, mfaEnrollmentId: info.mfaEnrollmentId, totpVerificationInfo: { verificationCode: code } }) });
+  return mfaAskCode({ email: d.email || (document.getElementById('login-email') || {}).value || currentSessionEmail(), verify: code => mfaApi('/v2/accounts/mfaSignIn:finalize', { mfaPendingCredential: d.mfaPendingCredential, mfaEnrollmentId: info.mfaEnrollmentId, totpVerificationInfo: { verificationCode: code } }) });
 }
 async function mfaLookup() {
   const d = await mfaApi('/v1/accounts:lookup', { idToken: window._idToken });
