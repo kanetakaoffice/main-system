@@ -278,6 +278,16 @@ input[type=number]{-moz-appearance:textfield}
         <label class="row" style="margin-top:8px;font-size:13px;gap:6px"><input type="checkbox" id="ck-usepoint" checked onchange="calc()"> ポイントも仕入れ値から差し引いて計算する</label>
         <div class="label">使えるクーポン</div>
         <div id="ck-coupons" class="muted">お店を選ぶと、使えるクーポンが表示されます。</div>
+        <div class="label" style="margin-top:14px">価格.com最安値（見て入力）</div>
+        <div class="row">
+          <input type="number" id="ck-kakaku" class="grow" inputmode="numeric" placeholder="例：45800" oninput="calc()" onchange="saveKakaku()">
+          <a class="btn" id="ck-kakaku-link" target="_blank" rel="noopener" href="https://kakaku.com/">価格.comで見る</a>
+        </div>
+        <div class="note" id="ck-kakaku-info" style="margin-top:4px"></div>
+        <div class="row note" style="margin-top:6px;gap:6px;flex-wrap:wrap">卸せる見込み：価格.com最安値の
+          <input type="number" id="set-kkrate" inputmode="decimal" step="0.5" style="width:84px;min-height:36px;padding:6px 8px" onchange="saveKkRate()"> ％で計算
+          <span class="pill warn" id="kkrate-pill"></span>
+        </div>
         <div id="ck-result"></div>
         <div class="row" style="margin-top:12px">
           <button class="btn primary grow" id="ck-save" onclick="saveLog()" disabled>この価格を記録する</button>
@@ -408,7 +418,7 @@ const ROOT = '/profitTool';
 const CHAINS = ['ヤマダデンキ','エディオン','ケーズデンキ','ビックカメラ','ヨドバシカメラ','ジョーシン','ノジマ','コジマ','ベスト電器','Yahoo!ショッピング','楽天市場','その他'];
 const BB_STALE_HOURS = 36; // これより古い買取価格データには注意を出す
 
-const S = { coupons:{}, pointRates:{}, log:{}, bb:{}, bbAll:null, bbAllLoading:null, prod:null, meta:null };
+const S = { kkRate:100, kakaku:{}, coupons:{}, pointRates:{}, log:{}, bb:{}, bbAll:null, bbAllLoading:null, prod:null, meta:null };
 let _mfaPending = null;
 
 // ============================================================
@@ -505,15 +515,16 @@ async function startApp() {
   } catch (e) {}
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   fillChainSelects();
+  renderKkRate();
   resetCouponForm();
   const pref = lsGet('pt_store', {});
   if (pref.chain) $('ck-chain').value = pref.chain;
   $('ck-store').value = pref.store || '';
   try {
-    const [c, p, l, m] = await Promise.all([
-      db(ROOT + '/coupons'), db(ROOT + '/pointRates'), db(ROOT + '/priceLog'), db('/buybackImportMeta').catch(() => null)
+    const [c, p, l, m, k, kr] = await Promise.all([
+      db(ROOT + '/coupons'), db(ROOT + '/pointRates'), db(ROOT + '/priceLog'), db('/buybackImportMeta').catch(() => null), db(ROOT + '/kakaku').catch(() => null), db(ROOT + '/settings/kakakuRate').catch(() => null)
     ]);
-    S.coupons = c || {}; S.pointRates = p || {}; S.log = l || {}; S.meta = m;
+    S.coupons = c || {}; S.pointRates = p || {}; S.log = l || {}; S.meta = m; S.kakaku = k || {}; S.kkRate = kr > 0 ? kr : 100; renderKkRate();
   } catch (e) {
     if (/HTTP 40[13]/.test(e.message)) { toast('データを読めませんでした。もう一度ログインしてください'); sessionStorage.removeItem(AUTH_STORAGE_KEY); setTimeout(() => location.reload(), 1500); return; }
     toast('データの読み込みに失敗しました');
@@ -622,6 +633,10 @@ function pickHit(jan) { $('ck-hits').innerHTML = ''; $('ck-q').value = jan; setP
 
 function setProduct(jan, rec) {
   S.prod = { jan, rec };
+  const kk = S.kakaku[jan];
+  $('ck-kakaku').value = kk ? kk.p : '';
+  $('ck-kakaku-link').href = 'https://search.kakaku.com/' + encodeURIComponent((rec && rec.n) || jan) + '/';
+  $('ck-kakaku-info').innerHTML = kakakuInfo(jan);
   const box = $('ck-prod');
   box.classList.remove('hidden');
   const b = bestBuy(rec);
@@ -660,7 +675,7 @@ async function renderSide() {
   const logs = Object.entries(S.log).sort((a, b) => b[1].at - a[1].at).slice(0, 8);
   if (!logs.length) { $('side-log').innerHTML = '<div class="muted">まだ記録はありません。</div>'; return; }
   await Promise.all([...new Set(logs.map(([, l]) => l.jan))].map(getBb));
-  $('side-log').innerHTML = logs.map(([id, l]) => { const b = bestBuy(S.bb[l.jan]); const p = b ? b.price - l.eff : null;
+  $('side-log').innerHTML = logs.map(([id, l]) => { const p = logExits(l).profit;
     return `<div class="list-item" style="cursor:pointer" onclick="reuseLog('${id}')"><div class="li-top"><div style="min-width:0"><div class="li-name">${esc(l.name || l.jan)}</div><div class="li-sub">${esc(l.chain)} ${esc(l.store || '')}・実質${yen(l.eff)}・${fmtDate(l.at)}</div></div><div class="profit ${p == null ? '' : p > 0 ? 'plus' : 'minus'}">${p == null ? '—' : (p > 0 ? '+' : '') + yen(p)}</div></div></div>`; }).join('');
 }
 window.addEventListener('resize', () => { clearTimeout(window._rs); window._rs = setTimeout(() => { renderSide(); if (!$('tab-log').classList.contains('hidden')) renderLog(); }, 200); });
@@ -816,13 +831,16 @@ function calc() {
   if (!price) { $('ck-result').innerHTML = ''; $('ck-save').disabled = true; return; }
   const ids = _ckChecked != null ? _ckChecked : autoPickCoupons(price, ptRate);
   if (_ckChecked == null) boxes.forEach(bx => { bx.checked = ids.includes(bx.dataset.id); });
-  const r = computeProfit(price, ids, ptRate, usePoint, b ? b.price : null);
-  S.lastCalc = { price, ptRate, usePoint, ...r, buy: b ? b.price : null, shop: b ? b.shop : '' };
+  const kakaku = num($('ck-kakaku').value);
+  const X = makeExits(b, kakaku);
+  const r = computeProfit(price, ids, ptRate, usePoint, X.best ? X.best.price : null);
+  S.lastCalc = { price, ptRate, usePoint, ...r, buy: b ? b.price : null, shop: b ? b.shop : '', kakaku, bestKey: X.best ? X.best.k : '' };
   let html = `<div class="result ${r.profit == null ? '' : r.profit > 0 ? 'good' : 'bad'}">`;
   if (r.profit != null) {
-    html += `<div class="muted">見込み利益</div><div class="row" style="align-items:baseline;gap:10px"><span class="big">${r.profit > 0 ? '+' : ''}${yen(r.profit)}</span>${r.rate != null ? `<span class="muted">利益率 ${r.rate.toFixed(1)}%</span>` : ''}</div>`;
+    html += `<div class="muted">見込み利益（${esc(X.best.label)}に売った場合）</div><div class="row" style="align-items:baseline;gap:10px"><span class="big">${r.profit > 0 ? '+' : ''}${yen(r.profit)}</span>${r.rate != null ? `<span class="muted">利益率 ${r.rate.toFixed(1)}%</span>` : ''}</div>`;
+    if (X.ex.length > 1) html += `<div style="margin:8px 0 2px;padding:8px 10px;background:rgba(255,255,255,.6);border-radius:10px">` + X.ex.map(e => { const p = e.price - r.eff; return `<div class="calc-line"><span>${e === X.best ? '★ ' : ''}${esc(e.label)} ${yen(e.price)}</span><b class="profit ${p > 0 ? 'plus' : 'minus'}">${p > 0 ? '+' : ''}${yen(p)}</b></div>`; }).join('') + `</div>`;
   } else {
-    html += `<div class="muted">買取価格がないため、利益は計算できません</div>`;
+    html += `<div class="muted">売り先の価格（買取価格・価格.com最安値）がないため、利益は計算できません</div>`;
   }
   html += `<div style="margin-top:8px">
     <div class="calc-line"><span>仕入れ価格</span><b>${yen(price)}</b></div>
@@ -830,10 +848,70 @@ function calc() {
     <div class="calc-line"><span>支払額</span><b>${yen(r.pay)}</b></div>
     ${r.points ? `<div class="calc-line"><span>もらえるポイント${usePoint ? '' : '（計算に含めない）'}</span><b>${r.points.toLocaleString()}pt</b></div>` : ''}
     <div class="calc-line"><span>実質仕入れ値</span><b>${yen(r.eff)}</b></div>
-    ${b ? `<div class="calc-line"><span>最高買取（${esc(b.shop)}）</span><b>${yen(b.price)}</b></div>` : ''}
   </div></div>`;
   $('ck-result').innerHTML = html;
   $('ck-save').disabled = !S.prod;
+}
+
+// ============================================================
+// 売り先の比較
+//   ・買取：買取スキャナーの他社の最高買取価格（自動）
+//   ・卸：代表が商談で決めた卸値（入力。業者ごとに違うので計算はしない）
+//   ・価格.com最安値：卸値が決まっていないときの目安（人が見て入力し、商品ごとに全員で共有）
+//   一番高く売れる先で利益を出す。卸値を入れたときは価格.comは目安として表示だけする。
+// ============================================================
+function kkLabel() { return S.kkRate === 100 ? '価格.com最安値' : '価格.com基準の卸（最安値の' + S.kkRate + '%）'; }
+function makeExits(b, kakaku) {
+  const ex = [];
+  if (b) ex.push({ k: 'bb', label: '買取（' + b.shop + '）', price: b.price });
+  if (kakaku) ex.push({ k: 'kk', label: kkLabel(), price: Math.floor(kakaku * S.kkRate / 100) });
+  const best = ex.length ? ex.reduce((a, e) => e.price > a.price ? e : a) : null;
+  return { ex, best };
+}
+// 記録した商品の今の売り先（買取は最新のCSV、価格.comは記録後に誰かが入れ直していれば新しい方）
+function logExits(l) {
+  const b = bestBuy(S.bb[l.jan]);
+  const kk = S.kakaku[l.jan];
+  const kakaku = kk && kk.at > (l.kakakuAt || 0) ? kk.p : (l.kakaku || 0);
+  const r = makeExits(b, kakaku);
+  const profit = r.best ? r.best.price - l.eff : null;
+  return { b, kakaku, ...r, profit, rate: profit != null && l.eff > 0 ? profit / l.eff * 100 : null };
+}
+// 「最安値の○％で卸せる見込み」は全員共通の設定。代表に確認できるまでは100％（最安値そのまま）
+function renderKkRate() {
+  $('set-kkrate').value = S.kkRate;
+  $('kkrate-pill').textContent = S.kkRate === 100 ? '最安値そのままで計算中（実際より多めに出ます）' : '';
+  $('kkrate-pill').classList.toggle('hidden', S.kkRate !== 100);
+}
+async function saveKkRate() {
+  const v = num($('set-kkrate').value);
+  if (!(v > 0 && v <= 120)) { toast('1〜120の数字で入力してください'); renderKkRate(); return; }
+  try { await dbPut(ROOT + '/settings/kakakuRate', v); S.kkRate = v; renderKkRate(); calc(); renderSide(); toast('最安値の' + v + '%で計算するように変更しました（全員に反映）'); }
+  catch (e) { toast('保存できませんでした'); renderKkRate(); }
+}
+function kakakuInfo(jan) {
+  const k = S.kakaku[jan];
+  if (!k) return '価格.comの最安値はまだ誰も入力していません。「価格.comで見る」で確認して入れてください。';
+  const days = Math.floor((Date.now() - k.at) / 864e5);
+  let ch = '';
+  if (k.prev && k.prev.p && k.prev.p !== k.p) {
+    const d = k.p - k.prev.p;
+    ch = `<br>前回 ${fmtDate(k.prev.at)} ${yen(k.prev.p)} → 今回 ${yen(k.p)} <span class="pill ${d < 0 ? 'bad' : 'good'}">${d < 0 ? '▼' : '▲'}${yen(Math.abs(d))}</span>`;
+  }
+  return `${fmtDate(k.at)}に${esc((k.by || '').split('@')[0])}さんが入力` + (days >= 3 ? ` <span class="pill warn">${days}日前の価格です</span>` : '') + ch;
+}
+async function saveKakaku() {
+  if (!S.prod) return;
+  const v = num($('ck-kakaku').value);
+  if (!v) return;
+  const old = S.kakaku[S.prod.jan];
+  if (old && old.p === v && Date.now() - old.at < 3600e3) return;
+  const rec = { p: v, at: Date.now(), by: (session().email || '').toLowerCase(), name: (S.prod.rec && S.prod.rec.n) || '' };
+  // 前回の値を残して「前回→今回」の変化を出せるようにする。履歴は今後の推移表示のために別の場所にも積んでおく
+  if (old) rec.prev = old.p !== v || !old.prev ? { p: old.p, at: old.at } : old.prev;
+  try { await dbPut(ROOT + '/kakaku/' + encodeURIComponent(S.prod.jan), rec);
+    dbPost(ROOT + '/kakakuHist/' + encodeURIComponent(S.prod.jan), { p: v, at: rec.at, by: rec.by }).catch(() => {}); S.kakaku[S.prod.jan] = rec; $('ck-kakaku-info').innerHTML = kakakuInfo(S.prod.jan); toast('価格.comの最安値を保存しました（全員に共有されます）'); }
+  catch (e) { toast('価格.comの最安値を保存できませんでした'); }
 }
 
 async function saveLog() {
@@ -843,7 +921,8 @@ async function saveLog() {
     jan: P.jan, name: (P.rec && P.rec.n) || '', chain: $('ck-chain').value, store: $('ck-store').value.trim(),
     price: L.price, discount: L.discount, points: L.usePoint ? L.points : 0, pointRate: L.ptRate || 0,
     coupons: L.used.map(id => S.coupons[id] ? S.coupons[id].title : '').filter(Boolean),
-    eff: L.eff, buy: L.buy, shop: L.shop, profit: L.profit, at: Date.now(), by: (session().email || '').toLowerCase()
+    eff: L.eff, buy: L.buy, shop: L.shop, profit: L.profit, at: Date.now(), by: (session().email || '').toLowerCase(),
+    kakaku: L.kakaku || 0, kakakuAt: L.kakaku ? Date.now() : 0, bestKey: L.bestKey || ''
   };
   $('ck-save').disabled = true;
   try {
@@ -1027,7 +1106,7 @@ async function renderLog() {
   const jans = [...new Set(rows.map(([, l]) => l.jan))];
   if (!S.bbAll && jans.length > 60) { try { await loadBbAll(); } catch (e) {} }
   for (let i = 0; i < jans.length; i += 10) await Promise.all(jans.slice(i, i + 10).map(getBb));
-  const calcItem = ([id, l]) => { const b = bestBuy(S.bb[l.jan]); const profit = b ? b.price - l.eff : null; return { id, l, b, profit, rate: profit != null && l.eff > 0 ? profit / l.eff * 100 : null }; };
+  const calcItem = ([id, l]) => ({ id, l, ...logExits(l) });
   // 集計は「同じ商品・同じ店舗の最新の記録」で数える
   const latestItems = latest.map(calcItem);
   const plus = latestItems.filter(x => x.profit > 0);
@@ -1043,14 +1122,14 @@ async function renderLog() {
   const ptxt = p => p == null ? '—' : (p > 0 ? '+' : '') + yen(p);
   if (window.matchMedia('(min-width:900px)').matches) {
     list.innerHTML = `<div style="overflow-x:auto"><table class="ptbl"><thead><tr>
-        <th>商品</th><th>仕入れ先</th><th class="num">価格</th><th class="num">割引・pt</th><th class="num">実質仕入れ</th><th class="num">最高買取</th><th class="num">利益</th><th class="num">利益率</th><th>記録日</th><th></th></tr></thead><tbody>` +
+        <th>商品</th><th>仕入れ先</th><th class="num">価格</th><th class="num">割引・pt</th><th class="num">実質仕入れ</th><th>売り先（★＝一番高い）</th><th class="num">利益</th><th class="num">利益率</th><th>記録日</th><th></th></tr></thead><tbody>` +
       items.map(x => `<tr>
         <td style="max-width:340px"><div class="pname">${esc(x.l.name || x.l.jan)}</div><div class="psub">${esc(x.l.jan)} ${oldPill(x)}</div></td>
         <td><div>${esc(x.l.chain)}</div><div class="psub">${esc(x.l.store || '')}</div></td>
         <td class="num">${yen(x.l.price)}</td>
         <td class="num">${x.l.discount ? '−' + yen(x.l.discount) : ''}${x.l.points ? `<div class="psub">${x.l.points.toLocaleString()}pt</div>` : (x.l.discount ? '' : '<span class="psub">—</span>')}</td>
         <td class="num"><b>${yen(x.l.eff)}</b></td>
-        <td class="num">${x.b ? `<b>${yen(x.b.price)}</b><div class="psub">${esc(x.b.shop)}</div>` : '<span class="psub">データなし</span>'}${diffPill(x) ? '<div>' + diffPill(x) + '</div>' : ''}</td>
+        <td style="min-width:210px">${x.ex.length ? x.ex.map(e => `<div style="display:flex;justify-content:space-between;gap:10px;${e === x.best ? 'font-weight:700' : 'color:var(--text-muted);font-size:12px'}"><span>${e === x.best ? '★' : ''}${esc(e.label)}</span><span>${yen(e.price)}</span></div>`).join('') : '<span class="psub">データなし</span>'}${diffPill(x) ? '<div>' + diffPill(x) + '</div>' : ''}</td>
         <td class="num"><span class="profit ${pcls(x.profit)}">${ptxt(x.profit)}</span></td>
         <td class="num">${x.rate != null ? x.rate.toFixed(1) + '%' : '—'}</td>
         <td style="white-space:nowrap">${fmtDate(x.l.at)}</td>
@@ -1060,7 +1139,7 @@ async function renderLog() {
     list.innerHTML = items.map(x => `<div class="list-item"><div class="li-top"><div style="min-width:0">
         <div class="li-name">${esc(x.l.name || x.l.jan)}</div>
         <div class="li-sub"><span class="pill">${esc(x.l.chain)}</span> ${esc(x.l.store || '')}　${yen(x.l.price)}${x.l.discount ? '・−' + yen(x.l.discount) : ''}${x.l.points ? '・' + x.l.points.toLocaleString() + 'pt' : ''} → 実質${yen(x.l.eff)}</div>
-        <div class="li-sub">買取 ${x.b ? yen(x.b.price) + '（' + esc(x.b.shop) + '）' : 'データなし'} ${diffPill(x)}</div>
+        <div class="li-sub">${x.ex.length ? x.ex.map(e => `${e === x.best ? '★' : ''}${esc(e.label)} ${yen(e.price)}`).join('　') : '売り先の価格なし'} ${diffPill(x)}</div>
         <div class="li-sub">${fmtDate(x.l.at)} 記録 ${oldPill(x)}</div>
       </div><div style="text-align:right;flex:none">
         <div class="profit ${pcls(x.profit)}">${ptxt(x.profit)}</div>${x.rate != null ? `<div class="muted">${x.rate.toFixed(1)}%</div>` : ''}
