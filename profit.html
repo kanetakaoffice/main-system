@@ -185,7 +185,8 @@ input[type=number]{-moz-appearance:textfield}
   <div class="head-row">
     <div class="brand">利益チェッカー<small>KANETAKA</small></div>
     <div class="row">
-      <a class="head-link pc-only" href="./">業務アプリ</a>
+      <a class="head-link pc-only" href="./" onclick="location.href='./?v=' + Date.now();return false">業務アプリ</a>
+      <button class="head-link" style="cursor:pointer" onclick="reloadLatest()" title="最新の状態に更新">↻ 更新</button>
       <button class="head-link" style="cursor:pointer" onclick="doLogout()">ログアウト</button>
     </div>
   </div>
@@ -193,7 +194,7 @@ input[type=number]{-moz-appearance:textfield}
     <button data-tab="check" class="on" onclick="showTab('check')"><span class="nav-icon">🔍</span>仕入れ判定</button>
     <button data-tab="coupon" onclick="showTab('coupon')"><span class="nav-icon">🎟️</span>クーポン</button>
     <button data-tab="log" onclick="showTab('log')"><span class="nav-icon">💰</span>利益リスト</button>
-    <button class="mobile-only" onclick="location.href='./'"><span class="nav-icon">🏠</span>業務アプリ</button>
+    <button class="mobile-only" onclick="location.href='./?v=' + Date.now()"><span class="nav-icon">🏠</span>業務アプリ</button>
   </nav>
 </header>
 
@@ -426,6 +427,8 @@ async function refreshToken() {
   } catch (e) { return false; }
 }
 setInterval(refreshToken, 50 * 60 * 1000);
+// 更新ボタン：データだけでなく、このページ自体も必ず最新版を読み込み直す（URLに時刻を付けてブラウザに残った古い版を使わない）
+function reloadLatest() { location.replace(location.pathname + '?v=' + Date.now()); }
 function doLogout() { sessionStorage.removeItem(AUTH_STORAGE_KEY); location.reload(); }
 
 // Realtime Database（REST）。トークン切れなら1回だけ更新してやり直す
