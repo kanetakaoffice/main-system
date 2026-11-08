@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-08f">
+<meta name="app-build" content="2026-11-08g">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1482,12 +1482,13 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div class="field-divider"></div>
       <div class="field" style="padding-top:16px">
         <div class="field-label">新しいパスワード <span class="req">*</span></div>
-        <input type="password" id="settings-new-pw" placeholder="新しいパスワード（6文字以上）">
+        <input type="password" id="settings-new-pw" autocomplete="new-password" placeholder="12文字以上・記号と数字を1つ以上">
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">iPhone・Macでは、入力欄を押すと出る「強力なパスワード」を使うと、条件に合うパスワードが自動で作られて保存されます</div>
       </div>
       <div class="field-divider"></div>
       <div class="field" style="padding-top:16px">
         <div class="field-label">確認（もう一度入力） <span class="req">*</span></div>
-        <input type="password" id="settings-new-pw2" placeholder="新しいパスワードを再入力">
+        <input type="password" id="settings-new-pw2" autocomplete="new-password" placeholder="新しいパスワードを再入力">
       </div>
       <div class="btn-row">
         <button onclick="doChangePassword()" style="flex:1;padding:15px;background:linear-gradient(135deg,#d8d8d8,#a8a8a8);color:#1a1a1a;border:none;border-radius:var(--radius-sm);font-size:15px;font-weight:700;cursor:pointer">パスワードを変更する</button>
@@ -17542,8 +17543,10 @@ async function doChangePassword() {
   if (newPw1 !== newPw2) {
     showAlert('pw-change-alert', 'pw-change-alert-msg', '新しいパスワードが一致しません', 'error'); return;
   }
-  if (newPw1.length < 6) {
-    showAlert('pw-change-alert', 'pw-change-alert-msg', 'パスワードは6文字以上で入力してください', 'error'); return;
+  // パスワードのルール（Firebaseのパスワードポリシーと同じ）：12文字以上・記号と数字を1つ以上
+  const pwProblem = pwPolicyProblem(newPw1);
+  if (pwProblem) {
+    showAlert('pw-change-alert', 'pw-change-alert-msg', pwProblem, 'error'); return;
   }
 
   try {
@@ -17555,7 +17558,7 @@ async function doChangePassword() {
     );
     const d = await r.json();
     if (d.idToken) {
-      sessionStorage.setItem('kanetaka_auth_token', JSON.stringify({ email: currentEmail, idToken: d.idToken, loggedInAt: Date.now() }));
+      sessionStorage.setItem('kanetaka_auth_token', JSON.stringify({ email: currentEmail, idToken: d.idToken, refreshToken: d.refreshToken || session.refreshToken, loggedInAt: Date.now() }));
       window._idToken = d.idToken;
       document.getElementById('settings-current-pw2').value = '';
       document.getElementById('settings-new-pw').value = '';
@@ -17565,11 +17568,20 @@ async function doChangePassword() {
       throw new Error(d.error?.message || 'エラー');
     }
   } catch(e) {
-    const msg = e.message && e.message.includes('INVALID_PASSWORD')
-      ? '現在のパスワードが正しくありません'
+    const m = String(e && e.message || '');
+    const msg = /INVALID_PASSWORD|INVALID_LOGIN_CREDENTIALS/.test(m) ? '現在のパスワードが正しくありません'
+      : /PASSWORD_DOES_NOT_MEET_REQUIREMENTS/.test(m) ? 'パスワードは12文字以上で、記号と数字を1つ以上入れてください'
+      : /2段階認証をやめました/.test(m) ? '2段階認証の番号を入れないと、パスワードは変更できません'
       : 'パスワードの変更に失敗しました';
     showAlert('pw-change-alert', 'pw-change-alert-msg', msg, 'error');
   }
+}
+
+function pwPolicyProblem(pw) {
+  if (pw.length < 12) return 'パスワードは12文字以上で入力してください';
+  if (!/[0-9]/.test(pw)) return 'パスワードに数字を1つ以上入れてください';
+  if (!/[^A-Za-z0-9]/.test(pw)) return 'パスワードに記号（! ? # $ % など）を1つ以上入れてください';
+  return '';
 }
 
 async function doLogout() {
