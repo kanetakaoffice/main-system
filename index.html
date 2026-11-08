@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-08i">
+<meta name="app-build" content="2026-11-08j">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1482,7 +1482,14 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div class="field-divider"></div>
       <div class="field" style="padding-top:16px">
         <div class="field-label">新しいパスワード <span class="req">*</span></div>
-        <input type="password" id="settings-new-pw" autocomplete="new-password" placeholder="12文字以上・記号と数字を1つ以上">
+        <input type="password" id="settings-new-pw" autocomplete="new-password" placeholder="12文字以上・記号と数字を1つ以上" oninput="pwStrengthRender(this.value)">
+        <div id="pw-strength" style="display:none;margin-top:8px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="flex:1;display:flex;gap:4px"><span class="pws-seg" style="flex:1;height:6px;border-radius:3px;background:var(--border)"></span><span class="pws-seg" style="flex:1;height:6px;border-radius:3px;background:var(--border)"></span><span class="pws-seg" style="flex:1;height:6px;border-radius:3px;background:var(--border)"></span></div>
+            <span id="pw-strength-label" style="font-size:12px;font-weight:700;min-width:44px;text-align:right"></span>
+          </div>
+          <div id="pw-strength-tips" style="font-size:11.5px;line-height:1.7;margin-top:4px"></div>
+        </div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:4px">iPhone・Macでは、入力欄を押すと出る「強力なパスワード」を使うと、条件に合うパスワードが自動で作られて保存されます</div>
       </div>
       <div class="field-divider"></div>
@@ -17564,6 +17571,7 @@ async function doChangePassword() {
       document.getElementById('settings-current-pw2').value = '';
       document.getElementById('settings-new-pw').value = '';
       document.getElementById('settings-new-pw2').value = '';
+      pwStrengthRender('');
       document.querySelectorAll('#screen-settings input[data-pwt]').forEach(i => { i.type = 'password'; const b = i.parentNode.querySelector('button'); if (b) b.textContent = '表示'; });
       showAlert('pw-change-alert', 'pw-change-alert-msg', 'パスワードを変更しました', 'success');
     } else {
@@ -17619,6 +17627,46 @@ function pwOpenChangeCard() {
     if (card) card.classList.add('open');
     if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, 150);
+}
+
+// 要望「新しいパスワードを入力している時に、強さを低・中・高で表示したい」への対応。
+// 低：会社のルール（12文字以上・数字・記号）を満たしていない（このままでは変更できない）
+// 中：ルールは満たしている
+// 高：ルールを満たしたうえで16文字以上、かつ英大文字・英小文字・数字・記号をすべて使っている
+// 入力中の文字は画面の表示にだけ使い、どこにも保存・送信しない。
+function pwStrength(pw) {
+  const checks = [
+    ['12文字以上', pw.length >= 12],
+    ['数字を1つ以上', /[0-9]/.test(pw)],
+    ['記号（! ? # $ % など）を1つ以上', /[^A-Za-z0-9]/.test(pw)]
+  ];
+  const ok = checks.every(c => c[1]);
+  const varied = /[a-z]/.test(pw) && /[A-Z]/.test(pw);
+  const level = !ok ? 1 : (pw.length >= 16 && varied ? 3 : 2);
+  return { level, checks, varied };
+}
+function pwStrengthRender(pw) {
+  const box = document.getElementById('pw-strength');
+  if (!box) return;
+  if (!pw) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  const { level, checks, varied } = pwStrength(pw);
+  const col = ['', '#d9534f', '#e0a400', '#2e9e5b'][level];
+  box.querySelectorAll('.pws-seg').forEach((el, i) => { el.style.background = i < level ? col : 'var(--border)'; });
+  const lb = document.getElementById('pw-strength-label');
+  lb.textContent = '強さ：' + ['', '低', '中', '高'][level];
+  lb.style.color = col;
+  const tips = document.getElementById('pw-strength-tips');
+  if (level === 1) {
+    tips.innerHTML = checks.map(c => `<div style="color:${c[1] ? '#2e9e5b' : 'var(--text-muted)'}">${c[1] ? '✓' : '・'} ${c[0]}</div>`).join('');
+  } else if (level === 2) {
+    const more = [];
+    if (pw.length < 16) more.push('16文字以上にする');
+    if (!varied) more.push('英語の大文字と小文字を両方入れる');
+    tips.innerHTML = `<div style="color:var(--text-muted)">このパスワードで変更できます。さらに強くするには：${more.join('、')}</div>`;
+  } else {
+    tips.innerHTML = '<div style="color:#2e9e5b">とても強いパスワードです</div>';
+  }
 }
 
 // 要望「パスワードを確認のために表示・非表示にしたい」への対応：パスワードの入力欄すべての右端に
