@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-08j">
+<meta name="app-build" content="2026-11-08k">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1440,6 +1440,11 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div class="card">
       <div class="card-title">2段階認証</div>
       <div id="mfa-settings" style="padding:0 16px 16px"></div>
+    </div>
+    <!-- 管理者だけ：全員のパスワード変更・2段階認証の状況 -->
+    <div class="card" id="auth-status-card" style="display:none">
+      <div class="card-title">パスワード・2段階認証の状況（管理者だけ）</div>
+      <div id="auth-status-list" style="padding:0 16px 16px"></div>
     </div>
     <!-- 要望「メールアドレス・パスワードの変更、HAKのアカウントは、間違えて押さないように折りたたみたい」への対応：最初は閉じておく -->
     <div class="card settings-collapse">
@@ -17152,6 +17157,7 @@ async function doLogin() {
       body: JSON.stringify({ email, password, returnSecureToken: true })
     });
     let d = await r.json();
+    const usedMfa = !!(!d.idToken && d.mfaPendingCredential);
     // 2段階認証を登録している人は、パスワードのあとに認証アプリの6桁の番号を聞く
     if (!d.idToken && d.mfaPendingCredential) {
       const em = d.email || email;
@@ -17166,6 +17172,7 @@ async function doLogin() {
       document.getElementById('login-screen').style.display = 'none';
       await mfaAfterLogin();
       if (window._initApp) window._initApp();
+      authStatusRecord({ pwOk: !pwPolicyProblem(password), mfa: usedMfa });
       pwPromptAfterLogin(password);
     } else {
       throw new Error(d.error?.message || 'ログインに失敗しました');
@@ -17193,6 +17200,7 @@ function initSettingsScreen() {
     if (el) el.textContent = parsed.email || '—';
   }
   mfaRenderSettings();
+  authStatusRender();
   // 保管場所（事務所）の一覧は、保存済みの最新の内容を読み込んでから表示する
   // （読み込む前の初期値のまま保存して、追加済みの事務所を消してしまわないようにするため）
   const locWrap = document.getElementById('stock-location-settings');
@@ -17442,6 +17450,7 @@ async function mfaRenderSettings() {
   try { list = await mfaLookup(); } catch (e) { err = mfaErrText(e); }
   try { required = (await fetch(authedUrl('/appSettings/mfaRequired.json')).then(r => r.json())) === true; } catch (e) {}
   const on = list.length > 0;
+  if (!err) authStatusRecord({ mfa: on });
   const b = (label, fn, sub) => `<button type="button" onclick="${fn}" style="padding:10px 14px;font-size:13.5px;font-weight:700;border-radius:var(--radius-sm);cursor:pointer;font-family:inherit;border:1.5px solid var(--border);background:${sub ? 'var(--white)' : 'linear-gradient(135deg,#d8d8d8,#a8a8a8)'};color:#1a1a1a">${label}</button>`;
   box.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:13px;font-weight:700;padding:3px 10px;border-radius:999px;${on ? 'background:#ecfdf5;color:#047857' : 'background:#fff7ed;color:#b45309'}">${on ? '✓ 登録済み' : '未登録'}</span>
@@ -17572,6 +17581,7 @@ async function doChangePassword() {
       document.getElementById('settings-new-pw').value = '';
       document.getElementById('settings-new-pw2').value = '';
       pwStrengthRender('');
+      authStatusRecord({ pwOk: true, pwChangedAt: Date.now() });
       document.querySelectorAll('#screen-settings input[data-pwt]').forEach(i => { i.type = 'password'; const b = i.parentNode.querySelector('button'); if (b) b.textContent = '表示'; });
       showAlert('pw-change-alert', 'pw-change-alert-msg', 'パスワードを変更しました', 'success');
     } else {
@@ -17668,6 +17678,58 @@ function pwStrengthRender(pw) {
     tips.innerHTML = '<div style="color:#2e9e5b">とても強いパスワードです</div>';
   }
 }
+
+// 要望「パスワードを新しいルールに変えた人・まだの人を知りたい」への対応。
+// ログインしたとき・パスワードを変えたとき・設定を開いたときに、
+// 「パスワードがルールを満たしているか（はい／いいえ）」と「2段階認証を登録しているか」だけを
+// /authStatus/{メールアドレス} に記録する。パスワードそのものは記録しない。
+// 一覧は管理者だけが設定画面で見られる。HAKのアカウントは一覧に出さない。
+function authStatusRecord(patch) {
+  try {
+    if (window.IS_HAK_ENTRY) return;
+    const email = currentSessionEmail();
+    if (!email) return;
+    fetch(authedUrl('/authStatus/' + tkKey(email) + '.json'), { method: 'PATCH', body: JSON.stringify({ ...patch, email, at: Date.now() }) }).catch(() => {});
+  } catch (e) {}
+}
+async function authStatusRender() {
+  const card = document.getElementById('auth-status-card');
+  const box = document.getElementById('auth-status-list');
+  if (!card || !box) return;
+  if (!isAdmin() || window.IS_HAK_ENTRY) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  box.innerHTML = '<div style="font-size:12.5px;color:var(--text-muted)">読み込み中…</div>';
+  try {
+    const get = path => fetch(authedUrl(path)).then(r => r.json()).catch(() => null);
+    const [st, members, hak] = await Promise.all([get('/authStatus.json'), get('/members.json'), get('/hakUsers.json')]);
+    const S = st || {}, M = members || {}, H = hak || {};
+    const keys = [...new Set([...Object.keys(M), ...Object.keys(S)])].filter(k => !H[k]);
+    const rows = keys.map(k => {
+      const m = M[k] || {}, x = S[k] || {};
+      const email = m.email || x.email || k.replace(/,/g, '.');
+      return { email, name: m.name || email.split('@')[0], pw: x.pwOk, mfa: x.mfa, seen: !!S[k] };
+    }).sort((a, b) => (a.pw === true) - (b.pw === true) || (a.mfa === true) - (b.mfa === true) || a.name.localeCompare(b.name, 'ja'));
+    const tag = (v, okText, ngText) => v === true
+      ? `<span style="color:#047857;font-weight:700">✓ ${okText}</span>`
+      : v === false ? `<span style="color:#b45309;font-weight:700">${ngText}</span>`
+      : '<span style="color:var(--text-muted)">未確認</span>';
+    const pwDone = rows.filter(r => r.pw === true).length, mfaDone = rows.filter(r => r.mfa === true).length;
+    const allPw = rows.length && pwDone === rows.length;
+    box.innerHTML = `
+      <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;margin-bottom:8px"><span>パスワード：<b>${pwDone}</b> / ${rows.length}人 変更済み</span><span>2段階認証：<b>${mfaDone}</b> / ${rows.length}人 登録済み</span></div>
+      <div style="font-size:11.5px;line-height:1.6;color:${allPw ? '#047857' : 'var(--text-muted)'};margin-bottom:10px">${allPw
+        ? '全員のパスワードが新しいルールを満たしています。Firebaseのパスワードポリシーを「適用を要求」に切り替えて大丈夫です。'
+        : '「未確認」は、この仕組みを入れてからまだログインしていない人です。次にログインすると表示が変わります。パスワードそのものは記録していません。'}</div>
+      <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:1fr 88px 88px;gap:6px;padding:8px 10px;background:var(--surface);font-size:11.5px;font-weight:700;color:var(--text-muted)"><span>名前</span><span>パスワード</span><span>2段階認証</span></div>
+        ${rows.map(r => `<div style="display:grid;grid-template-columns:1fr 88px 88px;gap:6px;padding:9px 10px;border-top:1px solid var(--border);font-size:12.5px;align-items:center">
+          <span style="min-width:0"><span style="display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtmlAS(r.name)}</span><span style="display:block;font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtmlAS(r.email)}</span></span>
+          <span>${tag(r.pw, '変更済み', 'まだ')}</span><span>${tag(r.mfa, '登録済み', '未登録')}</span></div>`).join('') || '<div style="padding:10px;font-size:12.5px;color:var(--text-muted)">まだ記録がありません</div>'}
+      </div>
+      <div style="text-align:right;margin-top:8px"><button type="button" onclick="authStatusRender()" style="padding:6px 12px;font-size:12px;font-weight:700;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:inherit">最新にする</button></div>`;
+  } catch (e) { box.innerHTML = '<div style="font-size:12.5px;color:var(--danger)">読み込めませんでした</div>'; }
+}
+function escHtmlAS(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 // 要望「パスワードを確認のために表示・非表示にしたい」への対応：パスワードの入力欄すべての右端に
 // 「表示／隠す」のボタンを付ける（ログイン画面・設定画面）。押すたびに切り替わる。
