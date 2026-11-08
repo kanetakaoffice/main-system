@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-08g">
+<meta name="app-build" content="2026-11-08i">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -17159,6 +17159,7 @@ async function doLogin() {
       document.getElementById('login-screen').style.display = 'none';
       await mfaAfterLogin();
       if (window._initApp) window._initApp();
+      pwPromptAfterLogin(password);
     } else {
       throw new Error(d.error?.message || 'ログインに失敗しました');
     }
@@ -17563,6 +17564,7 @@ async function doChangePassword() {
       document.getElementById('settings-current-pw2').value = '';
       document.getElementById('settings-new-pw').value = '';
       document.getElementById('settings-new-pw2').value = '';
+      document.querySelectorAll('#screen-settings input[data-pwt]').forEach(i => { i.type = 'password'; const b = i.parentNode.querySelector('button'); if (b) b.textContent = '表示'; });
       showAlert('pw-change-alert', 'pw-change-alert-msg', 'パスワードを変更しました', 'success');
     } else {
       throw new Error(d.error?.message || 'エラー');
@@ -17583,6 +17585,65 @@ function pwPolicyProblem(pw) {
   if (!/[^A-Za-z0-9]/.test(pw)) return 'パスワードに記号（! ? # $ % など）を1つ以上入れてください';
   return '';
 }
+
+// 要望「ログインのときに、パスワードの変更をお願いする文言を出したい」への対応：
+// ログインで入力されたパスワードが新しいルール（12文字以上・数字・記号）に合っていない人にだけ、
+// ログイン後に変更のお願いを表示する。確認はその場だけで行い、パスワードはどこにも保存しない。
+// 「あとで」で閉じられ、次のログインでまた表示される。変更が済んだ人には表示されない。
+// HAKのアカウントは自分でパスワードを変更できないため対象外。
+async function pwPromptAfterLogin(pw) {
+  try {
+    if (window.IS_HAK_ENTRY || !pwPolicyProblem(pw || '')) return;
+    const email = currentSessionEmail();
+    const hak = await fetch(authedUrl('/hakUsers/' + tkKey(email) + '.json')).then(r => r.json()).catch(() => null);
+    if (hak) return;
+    // 2段階認証の登録画面などが開いている間は、閉じてから表示する
+    for (let i = 0; i < 600; i++) {
+      const m = document.getElementById('mfa-overlay');
+      if (!m || m.style.display === 'none') break;
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    mfaOverlay(`<div style="font-size:16px;font-weight:700;margin-bottom:10px">パスワード変更のお願い</div>
+      <div style="font-size:13.5px;line-height:1.8;margin-bottom:10px">セキュリティ強化のため、パスワードの変更をお願いします。</div>
+      <div style="font-size:12.5px;line-height:1.7;color:var(--text-muted);background:var(--bg,#f5f5f5);border-radius:10px;padding:10px 12px;margin-bottom:16px">新しいパスワードの条件<br>・12文字以上<br>・数字を1つ以上<br>・記号（! ? # $ % など）を1つ以上</div>
+      <div style="display:flex;gap:8px"><button id="pwp-later" style="${MFA_BTN};background:var(--surface);border:1.5px solid var(--border);color:var(--text)">あとで</button><button id="pwp-go" style="${MFA_BTN};background:linear-gradient(135deg,#d8d8d8,#a8a8a8);border:none;color:#1a1a1a">今すぐ変更する</button></div>`);
+    document.getElementById('pwp-later').onclick = mfaClose;
+    document.getElementById('pwp-go').onclick = () => { mfaClose(); pwOpenChangeCard(); };
+  } catch (e) { console.warn('pw prompt', e); }
+}
+function pwOpenChangeCard() {
+  if (typeof showScreen === 'function') showScreen('settings');
+  setTimeout(() => {
+    const inp = document.getElementById('settings-current-pw2');
+    const card = inp && inp.closest('.settings-collapse');
+    if (card) card.classList.add('open');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 150);
+}
+
+// 要望「パスワードを確認のために表示・非表示にしたい」への対応：パスワードの入力欄すべての右端に
+// 「表示／隠す」のボタンを付ける（ログイン画面・設定画面）。押すたびに切り替わる。
+function addPwToggles(root) {
+  (root || document).querySelectorAll('input[type="password"]:not([data-pwt])').forEach(inp => {
+    inp.dataset.pwt = '1';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:relative';
+    inp.parentNode.insertBefore(wrap, inp); wrap.appendChild(inp);
+    inp.style.paddingRight = '64px';
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = '表示'; b.setAttribute('aria-label', 'パスワードを表示');
+    b.style.cssText = 'position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:4px 8px;font-size:12px;font-weight:700;border:1px solid var(--border);border-radius:6px;background:var(--white);color:var(--text-muted);cursor:pointer;font-family:inherit';
+    b.onmousedown = e => e.preventDefault(); // 入力欄から目を離さない（キーボードが閉じないように）
+    b.onclick = () => {
+      const show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      b.textContent = show ? '隠す' : '表示';
+      b.setAttribute('aria-label', show ? 'パスワードを隠す' : 'パスワードを表示');
+    };
+    wrap.appendChild(b);
+  });
+}
+document.addEventListener('DOMContentLoaded', () => addPwToggles());
 
 async function doLogout() {
   if (!await showConfirm('ログアウトしますか？')) return;
