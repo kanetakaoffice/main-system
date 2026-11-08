@@ -387,7 +387,13 @@ const dbDel = p => db(p, { method:'DELETE' });
 // ============================================================
 // 起動
 // ============================================================
+const tkKey = email => String(email || '').toLowerCase().replace(/\./g, ',').replace(/[#$\[\]\/]/g, '_');
 async function startApp() {
+  // HAKのアカウントは業務アプリでもHAK用の画面しか見られないので、このページも使えないようにする
+  try {
+    const hak = await db('/hakUsers/' + tkKey(session().email));
+    if (hak) { $('login').classList.remove('hidden'); $('login-form').classList.add('hidden'); $('mfa-form').classList.add('hidden'); $('lg-err').innerHTML = 'このアカウントでは利益チェッカーを使えません。<br><a href="./">業務アプリに戻る</a>'; return; }
+  } catch (e) {}
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   fillChainSelects();
   resetCouponForm();
