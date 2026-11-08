@@ -30,7 +30,9 @@
 html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:15px;-webkit-text-size-adjust:100%}
 button,input,select,textarea{font:inherit;color:inherit}
 .hidden{display:none!important}
-header{position:sticky;top:0;z-index:10;background:var(--tiffany);border-bottom:2px solid var(--gold);padding:10px 16px 0}
+a{color:var(--tiffany-deep)}
+/* iPhoneの時計・電池の表示（ノッチ）の下にヘッダーが潜らないよう、その分の余白を取る */
+header{position:sticky;top:0;z-index:10;background:var(--tiffany);border-bottom:2px solid var(--gold);padding:calc(10px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) 0 calc(16px + env(safe-area-inset-left, 0px))}
 .head-row{display:flex;align-items:center;justify-content:space-between;gap:8px;max-width:960px;margin:0 auto}
 .brand{font-weight:800;letter-spacing:.04em}
 .brand small{display:block;font-size:11px;font-weight:600;color:var(--tiffany-deep);letter-spacing:.1em}
@@ -38,12 +40,14 @@ header{position:sticky;top:0;z-index:10;background:var(--tiffany);border-bottom:
 nav{display:flex;gap:2px;max-width:960px;margin:8px auto 0;overflow-x:auto}
 nav button{flex:1;min-width:0;border:none;background:transparent;padding:9px 6px 10px;font-size:13px;font-weight:700;color:var(--text-sub);border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap}
 nav button.on{color:var(--text);border-bottom-color:var(--gold)}
-main{max-width:960px;margin:0 auto;padding:14px 16px 80px}
+main{max-width:960px;margin:0 auto;padding:14px calc(16px + env(safe-area-inset-right, 0px)) calc(80px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px))}
 .card{background:var(--white);border:1.2px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px}
 .card h2{font-size:15px;margin:0 0 10px}
 .label{font-size:12px;font-weight:700;color:var(--text-sub);margin:10px 0 4px}
 .label:first-child{margin-top:0}
-input[type=text],input[type=number],input[type=date],input[type=email],input[type=password],select,textarea{width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--white);outline:none}
+input[type=text],input[type=number],input[type=date],input[type=email],input[type=password],select,textarea{width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--white);outline:none;min-height:46px}
+/* 選択欄（お店など）の高さ・見た目をほかの入力欄と揃える（Macでは標準のままだと低くなる） */
+select{-webkit-appearance:none;appearance:none;padding-right:34px;background:var(--white) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%234a5a58' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 12px center}
 input:focus,select:focus,textarea:focus{border-color:var(--tiffany-dark)}
 .row{display:flex;gap:8px;align-items:center}
 .row>*{min-width:0}
@@ -95,7 +99,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--tiffany-dark)}
 #scan-wrap .scan-line{position:absolute;left:8%;right:8%;top:50%;height:2px;background:#ff5a5a;box-shadow:0 0 8px #ff5a5a}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2d2b;color:#fff;padding:10px 16px;border-radius:10px;font-size:13.5px;z-index:100;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center}
 #toast.show{opacity:1}
-#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px))}
 #login .card{width:100%;max-width:380px;padding:22px}
 .err{color:var(--bad);font-size:13px;margin-top:8px}
 details summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--text-sub);padding:6px 0}
@@ -200,7 +204,7 @@ table.tbl td.num,table.tbl th.num{text-align:right;white-space:nowrap}
         <div class="row" style="margin-top:12px">
           <button class="btn primary grow" id="ck-save" onclick="saveLog()" disabled>この価格を記録する</button>
         </div>
-        <div class="note" style="margin-top:6px">記録すると「記録・利益リスト」に残り、次にCSVを取り込んだときに最新の買取価格で利益を計算し直せます。</div>
+        <div class="note" style="margin-top:6px">記録すると「利益リスト」に残り、次にCSVを取り込んだときに最新の買取価格で利益を計算し直せます。</div>
       </div>
     </div>
   </section>
