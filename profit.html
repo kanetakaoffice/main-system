@@ -122,6 +122,28 @@ table.tbl td.num,table.tbl th.num{text-align:right;white-space:nowrap}
 .seg{display:flex;border:1.5px solid var(--border);border-radius:10px;overflow:hidden}
 .seg button{flex:1;border:none;background:var(--white);padding:9px 6px;font-weight:700;font-size:13px;cursor:pointer;color:var(--text-sub)}
 .seg button.on{background:var(--tiffany);color:var(--text)}
+/* 利益リスト：上の集計タイル・絞り込みの帯・パソコン用の表 */
+.kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+.kpi .tile{background:var(--white);border:1.2px solid var(--border);border-radius:14px;padding:12px 14px}
+.kpi .k{font-size:12px;color:var(--text-muted);font-weight:700}
+.kpi .v{font-size:22px;font-weight:800;margin-top:2px}
+.kpi .v.plus{color:var(--good)}
+.kpi .s{font-size:11.5px;color:var(--text-muted);margin-top:2px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.toolbar select{width:auto;min-width:150px;flex:0 1 200px}
+.toolbar .seg{flex:0 0 auto}
+.toolbar .seg button{padding:9px 14px;white-space:nowrap}
+table.ptbl{width:100%;border-collapse:collapse;font-size:13px}
+table.ptbl th{font-size:11.5px;color:var(--text-muted);font-weight:700;text-align:left;padding:8px 8px;border-bottom:1.5px solid var(--border);white-space:nowrap;background:var(--surface)}
+table.ptbl td{padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:middle}
+table.ptbl tr:hover td{background:var(--surface)}
+table.ptbl .num{text-align:right;white-space:nowrap}
+table.ptbl .pname{font-weight:700;line-height:1.4}
+table.ptbl .psub{font-size:11.5px;color:var(--text-muted);margin-top:2px}
+.cp-group{margin-top:10px}
+.cp-group-h{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;font-weight:800;color:var(--tiffany-deep);padding:6px 10px;background:var(--surface);border-radius:8px}
+.cp-sum{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+@media (max-width:759px){ .kpi{grid-template-columns:1fr 1fr} .kpi .v{font-size:19px} .toolbar select{flex:1 1 140px} .toolbar .seg{flex:1 1 100%} }
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 input[type=number]{-moz-appearance:textfield}
 .nav-icon{display:none}
@@ -136,8 +158,6 @@ input[type=number]{-moz-appearance:textfield}
   .check-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 360px}
   .side-only{display:block}
   .side-col>.card{margin-bottom:14px}
-  #lg-list.wide{display:grid;grid-template-columns:1fr 1fr;column-gap:28px}
-  #lg-list.wide .list-item:nth-child(2){border-top:none}
 }
 /* スマホ：タブと「業務アプリ」を画面の下に固定（業務アプリと同じ配置）。上部がどうなっていても必ず押せる */
 @media (max-width:759px){
@@ -295,6 +315,8 @@ input[type=number]{-moz-appearance:textfield}
           <input type="text" id="cp-tvalue" style="margin-top:6px" placeholder="">
           <div class="note" id="cp-tv-note" style="margin-top:4px"></div>
         </div>
+        <div class="label">対象外の商品（キーワード）</div>
+        <input type="text" id="cp-excl" placeholder="例：Apple, iPhone, ゲーム機（カンマ区切り・なければ空欄）">
         <div class="grid2">
           <div><div class="label">開始日</div><input type="date" id="cp-start"></div>
           <div><div class="label">終了日</div><input type="date" id="cp-end"></div>
@@ -306,7 +328,7 @@ input[type=number]{-moz-appearance:textfield}
             <select id="cp-stack"><option value="no">できない</option><option value="yes">できる</option></select></div>
         </div>
         <div class="label">メモ</div>
-        <input type="text" id="cp-memo" placeholder="例：1会計1回まで・Apple製品は対象外">
+        <input type="text" id="cp-memo" placeholder="例：1会計1回まで・会員限定">
         <div class="row" style="margin-top:14px">
           <button class="btn" id="cp-cancel" onclick="resetCouponForm()">クリア</button>
           <button class="btn primary grow" onclick="saveCoupon()" id="cp-save">登録する</button>
@@ -314,30 +336,32 @@ input[type=number]{-moz-appearance:textfield}
       </div>
       <div class="card">
         <h2>登録済みのクーポン</h2>
-        <select id="cp-filter" onchange="renderCoupons()" style="margin-bottom:8px"></select>
+        <div class="cp-sum" id="cp-summary"></div>
+        <select id="cp-filter" onchange="renderCoupons()" style="margin-bottom:4px"></select>
         <div id="cp-list"></div>
       </div>
     </div>
   </section>
 
-  <!-- ===== 記録・利益リスト ===== -->
+  <!-- ===== 利益リスト ===== -->
   <section id="tab-log" class="hidden">
+    <div class="kpi" id="lg-kpi"></div>
     <div class="card">
-      <div class="row" style="justify-content:space-between;flex-wrap:wrap">
-        <h2 style="margin:0">記録・利益リスト</h2>
-        <div class="seg" id="lg-mode" style="min-width:240px">
+      <div class="toolbar">
+        <div class="seg" id="lg-mode">
           <button data-v="profit" class="on" onclick="setSeg('lg-mode','profit')">利益が出る商品</button>
           <button data-v="all" onclick="setSeg('lg-mode','all')">すべての記録</button>
         </div>
-      </div>
-      <div class="note" style="margin:8px 0">記録した店頭価格を、<b>最新の買取価格</b>で計算し直しています。クーポンは記録したときに使ったものの金額のままです。同じ商品・同じ店舗は一番新しい記録だけを表示します。</div>
-      <div class="row" style="flex-wrap:wrap">
-        <select id="lg-chain" onchange="renderLog()" style="flex:1;min-width:140px"></select>
-        <select id="lg-days" onchange="renderLog()" style="flex:1;min-width:140px">
-          <option value="7">直近7日の記録</option><option value="30" selected>直近30日の記録</option><option value="90">直近90日の記録</option><option value="0">すべての期間</option>
+        <select id="lg-chain" onchange="renderLog()"></select>
+        <select id="lg-days" onchange="renderLog()">
+          <option value="7">直近7日</option><option value="30" selected>直近30日</option><option value="90">直近90日</option><option value="0">すべての期間</option>
+        </select>
+        <select id="lg-sort" onchange="renderLog()">
+          <option value="profit">利益が大きい順</option><option value="rate">利益率が高い順</option><option value="new">新しい順</option>
         </select>
       </div>
-      <div id="lg-list" style="margin-top:8px"></div>
+      <div class="note" style="margin:10px 0 4px">記録した価格を<b>最新の買取価格</b>で計算し直しています（クーポン・ポイントは記録したときの金額のまま）。同じ商品・同じ店舗は一番新しい記録だけを表示します。</div>
+      <div id="lg-list" style="margin-top:6px"></div>
     </div>
   </section>
 
@@ -609,7 +633,7 @@ async function renderSide() {
   $('side-log').innerHTML = logs.map(([id, l]) => { const b = bestBuy(S.bb[l.jan]); const p = b ? b.price - l.eff : null;
     return `<div class="list-item" style="cursor:pointer" onclick="reuseLog('${id}')"><div class="li-top"><div style="min-width:0"><div class="li-name">${esc(l.name || l.jan)}</div><div class="li-sub">${esc(l.chain)} ${esc(l.store || '')}・実質${yen(l.eff)}・${fmtDate(l.at)}</div></div><div class="profit ${p == null ? '' : p > 0 ? 'plus' : 'minus'}">${p == null ? '—' : (p > 0 ? '+' : '') + yen(p)}</div></div></div>`; }).join('');
 }
-window.addEventListener('resize', () => { clearTimeout(window._rs); window._rs = setTimeout(renderSide, 200); });
+window.addEventListener('resize', () => { clearTimeout(window._rs); window._rs = setTimeout(() => { renderSide(); if (!$('tab-log').classList.contains('hidden')) renderLog(); }, 200); });
 function onChainChange() {
   const chain = $('ck-chain').value;
   const r = S.pointRates[chain];
@@ -644,6 +668,12 @@ function couponMatches(c, chain, store, prod, today) {
   if (!couponActive(c, today)) return false;
   // 店舗限定のクーポンは、入力した店舗名と一致（どちらかがもう一方を含む）するときだけ使う
   if (c.store) { const a = norm2(c.store), b = norm2(store); if (!b || !(a.includes(b) || b.includes(a))) return false; }
+  // 対象外のキーワード（例：Apple, ゲーム機）が商品名に含まれていたら使わない
+  if (c.excl) {
+    const nm = norm2(prod && prod.rec && prod.rec.n);
+    const ex = String(c.excl).split(/[,、]+/).map(norm2).filter(Boolean);
+    if (nm && ex.some(k => nm.includes(k))) return false;
+  }
   if (c.target === 'jan') {
     const list = String(c.tvalue || '').split(/[,、\s]+/).map(s => s.replace(/\D/g, '')).filter(Boolean);
     return !!prod && list.includes(prod.jan);
@@ -675,6 +705,7 @@ function couponCondText(c) {
   if (c.min) a.push(yen(c.min) + '以上');
   if (c.target === 'keyword') a.push('対象：' + c.tvalue);
   if (c.target === 'jan') a.push('JAN指定');
+  if (c.excl) a.push(c.excl + 'は対象外');
   if (c.end) a.push(c.end.slice(5).replace('-', '/') + 'まで');
   if (c.stack === 'yes') a.push('併用可');
   return a.join('・');
@@ -811,15 +842,24 @@ function resetCouponForm() {
   _editCoupon = null;
   $('cp-form-title').textContent = 'クーポンを登録する'; $('cp-save').textContent = '登録する';
   $('cp-chain').value = $('ck-chain').value || CHAINS[0];
-  ['cp-store','cp-title','cp-value','cp-min','cp-cap','cp-tvalue','cp-memo'].forEach(id => $(id).value = '');
+  ['cp-store','cp-title','cp-value','cp-min','cp-cap','cp-tvalue','cp-excl','cp-memo'].forEach(id => $(id).value = '');
   $('cp-start').value = ymd(); $('cp-end').value = '';
   $('cp-source').value = '公式アプリ'; $('cp-stack').value = 'no';
   setSeg('cp-kind', 'yen'); setSeg('cp-target', 'all');
+}
+// 複製：同じ内容をフォームに入れて、新しいクーポンとして登録できるようにする（毎月出る同じようなクーポン用）
+function duplicateCoupon(id) {
+  editCoupon(id);
+  _editCoupon = null;
+  $('cp-form-title').textContent = 'クーポンを複製して登録する'; $('cp-save').textContent = '登録する';
+  $('cp-start').value = ymd(); $('cp-end').value = '';
+  toast('内容をコピーしました。期間を確認して登録してください');
 }
 function editCoupon(id) {
   const c = S.coupons[id]; if (!c) return;
   _editCoupon = id;
   $('cp-form-title').textContent = 'クーポンを編集する'; $('cp-save').textContent = '保存する';
+  $('cp-excl').value = c.excl || '';
   $('cp-chain').value = c.chain; $('cp-store').value = c.store || ''; $('cp-title').value = c.title || '';
   setSeg('cp-kind', c.kind || 'yen'); setSeg('cp-target', c.target || 'all');
   $('cp-value').value = c.value || ''; $('cp-min').value = c.min || ''; $('cp-cap').value = c.cap || ''; $('cp-tvalue').value = c.tvalue || '';
@@ -830,7 +870,7 @@ async function saveCoupon() {
   const c = {
     chain: $('cp-chain').value, store: $('cp-store').value.trim(), title: $('cp-title').value.trim(),
     kind: segVal('cp-kind'), value: num($('cp-value').value), min: num($('cp-min').value) || 0, cap: num($('cp-cap').value) || 0,
-    target: segVal('cp-target'), tvalue: $('cp-tvalue').value.trim(),
+    target: segVal('cp-target'), tvalue: $('cp-tvalue').value.trim(), excl: $('cp-excl').value.trim(),
     start: $('cp-start').value || '', end: $('cp-end').value || '', source: $('cp-source').value, stack: $('cp-stack').value, memo: $('cp-memo').value.trim()
   };
   if (!c.title) { toast('クーポン名を入力してください'); return; }
@@ -868,22 +908,37 @@ function confirmInline(key) {
 }
 function renderCoupons() {
   const f = $('cp-filter').value, today = ymd();
-  const all = Object.entries(S.coupons).filter(([, c]) => !f || c.chain === f);
+  const daysLeft = c => c.end ? Math.round((new Date(c.end) - new Date(today)) / 864e5) : null;
+  const allC = Object.entries(S.coupons);
+  const actAll = allC.filter(([, c]) => couponActive(c, today));
+  const soonAll = actAll.filter(([, c]) => { const d = daysLeft(c); return d != null && d <= 2; });
+  $('cp-summary').innerHTML = `<span class="pill good">今使える ${actAll.length}件</span>` + (soonAll.length ? `<span class="pill warn">まもなく終了 ${soonAll.length}件</span>` : '') +
+    `<span class="pill">お店 ${new Set(actAll.map(([, c]) => c.chain)).size}店分</span>`;
+  const all = allC.filter(([, c]) => !f || c.chain === f);
   const active = all.filter(([, c]) => couponActive(c, today)).sort((a, b) => (a[1].end || '9999').localeCompare(b[1].end || '9999'));
   const upcoming = all.filter(([, c]) => c.start && c.start > today).sort((a, b) => a[1].start.localeCompare(b[1].start));
   const expired = all.filter(([, c]) => c.end && c.end < today).sort((a, b) => b[1].end.localeCompare(a[1].end));
   const item = ([id, c], state) => {
-    const soon = c.end && state === 'active' && (new Date(c.end) - new Date(today)) / 864e5 <= 2;
-    return `<div class="list-item"><div class="li-top"><div>
+    const d = daysLeft(c);
+    const soon = state === 'active' && d != null && d <= 2;
+    return `<div class="list-item"><div class="li-top"><div style="min-width:0">
         <div class="li-name">${esc(c.title)}</div>
-        <div class="li-sub"><span class="pill">${esc(c.chain)}</span> ${esc(couponCondText(c))}</div>
-        <div class="li-sub">${c.start ? c.start.replace(/-/g,'/') : ''}〜${c.end ? c.end.replace(/-/g,'/') : '期限なし'}・${esc(c.source || '')}${c.memo ? '・' + esc(c.memo) : ''}</div>
-      </div><div style="text-align:right"><div class="profit" style="color:var(--tiffany-deep)">${esc(couponValueText(c))}</div>
-        ${soon ? '<span class="pill warn">まもなく終了</span>' : ''}${state === 'upcoming' ? '<span class="pill">開始前</span>' : ''}${state === 'expired' ? '<span class="pill">終了</span>' : ''}</div></div>
-      <div class="row" style="margin-top:6px;justify-content:flex-end"><button class="btn small" onclick="editCoupon('${id}')">編集</button><button class="btn small danger" onclick="deleteCoupon('${id}')">削除</button></div></div>`;
+        <div class="li-sub">${esc(couponCondText(c))}</div>
+        <div class="li-sub">${c.start ? c.start.slice(5).replace('-','/') : ''}〜${c.end ? c.end.slice(5).replace('-','/') : '期限なし'}・${esc(c.source || '')}${c.memo ? '・' + esc(c.memo) : ''}</div>
+      </div><div style="text-align:right;flex:none"><div class="profit" style="color:var(--tiffany-deep)">${esc(couponValueText(c))}</div>
+        ${soon ? `<span class="pill warn">${d === 0 ? '今日まで' : 'あと' + d + '日'}</span>` : ''}${state === 'upcoming' ? '<span class="pill">開始前</span>' : ''}${state === 'expired' ? '<span class="pill">終了</span>' : ''}</div></div>
+      <div class="row" style="margin-top:6px;justify-content:flex-end;gap:4px"><button class="btn small" onclick="duplicateCoupon('${id}')">複製</button><button class="btn small" onclick="editCoupon('${id}')">編集</button><button class="btn small danger" onclick="deleteCoupon('${id}')">削除</button></div></div>`;
   };
-  let html = active.length ? active.map(x => item(x, 'active')).join('') : '<div class="muted">今使えるクーポンはありません。</div>';
-  if (upcoming.length) html += `<details style="margin-top:8px" open><summary>開始前（${upcoming.length}件）</summary>${upcoming.map(x => item(x, 'upcoming')).join('')}</details>`;
+  let html = '';
+  if (!active.length) {
+    html = `<div class="note" style="padding:8px 0">${f ? esc(f) + 'で' : ''}今使えるクーポンはありません。<br>登録しておくと便利なもの：<br>・各社の公式アプリのクーポン（○円以上で○円引きなど）<br>・チラシの店舗限定・日替わりの割引<br>・ポイント○倍デー（「ポイント＋○％」で登録）<br>・Yahoo!・楽天のストアクーポン</div>`;
+  } else {
+    // お店ごとにまとめて表示（お店の並びは CHAINS の順）
+    const groups = {};
+    active.forEach(x => { (groups[x[1].chain] = groups[x[1].chain] || []).push(x); });
+    html = CHAINS.filter(ch => groups[ch]).map(ch => `<div class="cp-group"><div class="cp-group-h"><span>${esc(ch)}</span><span>${groups[ch].length}件</span></div>${groups[ch].map(x => item(x, 'active')).join('')}</div>`).join('');
+  }
+  if (upcoming.length) html += `<details style="margin-top:10px" open><summary>開始前（${upcoming.length}件）</summary>${upcoming.map(x => item(x, 'upcoming')).join('')}</details>`;
   if (expired.length) html += `<details style="margin-top:8px"><summary>終了したクーポン（${expired.length}件）</summary>${expired.map(x => item(x, 'expired')).join('')}</details>`;
   $('cp-list').innerHTML = html;
 }
@@ -892,41 +947,65 @@ function renderCoupons() {
 // 記録・利益リスト
 // ============================================================
 async function renderLog() {
-  const chain = $('lg-chain').value, days = +$('lg-days').value, mode = segVal('lg-mode');
+  const chain = $('lg-chain').value, days = +$('lg-days').value, mode = segVal('lg-mode'), sort = $('lg-sort').value;
   const since = days ? Date.now() - days * 864e5 : 0;
   let rows = Object.entries(S.log).filter(([, l]) => (!chain || l.chain === chain) && l.at >= since).sort((a, b) => b[1].at - a[1].at);
-  if (mode === 'profit') { // 同じ商品・同じ店舗は一番新しい記録だけ
-    const seen = new Set();
-    rows = rows.filter(([, l]) => { const k = l.jan + '|' + l.chain + '|' + l.store; if (seen.has(k)) return false; seen.add(k); return true; });
-  }
-  if (!rows.length) { $('lg-list').classList.remove('wide'); $('lg-list').innerHTML = '<div class="muted">記録はまだありません。「仕入れ判定」で店頭価格を記録すると、ここに表示されます。</div>'; return; }
-  $('lg-list').classList.remove('wide');
-  $('lg-list').innerHTML = '<div class="muted">最新の買取価格を確認しています…</div>';
+  // 同じ商品・同じ店舗は一番新しい記録だけ（「すべての記録」では全部出す）
+  const seen = new Set();
+  const latest = rows.filter(([, l]) => { const k = l.jan + '|' + l.chain + '|' + l.store; if (seen.has(k)) return false; seen.add(k); return true; });
+  if (mode === 'profit') rows = latest;
+  const list = $('lg-list');
+  if (!rows.length) { $('lg-kpi').innerHTML = kpiHtml(0, 0, 0, null); list.innerHTML = '<div class="muted" style="padding:10px 0">この条件の記録はありません。「仕入れ判定」で価格を記録すると、ここに表示されます。</div>'; return; }
+  list.innerHTML = '<div class="muted">最新の買取価格を確認しています…</div>';
   const jans = [...new Set(rows.map(([, l]) => l.jan))];
   if (!S.bbAll && jans.length > 60) { try { await loadBbAll(); } catch (e) {} }
   for (let i = 0; i < jans.length; i += 10) await Promise.all(jans.slice(i, i + 10).map(getBb));
-  let items = rows.map(([id, l]) => {
-    const b = bestBuy(S.bb[l.jan]);
-    const nowBuy = b ? b.price : null;
-    const profit = nowBuy != null ? nowBuy - l.eff : null;
-    return { id, l, b, profit };
-  });
-  if (mode === 'profit') items = items.filter(x => x.profit != null && x.profit > 0).sort((a, b) => b.profit - a.profit);
-  if (!items.length) { $('lg-list').innerHTML = '<div class="muted">今の買取価格で利益が出る記録はありません。</div>'; return; }
-  $('lg-list').classList.add('wide');
-  $('lg-list').innerHTML = items.map(({ id, l, b, profit }) => {
-    const age = (Date.now() - l.at) / 864e5;
-    const diff = b && l.buy != null ? b.price - l.buy : 0;
-    return `<div class="list-item"><div class="li-top"><div style="min-width:0">
-        <div class="li-name">${esc(l.name || l.jan)}</div>
-        <div class="li-sub"><span class="pill">${esc(l.chain)}</span> ${esc(l.store || '')}　店頭${yen(l.price)}${l.discount ? '・クーポン−' + yen(l.discount) : ''}${l.points ? '・' + l.points.toLocaleString() + 'pt' : ''} → 実質${yen(l.eff)}</div>
-        <div class="li-sub">買取 ${b ? yen(b.price) + '（' + esc(b.shop) + '）' : 'データなし'}${diff ? ` <span class="pill ${diff > 0 ? 'good' : 'bad'}">記録時から${diff > 0 ? '+' : ''}${yen(diff)}</span>` : ''}</div>
-        <div class="li-sub">${fmtDate(l.at)} 記録${age > 14 ? ' <span class="pill warn">店頭価格が古い可能性</span>' : ''}${l.coupons && l.coupons.length ? '・' + esc(l.coupons.join('、')) : ''}</div>
-      </div><div style="text-align:right">
-        <div class="profit ${profit == null ? '' : profit > 0 ? 'plus' : 'minus'}">${profit == null ? '—' : (profit > 0 ? '+' : '') + yen(profit)}</div>
-        <div class="row" style="margin-top:6px;gap:4px;justify-content:flex-end"><button class="btn small" onclick="reuseLog('${id}')">判定へ</button><button class="btn small danger" onclick="deleteLog('${id}')">削除</button></div>
-      </div></div></div>`;
-  }).join('');
+  const calcItem = ([id, l]) => { const b = bestBuy(S.bb[l.jan]); const profit = b ? b.price - l.eff : null; return { id, l, b, profit, rate: profit != null && l.eff > 0 ? profit / l.eff * 100 : null }; };
+  // 集計は「同じ商品・同じ店舗の最新の記録」で数える
+  const latestItems = latest.map(calcItem);
+  const plus = latestItems.filter(x => x.profit > 0);
+  $('lg-kpi').innerHTML = kpiHtml(latestItems.length, plus.length, plus.reduce((a, x) => a + x.profit, 0), plus.length ? plus.reduce((a, x) => a + x.rate, 0) / plus.length : null);
+  let items = rows.map(calcItem);
+  if (mode === 'profit') items = items.filter(x => x.profit != null && x.profit > 0);
+  const key = { profit: x => x.profit ?? -1e12, rate: x => x.rate ?? -1e12, new: x => x.l.at }[sort];
+  items.sort((a, b) => key(b) - key(a));
+  if (!items.length) { list.innerHTML = '<div class="muted" style="padding:10px 0">今の買取価格で利益が出る記録はありません。「すべての記録」で確認できます。</div>'; return; }
+  const diffPill = x => { const d = x.b && x.l.buy != null ? x.b.price - x.l.buy : 0; return d ? `<span class="pill ${d > 0 ? 'good' : 'bad'}">記録時から${d > 0 ? '+' : ''}${yen(d)}</span>` : ''; };
+  const oldPill = x => (Date.now() - x.l.at) / 864e5 > 14 ? '<span class="pill warn">価格が古い可能性</span>' : '';
+  const pcls = p => p == null ? '' : p > 0 ? 'plus' : 'minus';
+  const ptxt = p => p == null ? '—' : (p > 0 ? '+' : '') + yen(p);
+  if (window.matchMedia('(min-width:900px)').matches) {
+    list.innerHTML = `<div style="overflow-x:auto"><table class="ptbl"><thead><tr>
+        <th>商品</th><th>仕入れ先</th><th class="num">価格</th><th class="num">割引・pt</th><th class="num">実質仕入れ</th><th class="num">最高買取</th><th class="num">利益</th><th class="num">利益率</th><th>記録日</th><th></th></tr></thead><tbody>` +
+      items.map(x => `<tr>
+        <td style="max-width:340px"><div class="pname">${esc(x.l.name || x.l.jan)}</div><div class="psub">${esc(x.l.jan)} ${oldPill(x)}</div></td>
+        <td><div>${esc(x.l.chain)}</div><div class="psub">${esc(x.l.store || '')}</div></td>
+        <td class="num">${yen(x.l.price)}</td>
+        <td class="num">${x.l.discount ? '−' + yen(x.l.discount) : ''}${x.l.points ? `<div class="psub">${x.l.points.toLocaleString()}pt</div>` : (x.l.discount ? '' : '<span class="psub">—</span>')}</td>
+        <td class="num"><b>${yen(x.l.eff)}</b></td>
+        <td class="num">${x.b ? `<b>${yen(x.b.price)}</b><div class="psub">${esc(x.b.shop)}</div>` : '<span class="psub">データなし</span>'}${diffPill(x) ? '<div>' + diffPill(x) + '</div>' : ''}</td>
+        <td class="num"><span class="profit ${pcls(x.profit)}">${ptxt(x.profit)}</span></td>
+        <td class="num">${x.rate != null ? x.rate.toFixed(1) + '%' : '—'}</td>
+        <td style="white-space:nowrap">${fmtDate(x.l.at)}</td>
+        <td style="white-space:nowrap;text-align:right"><button class="btn small" onclick="reuseLog('${x.id}')">判定へ</button> <button class="btn small danger" onclick="deleteLog('${x.id}')">削除</button></td>
+      </tr>`).join('') + '</tbody></table></div>';
+  } else {
+    list.innerHTML = items.map(x => `<div class="list-item"><div class="li-top"><div style="min-width:0">
+        <div class="li-name">${esc(x.l.name || x.l.jan)}</div>
+        <div class="li-sub"><span class="pill">${esc(x.l.chain)}</span> ${esc(x.l.store || '')}　${yen(x.l.price)}${x.l.discount ? '・−' + yen(x.l.discount) : ''}${x.l.points ? '・' + x.l.points.toLocaleString() + 'pt' : ''} → 実質${yen(x.l.eff)}</div>
+        <div class="li-sub">買取 ${x.b ? yen(x.b.price) + '（' + esc(x.b.shop) + '）' : 'データなし'} ${diffPill(x)}</div>
+        <div class="li-sub">${fmtDate(x.l.at)} 記録 ${oldPill(x)}</div>
+      </div><div style="text-align:right;flex:none">
+        <div class="profit ${pcls(x.profit)}">${ptxt(x.profit)}</div>${x.rate != null ? `<div class="muted">${x.rate.toFixed(1)}%</div>` : ''}
+        <div class="row" style="margin-top:6px;gap:4px;justify-content:flex-end"><button class="btn small" onclick="reuseLog('${x.id}')">判定へ</button><button class="btn small danger" onclick="deleteLog('${x.id}')">削除</button></div>
+      </div></div></div>`).join('');
+  }
+}
+function kpiHtml(total, plusCount, plusSum, avgRate) {
+  return `<div class="tile"><div class="k">記録した商品</div><div class="v">${total}<span style="font-size:13px">件</span></div><div class="s">同じ商品・店舗は1件</div></div>
+    <div class="tile"><div class="k">利益が出る商品</div><div class="v plus">${plusCount}<span style="font-size:13px">件</span></div><div class="s">最新の買取価格で計算</div></div>
+    <div class="tile"><div class="k">見込み利益の合計</div><div class="v plus">${plusCount ? '+' + yen(plusSum) : '¥0'}</div><div class="s">利益が出る商品を1個ずつ</div></div>
+    <div class="tile"><div class="k">平均利益率</div><div class="v">${avgRate != null ? avgRate.toFixed(1) + '%' : '—'}</div><div class="s">利益が出る商品の平均</div></div>`;
 }
 function reuseLog(id) {
   const l = S.log[id]; if (!l) return;
