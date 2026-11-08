@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#c5e8e5">
+<title>利益チェッカー｜KANETAKA</title>
+<!--
+  利益チェッカー（業務アプリとは別ページ）
+  要望：「価格.comの価格と買取スキャナーの買取価格で、利益の出る商品を探したい。
+        ヤマダ電機・エディオン・ケーズデンキなどのクーポン（期間限定・店舗限定）も反映したい」
+
+  ・買取価格は、業務アプリで取り込んだ買取スキャナーのCSV（/buybackPriceRef/{JAN}）をそのまま読む。
+    このページからは買取価格データを書き換えない。
+  ・このページで保存するデータはすべて /profitTool 以下にまとめる。
+      /profitTool/coupons/{id}     クーポン（全員で共有）
+      /profitTool/priceLog/{id}    店頭価格の記録
+      /profitTool/pointRates/{店}  店ごとのポイント還元率
+  ・ログインは業務アプリと同じFirebase Authentication（2段階認証にも対応）。
+-->
+<style>
+:root{
+  --tiffany:#c5e8e5; --tiffany-dark:#8fcfc9; --tiffany-deep:#2f7f78;
+  --gold:#c9a24b; --gold-dark:#a8842f;
+  --bg:#f4faf9; --white:#fff; --surface:#f7fbfb; --border:#d9e9e7;
+  --text:#1f2d2b; --text-sub:#4a5a58; --text-muted:#7c8d8b;
+  --good:#11845b; --good-bg:#e7f6ef; --bad:#c2410c; --bad-bg:#fdf0e9; --warn:#b45309; --warn-bg:#fffbeb;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:15px;-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+.hidden{display:none!important}
+header{position:sticky;top:0;z-index:10;background:var(--tiffany);border-bottom:2px solid var(--gold);padding:10px 16px 0}
+.head-row{display:flex;align-items:center;justify-content:space-between;gap:8px;max-width:960px;margin:0 auto}
+.brand{font-weight:800;letter-spacing:.04em}
+.brand small{display:block;font-size:11px;font-weight:600;color:var(--tiffany-deep);letter-spacing:.1em}
+.head-link{font-size:12px;color:var(--tiffany-deep);text-decoration:none;font-weight:700;border:1.5px solid var(--tiffany-deep);border-radius:8px;padding:4px 10px;background:rgba(255,255,255,.5)}
+nav{display:flex;gap:2px;max-width:960px;margin:8px auto 0;overflow-x:auto}
+nav button{flex:1;min-width:0;border:none;background:transparent;padding:9px 6px 10px;font-size:13px;font-weight:700;color:var(--text-sub);border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap}
+nav button.on{color:var(--text);border-bottom-color:var(--gold)}
+main{max-width:960px;margin:0 auto;padding:14px 16px 80px}
+.card{background:var(--white);border:1.2px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px}
+.card h2{font-size:15px;margin:0 0 10px}
+.label{font-size:12px;font-weight:700;color:var(--text-sub);margin:10px 0 4px}
+.label:first-child{margin-top:0}
+input[type=text],input[type=number],input[type=date],input[type=email],input[type=password],select,textarea{width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--white);outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--tiffany-dark)}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{min-width:0}
+.grow{flex:1}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);background:var(--white);font-weight:700;cursor:pointer;white-space:nowrap;text-decoration:none;color:var(--text);font-size:14px}
+.btn.primary{background:linear-gradient(135deg,#d9b866,var(--gold-dark));border:none;color:#fff}
+.btn.teal{background:var(--tiffany-deep);border:none;color:#fff}
+.btn.small{padding:6px 10px;font-size:12px;border-radius:8px}
+.btn.danger{color:var(--bad);border-color:#f3c9b5}
+.btn:disabled{opacity:.5;cursor:default}
+.muted{color:var(--text-muted);font-size:12.5px}
+.note{font-size:12px;color:var(--text-muted);line-height:1.6}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--surface);border:1px solid var(--border);color:var(--text-sub)}
+.pill.gold{background:#fbf3df;border-color:#ead39b;color:var(--gold-dark)}
+.pill.warn{background:var(--warn-bg);border-color:#f5d48c;color:var(--warn)}
+.pill.good{background:var(--good-bg);border-color:#b5e2cd;color:var(--good)}
+.pill.bad{background:var(--bad-bg);border-color:#f3c9b5;color:var(--bad)}
+.prod-name{font-weight:700;font-size:15px;line-height:1.4}
+.bb-best{display:flex;align-items:baseline;gap:8px;margin-top:6px}
+.bb-best .yen{font-size:24px;font-weight:800}
+.bb-list{margin:8px 0 0;padding:0;list-style:none;font-size:13px}
+.bb-list li{display:flex;justify-content:space-between;padding:4px 0;border-top:1px dashed var(--border)}
+.coupon-opt{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border:1.2px solid var(--border);border-radius:10px;margin-top:6px;cursor:pointer}
+.coupon-opt input{margin-top:3px;width:18px;height:18px;flex:none}
+.coupon-opt .ct{font-weight:700;font-size:13.5px}
+.coupon-opt .cd{font-size:12px;color:var(--text-muted)}
+.coupon-opt .cv{margin-left:auto;font-weight:800;color:var(--tiffany-deep);white-space:nowrap}
+.result{border-radius:14px;padding:14px;margin-top:12px;border:1.5px solid var(--border);background:var(--surface)}
+.result.good{background:var(--good-bg);border-color:#b5e2cd}
+.result.bad{background:var(--bad-bg);border-color:#f3c9b5}
+.result .big{font-size:28px;font-weight:800}
+.result.good .big{color:var(--good)}
+.result.bad .big{color:var(--bad)}
+.calc-line{display:flex;justify-content:space-between;font-size:13px;padding:2px 0;color:var(--text-sub)}
+.calc-line b{color:var(--text)}
+.list-item{padding:11px 0;border-top:1px solid var(--border)}
+.list-item:first-child{border-top:none}
+.li-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.li-name{font-weight:700;font-size:13.5px;line-height:1.4}
+.li-sub{font-size:12px;color:var(--text-muted);margin-top:3px}
+.profit{font-weight:800;white-space:nowrap}
+.profit.plus{color:var(--good)}
+.profit.minus{color:var(--bad)}
+.search-hit{padding:9px 4px;border-top:1px solid var(--border);cursor:pointer}
+.search-hit:hover{background:var(--surface)}
+#scan-wrap{position:relative;margin-top:10px;border-radius:12px;overflow:hidden;background:#000}
+#scan-video{width:100%;display:block;max-height:300px;object-fit:cover}
+#scan-wrap .scan-line{position:absolute;left:8%;right:8%;top:50%;height:2px;background:#ff5a5a;box-shadow:0 0 8px #ff5a5a}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2d2b;color:#fff;padding:10px 16px;border-radius:10px;font-size:13.5px;z-index:100;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center}
+#toast.show{opacity:1}
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+#login .card{width:100%;max-width:380px;padding:22px}
+.err{color:var(--bad);font-size:13px;margin-top:8px}
+details summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--text-sub);padding:6px 0}
+table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+table.tbl th,table.tbl td{padding:8px 6px;border-top:1px solid var(--border);text-align:left;vertical-align:top}
+table.tbl th{font-size:12px;color:var(--text-muted);font-weight:700;border-top:none}
+table.tbl td.num,table.tbl th.num{text-align:right;white-space:nowrap}
+.seg{display:flex;border:1.5px solid var(--border);border-radius:10px;overflow:hidden}
+.seg button{flex:1;border:none;background:var(--white);padding:9px 6px;font-weight:700;font-size:13px;cursor:pointer;color:var(--text-sub)}
+.seg button.on{background:var(--tiffany);color:var(--text)}
+@media (min-width:760px){
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+  .two-col>.card{margin-bottom:0}
+}
+</style>
+</head>
+<body>
+
+<!-- ログイン -->
+<div id="login" class="hidden">
+  <div class="card">
+    <div class="brand" style="font-size:18px;margin-bottom:4px">利益チェッカー<small>KANETAKA</small></div>
+    <div class="note" style="margin-bottom:14px">業務アプリと同じメールアドレス・パスワードでログインしてください。</div>
+    <div id="login-form">
+      <div class="label">メールアドレス</div>
+      <input type="email" id="lg-email" autocomplete="username">
+      <div class="label">パスワード</div>
+      <input type="password" id="lg-pass" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      <button class="btn primary" style="width:100%;margin-top:16px" id="lg-btn" onclick="doLogin()">ログイン</button>
+    </div>
+    <div id="mfa-form" class="hidden">
+      <div class="label">認証アプリの6桁の番号</div>
+      <input type="text" id="lg-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')doMfa()">
+      <button class="btn primary" style="width:100%;margin-top:16px" id="mfa-btn" onclick="doMfa()">確認</button>
+    </div>
+    <div class="err" id="lg-err"></div>
+  </div>
+</div>
+
+<!-- アプリ本体 -->
+<div id="app" class="hidden">
+<header>
+  <div class="head-row">
+    <div class="brand">利益チェッカー<small>KANETAKA</small></div>
+    <div class="row">
+      <a class="head-link" href="./">業務アプリ</a>
+      <button class="head-link" style="cursor:pointer" onclick="doLogout()">ログアウト</button>
+    </div>
+  </div>
+  <nav>
+    <button data-tab="check" class="on" onclick="showTab('check')">仕入れ判定</button>
+    <button data-tab="coupon" onclick="showTab('coupon')">クーポン</button>
+    <button data-tab="log" onclick="showTab('log')">利益リスト</button>
+  </nav>
+</header>
+
+<main>
+  <div id="bb-status" class="note" style="margin-bottom:10px"></div>
+
+  <!-- ===== 仕入れ判定 ===== -->
+  <section id="tab-check">
+    <div class="two-col">
+      <div class="card">
+        <h2>① 商品を探す</h2>
+        <div class="row">
+          <input type="text" id="ck-q" class="grow" placeholder="JANコード・型番・商品名" inputmode="search" onkeydown="if(event.key==='Enter')lookup()">
+          <button class="btn teal" onclick="lookup()">検索</button>
+          <button class="btn" onclick="toggleScan()" title="バーコードを読み取る">📷</button>
+        </div>
+        <div id="scan-wrap" class="hidden"><video id="scan-video" playsinline muted></video><div class="scan-line"></div></div>
+        <div id="ck-hits"></div>
+        <div id="ck-prod" class="hidden" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card" id="ck-price-card">
+        <h2>② 仕入れ価格を入れる</h2>
+        <div class="grid2">
+          <div>
+            <div class="label">お店</div>
+            <select id="ck-chain" onchange="onChainChange()"></select>
+          </div>
+          <div>
+            <div class="label">店舗名・ショップ名</div>
+            <input type="text" id="ck-store" list="store-list" placeholder="例：名古屋本店" oninput="saveStorePref();calc()">
+            <datalist id="store-list"></datalist>
+          </div>
+        </div>
+        <div class="grid2">
+          <div>
+            <div class="label">価格（税込・送料込み）</div>
+            <input type="number" id="ck-price" inputmode="numeric" placeholder="例：39800" oninput="calc()">
+          </div>
+          <div>
+            <div class="label">ポイント還元（％）</div>
+            <input type="number" id="ck-point" inputmode="decimal" step="0.1" placeholder="例：10" oninput="calc()" onchange="savePointRate()">
+          </div>
+        </div>
+        <label class="row" style="margin-top:8px;font-size:13px;gap:6px"><input type="checkbox" id="ck-usepoint" checked onchange="calc()"> ポイントも仕入れ値から差し引いて計算する</label>
+        <div class="label">使えるクーポン</div>
+        <div id="ck-coupons" class="muted">お店を選ぶと、使えるクーポンが表示されます。</div>
+        <div id="ck-result"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn primary grow" id="ck-save" onclick="saveLog()" disabled>この価格を記録する</button>
+        </div>
+        <div class="note" style="margin-top:6px">記録すると「記録・利益リスト」に残り、次にCSVを取り込んだときに最新の買取価格で利益を計算し直せます。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== クーポン ===== -->
+  <section id="tab-coupon" class="hidden">
+    <div class="two-col">
+      <div class="card">
+        <h2 id="cp-form-title">クーポンを登録する</h2>
+        <div class="note" style="margin-bottom:6px">アプリ・チラシ・LINEなどで見つけたクーポンを登録すると、全員の「仕入れ判定」に反映されます。期限が切れると自動で使われなくなります。</div>
+        <div class="grid2">
+          <div><div class="label">お店</div><select id="cp-chain"></select></div>
+          <div><div class="label">店舗・ショップ（空欄＝全店）</div><input type="text" id="cp-store" list="store-list" placeholder="例：名古屋本店"></div>
+        </div>
+        <div class="label">クーポン名</div>
+        <input type="text" id="cp-title" placeholder="例：アプリクーポン 大型家電5,000円引き">
+        <div class="label">割引の種類</div>
+        <div class="seg" id="cp-kind">
+          <button data-v="yen" class="on" onclick="setSeg('cp-kind','yen')">○円引き</button>
+          <button data-v="pct" onclick="setSeg('cp-kind','pct')">○％引き</button>
+          <button data-v="point" onclick="setSeg('cp-kind','point')">ポイント＋○％</button>
+        </div>
+        <div class="grid2">
+          <div><div class="label" id="cp-value-label">割引額（円）</div><input type="number" id="cp-value" inputmode="decimal"></div>
+          <div><div class="label">○円以上で使える</div><input type="number" id="cp-min" inputmode="numeric" placeholder="条件なしは空欄"></div>
+        </div>
+        <div id="cp-cap-wrap" class="hidden"><div class="label">割引の上限（円）</div><input type="number" id="cp-cap" inputmode="numeric" placeholder="上限なしは空欄"></div>
+        <div class="label">対象の商品</div>
+        <div class="seg" id="cp-target">
+          <button data-v="all" class="on" onclick="setSeg('cp-target','all')">全商品</button>
+          <button data-v="keyword" onclick="setSeg('cp-target','keyword')">メーカー・キーワード</button>
+          <button data-v="jan" onclick="setSeg('cp-target','jan')">JAN指定</button>
+        </div>
+        <div id="cp-tv-wrap" class="hidden">
+          <input type="text" id="cp-tvalue" style="margin-top:6px" placeholder="">
+          <div class="note" id="cp-tv-note" style="margin-top:4px"></div>
+        </div>
+        <div class="grid2">
+          <div><div class="label">開始日</div><input type="date" id="cp-start"></div>
+          <div><div class="label">終了日</div><input type="date" id="cp-end"></div>
+        </div>
+        <div class="grid2">
+          <div><div class="label">入手先</div>
+            <select id="cp-source"><option>公式アプリ</option><option>チラシ</option><option>LINE</option><option>店頭</option><option>メール・DM</option><option>Webサイト</option><option>その他</option></select></div>
+          <div><div class="label">他のクーポンと併用</div>
+            <select id="cp-stack"><option value="no">できない</option><option value="yes">できる</option></select></div>
+        </div>
+        <div class="label">メモ</div>
+        <input type="text" id="cp-memo" placeholder="例：1会計1回まで・Apple製品は対象外">
+        <div class="row" style="margin-top:14px">
+          <button class="btn" id="cp-cancel" onclick="resetCouponForm()">クリア</button>
+          <button class="btn primary grow" onclick="saveCoupon()" id="cp-save">登録する</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>登録済みのクーポン</h2>
+        <select id="cp-filter" onchange="renderCoupons()" style="margin-bottom:8px"></select>
+        <div id="cp-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 記録・利益リスト ===== -->
+  <section id="tab-log" class="hidden">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;flex-wrap:wrap">
+        <h2 style="margin:0">記録・利益リスト</h2>
+        <div class="seg" id="lg-mode" style="min-width:240px">
+          <button data-v="profit" class="on" onclick="setSeg('lg-mode','profit')">利益が出る商品</button>
+          <button data-v="all" onclick="setSeg('lg-mode','all')">すべての記録</button>
+        </div>
+      </div>
+      <div class="note" style="margin:8px 0">記録した店頭価格を、<b>最新の買取価格</b>で計算し直しています。クーポンは記録したときに使ったものの金額のままです。同じ商品・同じ店舗は一番新しい記録だけを表示します。</div>
+      <div class="row" style="flex-wrap:wrap">
+        <select id="lg-chain" onchange="renderLog()" style="flex:1;min-width:140px"></select>
+        <select id="lg-days" onchange="renderLog()" style="flex:1;min-width:140px">
+          <option value="7">直近7日の記録</option><option value="30" selected>直近30日の記録</option><option value="90">直近90日の記録</option><option value="0">すべての期間</option>
+        </select>
+      </div>
+      <div id="lg-list" style="margin-top:8px"></div>
+    </div>
+  </section>
+
+</main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ============================================================
+// 設定（業務アプリと同じFirebaseプロジェクト）
+// ============================================================
+const AUTH_API_KEY = "AIzaSyBTGqiCMGRuDVFcJY1PIDQUq53REjRhXY0";
+const AUTH_STORAGE_KEY = 'kanetaka_auth_token';
+const DB_URL = 'https://trip-app-a1746-default-rtdb.asia-southeast1.firebasedatabase.app';
+const ROOT = '/profitTool';
+// 仕入れ先（量販店の店頭とネットショップ）。ネットの場合は「店舗名」にショップ名を入れる
+const CHAINS = ['ヤマダデンキ','エディオン','ケーズデンキ','ビックカメラ','ヨドバシカメラ','ジョーシン','ノジマ','コジマ','ベスト電器','Yahoo!ショッピング','楽天市場','その他'];
+const BB_STALE_HOURS = 36; // これより古い買取価格データには注意を出す
+
+const S = { coupons:{}, pointRates:{}, log:{}, bb:{}, bbAll:null, bbAllLoading:null, prod:null, meta:null };
+let _mfaPending = null;
+
+// ============================================================
+// 共通
+// ============================================================
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const yen = n => (n < 0 ? '−' : '') + '¥' + Math.abs(Math.round(n)).toLocaleString('ja-JP');
+const num = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[,，円¥\s]/g, '')); return isNaN(n) ? 0 : n; };
+function ymd(d) { d = d || new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function fmtDate(ms) { const d = new Date(ms); return (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); }
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); }
+function session() { try { return JSON.parse(sessionStorage.getItem(AUTH_STORAGE_KEY) || '{}'); } catch (e) { return {}; } }
+function lsGet(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+// ============================================================
+// ログイン（業務アプリと同じ仕組み。2段階認証にも対応）
+// ============================================================
+async function authApi(path, body) {
+  const r = await fetch(`https://identitytoolkit.googleapis.com${path}?key=${AUTH_API_KEY}`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  return r.json();
+}
+function setSession(email, d) {
+  sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ email, idToken: d.idToken, refreshToken: d.refreshToken, loggedInAt: Date.now() }));
+}
+async function doLogin() {
+  const email = $('lg-email').value.trim(), pass = $('lg-pass').value;
+  $('lg-err').textContent = '';
+  if (!email || !pass) { $('lg-err').textContent = 'メールアドレスとパスワードを入力してください'; return; }
+  $('lg-btn').disabled = true; $('lg-btn').textContent = 'ログイン中…';
+  try {
+    const d = await authApi('/v1/accounts:signInWithPassword', { email, password: pass, returnSecureToken: true });
+    if (d.idToken) { setSession(d.email || email, d); startApp(); return; }
+    if (d.mfaPendingCredential) {
+      const info = (d.mfaInfo || []).find(x => x.totpInfo) || (d.mfaInfo || [])[0];
+      _mfaPending = { email: d.email || email, cred: d.mfaPendingCredential, id: info && info.mfaEnrollmentId };
+      $('login-form').classList.add('hidden'); $('mfa-form').classList.remove('hidden'); $('lg-code').focus();
+      return;
+    }
+    throw new Error();
+  } catch (e) {
+    $('lg-err').textContent = 'メールアドレスまたはパスワードが正しくありません';
+  } finally { $('lg-btn').disabled = false; $('lg-btn').textContent = 'ログイン'; }
+}
+async function doMfa() {
+  const code = $('lg-code').value.trim();
+  if (!/^\d{6}$/.test(code) || !_mfaPending) { $('lg-err').textContent = '6桁の番号を入力してください'; return; }
+  $('mfa-btn').disabled = true;
+  try {
+    const d = await authApi('/v2/accounts/mfaSignIn:finalize', { mfaPendingCredential: _mfaPending.cred, mfaEnrollmentId: _mfaPending.id, totpVerificationInfo: { verificationCode: code } });
+    if (!d.idToken) throw new Error();
+    setSession(_mfaPending.email, d); _mfaPending = null; startApp();
+  } catch (e) { $('lg-err').textContent = '番号が正しくありません。もう一度入力してください'; }
+  finally { $('mfa-btn').disabled = false; }
+}
+async function refreshToken() {
+  const s = session();
+  if (!s.refreshToken) return false;
+  try {
+    const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${AUTH_API_KEY}`, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'grant_type=refresh_token&refresh_token=' + encodeURIComponent(s.refreshToken) });
+    const d = await r.json();
+    if (!d.id_token) return false;
+    sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ ...s, idToken: d.id_token, refreshToken: d.refresh_token, loggedInAt: Date.now() }));
+    return true;
+  } catch (e) { return false; }
+}
+setInterval(refreshToken, 50 * 60 * 1000);
+function doLogout() { sessionStorage.removeItem(AUTH_STORAGE_KEY); location.reload(); }
+
+// Realtime Database（REST）。トークン切れなら1回だけ更新してやり直す
+async function db(path, opt, retried) {
+  const tok = session().idToken;
+  const r = await fetch(DB_URL + path + '.json?auth=' + encodeURIComponent(tok || ''), opt);
+  if ((r.status === 401 || r.status === 403) && !retried && await refreshToken()) return db(path, opt, true);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+const dbPut = (p, v) => db(p, { method:'PUT', body: JSON.stringify(v) });
+const dbPost = (p, v) => db(p, { method:'POST', body: JSON.stringify(v) });
+const dbDel = p => db(p, { method:'DELETE' });
+
+// ============================================================
+// 起動
+// ============================================================
+async function startApp() {
+  $('login').classList.add('hidden'); $('app').classList.remove('hidden');
+  fillChainSelects();
+  resetCouponForm();
+  const pref = lsGet('pt_store', {});
+  if (pref.chain) $('ck-chain').value = pref.chain;
+  $('ck-store').value = pref.store || '';
+  try {
+    const [c, p, l, m] = await Promise.all([
+      db(ROOT + '/coupons'), db(ROOT + '/pointRates'), db(ROOT + '/priceLog'), db('/buybackImportMeta').catch(() => null)
+    ]);
+    S.coupons = c || {}; S.pointRates = p || {}; S.log = l || {}; S.meta = m;
+  } catch (e) {
+    if (/HTTP 40[13]/.test(e.message)) { toast('データを読めませんでした。もう一度ログインしてください'); sessionStorage.removeItem(AUTH_STORAGE_KEY); setTimeout(() => location.reload(), 1500); return; }
+    toast('データの読み込みに失敗しました');
+  }
+  renderBbStatus();
+  onChainChange();
+  renderStoreList();
+  renderCoupons();
+}
+function fillChainSelects() {
+  const opts = CHAINS.map(c => `<option>${c}</option>`).join('');
+  $('ck-chain').innerHTML = opts;
+  $('cp-chain').innerHTML = opts;
+  $('cp-filter').innerHTML = '<option value="">すべてのお店</option>' + opts;
+  $('lg-chain').innerHTML = '<option value="">すべてのお店</option>' + opts;
+}
+function renderBbStatus() {
+  const at = S.meta && S.meta.lastImportedAt;
+  if (!at) { $('bb-status').innerHTML = '買取価格データ：取り込み日時がわかりません'; return; }
+  const h = (Date.now() - at) / 36e5;
+  $('bb-status').innerHTML = `買取価格データ：<b>${new Date(at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</b> に取り込み` +
+    (h > BB_STALE_HOURS ? ' <span class="pill warn">古くなっています。業務アプリで最新のCSVを取り込んでください</span>' : '');
+}
+function showTab(t) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  ['check','coupon','log'].forEach(x => $('tab-' + x).classList.toggle('hidden', x !== t));
+  if (t !== 'check') stopScan();
+  if (t === 'log') renderLog();
+  if (t === 'coupon') renderCoupons();
+  window.scrollTo(0, 0);
+}
+function setSeg(id, v) {
+  document.querySelectorAll('#' + id + ' button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  if (id === 'cp-kind') {
+    $('cp-value-label').textContent = v === 'yen' ? '割引額（円）' : v === 'pct' ? '割引率（％）' : '追加ポイント（％）';
+    $('cp-cap-wrap').classList.toggle('hidden', v === 'yen');
+  }
+  if (id === 'cp-target') {
+    $('cp-tv-wrap').classList.toggle('hidden', v === 'all');
+    $('cp-tvalue').placeholder = v === 'jan' ? 'JANコード（複数はカンマ区切り）' : '例：パナソニック, Panasonic, ダイソン';
+    $('cp-tv-note').textContent = v === 'jan' ? '' : '商品名にどれか1つでも含まれていれば対象になります（カンマ区切りで複数指定できます）。';
+  }
+  if (id === 'lg-mode') renderLog();
+}
+const segVal = id => (document.querySelector('#' + id + ' button.on') || {}).dataset.v;
+
+// ============================================================
+// 買取価格データ（業務アプリが /buybackPriceRef/{JAN} に保存したもの）
+//   { n:商品名, q:[[買取店,価格],…（高い順）], r:小売希望価格, a:Amazon最低価格, u:取り込み時刻 }
+// ============================================================
+async function getBb(jan) {
+  if (jan in S.bb) return S.bb[jan];
+  if (S.bbAll) return (S.bb[jan] = S.bbAll[jan] || null);
+  try { S.bb[jan] = await db('/buybackPriceRef/' + encodeURIComponent(jan)); } catch (e) { S.bb[jan] = null; }
+  return S.bb[jan];
+}
+function loadBbAll() {
+  if (S.bbAll) return Promise.resolve(S.bbAll);
+  if (!S.bbAllLoading) S.bbAllLoading = db('/buybackPriceRef').then(d => { S.bbAll = d || {}; Object.assign(S.bb, S.bbAll); return S.bbAll; }).catch(e => { S.bbAllLoading = null; throw e; });
+  return S.bbAllLoading;
+}
+// 1位の買取価格が2位の2倍以上のときは誤データ（桁違いなど）の可能性が高いので、2位を使う
+const OUTLIER_X = 2;
+function bestBuy(rec) {
+  if (!rec || !rec.q || !rec.q.length) return null;
+  const q = rec.q;
+  if (q.length >= 2 && q[0][1] >= q[1][1] * OUTLIER_X) return { shop: q[1][0], price: q[1][1], skipped: { shop: q[0][0], price: q[0][1] } };
+  return { shop: q[0][0], price: q[0][1] };
+}
+
+// ============================================================
+// 仕入れ判定
+// ============================================================
+async function lookup(qArg) {
+  const q = (qArg != null ? qArg : $('ck-q').value).trim();
+  $('ck-hits').innerHTML = '';
+  if (!q) return;
+  const digits = q.replace(/\D/g, '');
+  if (/^\d{8,14}$/.test(q.replace(/[\s-]/g, ''))) {
+    $('ck-prod').classList.remove('hidden');
+    $('ck-prod').innerHTML = '<div class="muted">買取価格を調べています…</div>';
+    const rec = await getBb(digits);
+    setProduct(digits, rec);
+    return;
+  }
+  // 型番・商品名で探す（全データを1回だけ読み込んで絞り込む）
+  $('ck-hits').innerHTML = '<div class="muted" style="margin-top:8px">買取価格データを読み込んでいます…（初回だけ少し時間がかかります）</div>';
+  try { await loadBbAll(); } catch (e) { $('ck-hits').innerHTML = '<div class="err">読み込みに失敗しました</div>'; return; }
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const norm = s => String(s || '').toLowerCase().replace(/[‐－―ー-]/g, '-');
+  const hits = [];
+  for (const jan in S.bbAll) {
+    const n = norm(S.bbAll[jan].n);
+    if (words.every(w => n.includes(norm(w)))) { hits.push(jan); if (hits.length >= 30) break; }
+  }
+  if (!hits.length) { $('ck-hits').innerHTML = '<div class="muted" style="margin-top:8px">見つかりませんでした。JANコードでもお試しください。</div>'; return; }
+  $('ck-hits').innerHTML = '<div class="muted" style="margin:8px 0 2px">' + hits.length + '件' + (hits.length >= 30 ? '以上（言葉を足すと絞り込めます）' : '') + '</div>' +
+    hits.map(j => { const b = bestBuy(S.bbAll[j]); return `<div class="search-hit" onclick="pickHit('${j}')"><div style="font-size:13.5px;font-weight:600">${esc(S.bbAll[j].n || '(商品名なし)')}</div><div class="muted">${j}　最高買取 ${b ? yen(b.price) + '（' + esc(b.shop) + '）' : 'なし'}</div></div>`; }).join('');
+}
+function pickHit(jan) { $('ck-hits').innerHTML = ''; $('ck-q').value = jan; setProduct(jan, S.bbAll[jan]); }
+
+function setProduct(jan, rec) {
+  S.prod = { jan, rec };
+  const box = $('ck-prod');
+  box.classList.remove('hidden');
+  const b = bestBuy(rec);
+  const kq = encodeURIComponent((rec && rec.n) || jan);
+  const links = `<div class="row" style="margin-top:10px;flex-wrap:wrap">
+      <a class="btn small" target="_blank" rel="noopener" href="https://search.kakaku.com/${kq}/">価格.comで見る</a>
+      <a class="btn small" target="_blank" rel="noopener" href="https://www.amazon.co.jp/s?k=${encodeURIComponent(jan)}">Amazonで見る</a>
+    </div>`;
+  if (!rec || !b) {
+    box.innerHTML = `<div class="muted">JAN ${esc(jan)}</div><div class="prod-name" style="margin-top:4px">買取価格データがありません</div><div class="note">取り込んだ買取スキャナーのCSVに、この商品の買取価格が入っていません。</div>${links}`;
+  } else {
+    const h = rec.u ? (Date.now() - rec.u) / 36e5 : null;
+    box.innerHTML = `<div class="muted">JAN ${esc(jan)}</div>
+      <div class="prod-name" style="margin-top:2px">${esc(rec.n || '(商品名なし)')}</div>
+      <div class="bb-best"><span class="muted">最高買取</span><span class="yen">${yen(b.price)}</span><span class="pill gold">${esc(b.shop)}</span></div>
+      ${b.skipped ? `<div class="note" style="color:var(--warn)">※${esc(b.skipped.shop)}の${yen(b.skipped.price)}は2位の2倍以上で誤データの可能性が高いため、除いて計算しています</div>` : ''}
+      ${h != null ? `<div class="note">${fmtDate(rec.u)} 時点の買取価格${h > BB_STALE_HOURS ? ' <span class="pill warn">古いデータ</span>' : ''}</div>` : ''}
+      <details><summary>ほかの買取店（${rec.q.length}社）</summary><ul class="bb-list">${rec.q.slice(0, 10).map(x => `<li><span>${esc(x[0])}</span><b>${yen(x[1])}</b></li>`).join('')}</ul></details>
+      ${rec.a ? `<div class="note">Amazon最低価格（販売の参考）：${yen(rec.a)}</div>` : ''}
+      ${links}`;
+  }
+  renderCouponOptions();
+  calc();
+  if (window.innerWidth < 760) setTimeout(() => $('ck-price-card').scrollIntoView({ behavior:'smooth', block:'start' }), 50);
+  setTimeout(() => $('ck-price').focus({ preventScroll:true }), 80);
+}
+
+function onChainChange() {
+  const chain = $('ck-chain').value;
+  const r = S.pointRates[chain];
+  $('ck-point').value = r != null ? r : '';
+  saveStorePref();
+  renderCouponOptions();
+  calc();
+}
+function saveStorePref() { lsSet('pt_store', { chain: $('ck-chain').value, store: $('ck-store').value.trim() }); renderCouponOptions(); }
+async function savePointRate() {
+  const chain = $('ck-chain').value, v = $('ck-point').value.trim();
+  const val = v === '' ? null : num(v);
+  if (S.pointRates[chain] === val) return;
+  try { await dbPut(ROOT + '/pointRates/' + encodeURIComponent(chain), val); if (val == null) delete S.pointRates[chain]; else S.pointRates[chain] = val; toast(chain + 'のポイント還元率を保存しました'); } catch (e) { toast('保存できませんでした'); }
+}
+function renderStoreList() {
+  const set = new Set();
+  Object.values(S.log).forEach(l => l.store && set.add(l.store));
+  Object.values(S.coupons).forEach(c => c.store && set.add(c.store));
+  $('store-list').innerHTML = [...set].sort().map(s => `<option value="${esc(s)}">`).join('');
+}
+
+// ---- クーポンの判定 ----
+function couponActive(c, today) {
+  today = today || ymd();
+  return (!c.start || c.start <= today) && (!c.end || c.end >= today);
+}
+// お店・店舗・期間・対象商品が合うクーポンかどうか（金額の条件は calcDiscount で見る）
+function couponMatches(c, chain, store, prod, today) {
+  if (c.chain !== chain) return false;
+  if (!couponActive(c, today)) return false;
+  // 店舗限定のクーポンは、入力した店舗名と一致（どちらかがもう一方を含む）するときだけ使う
+  if (c.store) { const a = norm2(c.store), b = norm2(store); if (!b || !(a.includes(b) || b.includes(a))) return false; }
+  if (c.target === 'jan') {
+    const list = String(c.tvalue || '').split(/[,、\s]+/).map(s => s.replace(/\D/g, '')).filter(Boolean);
+    return !!prod && list.includes(prod.jan);
+  }
+  if (c.target === 'keyword') {
+    const name = norm2(prod && prod.rec && prod.rec.n);
+    const kws = String(c.tvalue || '').split(/[,、]+/).map(norm2).filter(Boolean);
+    return !!name && kws.some(k => name.includes(k));
+  }
+  return true;
+}
+function norm2(s) { return String(s || '').toLowerCase().replace(/\s+/g, '').replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)); }
+// 割引額（円）と追加ポイント率（％）を返す。条件を満たさなければ ok:false
+function calcDiscount(c, price) {
+  if (c.min && price < c.min) return { ok:false, yen:0, pt:0, why: yen(c.min) + '以上で使えます' };
+  if (c.kind === 'yen') return { ok:true, yen: Math.min(num(c.value), price), pt:0 };
+  if (c.kind === 'pct') { let d = Math.floor(price * num(c.value) / 100); if (c.cap) d = Math.min(d, c.cap); return { ok:true, yen:d, pt:0 }; }
+  if (c.kind === 'point') return { ok:true, yen:0, pt: num(c.value), cap: c.cap || 0 };
+  return { ok:false, yen:0, pt:0 };
+}
+function couponValueText(c) {
+  if (c.kind === 'yen') return yen(num(c.value)) + '引き';
+  if (c.kind === 'pct') return num(c.value) + '%引き' + (c.cap ? '（上限' + yen(c.cap) + '）' : '');
+  return 'ポイント+' + num(c.value) + '%' + (c.cap ? '（上限' + c.cap.toLocaleString() + 'pt）' : '');
+}
+function couponCondText(c) {
+  const a = [];
+  a.push(c.store ? c.store + '限定' : '全店');
+  if (c.min) a.push(yen(c.min) + '以上');
+  if (c.target === 'keyword') a.push('対象：' + c.tvalue);
+  if (c.target === 'jan') a.push('JAN指定');
+  if (c.end) a.push(c.end.slice(5).replace('-', '/') + 'まで');
+  if (c.stack === 'yes') a.push('併用可');
+  return a.join('・');
+}
+
+let _ckChecked = null; // ユーザーが自分でチェックを変えたクーポン（nullなら自動で一番お得なものを選ぶ）
+function renderCouponOptions() {
+  const chain = $('ck-chain').value, store = $('ck-store').value.trim();
+  const list = Object.entries(S.coupons).filter(([id, c]) => couponMatches(c, chain, store, S.prod));
+  _ckChecked = null;
+  if (!list.length) { $('ck-coupons').innerHTML = `<div class="muted">${esc(chain)}${store ? '（' + esc(store) + '）' : ''}で今使えるクーポンは登録されていません。<a href="#" onclick="showTab('coupon');return false">クーポンを登録する</a></div>`; return; }
+  $('ck-coupons').innerHTML = list.map(([id, c]) => `<label class="coupon-opt" id="co-${id}">
+      <input type="checkbox" data-id="${id}" onchange="onCouponToggle()">
+      <div><div class="ct">${esc(c.title || '(名前なし)')}</div><div class="cd">${esc(couponCondText(c))}${c.memo ? '・' + esc(c.memo) : ''}</div><div class="cd co-why" style="color:var(--warn)"></div></div>
+      <div class="cv">${esc(couponValueText(c))}</div></label>`).join('');
+}
+function onCouponToggle() {
+  _ckChecked = [...document.querySelectorAll('#ck-coupons input[type=checkbox]:checked')].map(i => i.dataset.id);
+  calc();
+}
+
+// 一番お得なクーポンの組み合わせ：併用できないものは1枚だけ、併用できるものはすべて足す
+function autoPickCoupons(price, ptRate) {
+  const boxes = [...document.querySelectorAll('#ck-coupons input[type=checkbox]')];
+  const val = id => { const c = S.coupons[id], d = calcDiscount(c, price); if (!d.ok) return -1; return d.yen + (price - d.yen) * d.pt / 100; };
+  const stack = [], solo = [];
+  boxes.forEach(b => { const c = S.coupons[b.dataset.id]; if (val(b.dataset.id) < 0) return; (c.stack === 'yes' ? stack : solo).push(b.dataset.id); });
+  solo.sort((a, b) => val(b) - val(a));
+  return solo.slice(0, 1).concat(stack);
+}
+
+function computeProfit(price, ids, ptRate, usePoint, buy) {
+  let discount = 0, extraPt = 0;
+  const used = [];
+  ids.forEach(id => { const c = S.coupons[id]; if (!c) return; const d = calcDiscount(c, price); if (!d.ok) return; discount += d.yen; used.push(id); if (d.pt) { let p = (price - discount) * d.pt / 100; if (d.cap) p = Math.min(p, d.cap); extraPt += p; } });
+  discount = Math.min(discount, price);
+  const pay = price - discount;
+  const basePt = Math.floor(pay * (ptRate || 0) / 100);
+  const points = Math.floor(basePt + extraPt);
+  const eff = pay - (usePoint ? points : 0);
+  const profit = buy != null ? buy - eff : null;
+  return { discount, pay, points, eff, profit, used, rate: profit != null && eff > 0 ? profit / eff * 100 : null };
+}
+
+function calc() {
+  const price = num($('ck-price').value);
+  const ptRate = num($('ck-point').value);
+  const usePoint = $('ck-usepoint').checked;
+  const b = S.prod && bestBuy(S.prod.rec);
+  const boxes = [...document.querySelectorAll('#ck-coupons input[type=checkbox]')];
+  // 条件に合わないクーポンには理由を出す
+  boxes.forEach(bx => { const d = calcDiscount(S.coupons[bx.dataset.id], price || 0); const w = bx.closest('label').querySelector('.co-why'); if (w) w.textContent = price && !d.ok ? d.why : ''; });
+  if (!price) { $('ck-result').innerHTML = ''; $('ck-save').disabled = true; return; }
+  const ids = _ckChecked != null ? _ckChecked : autoPickCoupons(price, ptRate);
+  if (_ckChecked == null) boxes.forEach(bx => { bx.checked = ids.includes(bx.dataset.id); });
+  const r = computeProfit(price, ids, ptRate, usePoint, b ? b.price : null);
+  S.lastCalc = { price, ptRate, usePoint, ...r, buy: b ? b.price : null, shop: b ? b.shop : '' };
+  let html = `<div class="result ${r.profit == null ? '' : r.profit > 0 ? 'good' : 'bad'}">`;
+  if (r.profit != null) {
+    html += `<div class="muted">見込み利益</div><div class="row" style="align-items:baseline;gap:10px"><span class="big">${r.profit > 0 ? '+' : ''}${yen(r.profit)}</span>${r.rate != null ? `<span class="muted">利益率 ${r.rate.toFixed(1)}%</span>` : ''}</div>`;
+  } else {
+    html += `<div class="muted">買取価格がないため、利益は計算できません</div>`;
+  }
+  html += `<div style="margin-top:8px">
+    <div class="calc-line"><span>仕入れ価格</span><b>${yen(price)}</b></div>
+    ${r.discount ? `<div class="calc-line"><span>クーポン割引</span><b>−${yen(r.discount)}</b></div>` : ''}
+    <div class="calc-line"><span>支払額</span><b>${yen(r.pay)}</b></div>
+    ${r.points ? `<div class="calc-line"><span>もらえるポイント${usePoint ? '' : '（計算に含めない）'}</span><b>${r.points.toLocaleString()}pt</b></div>` : ''}
+    <div class="calc-line"><span>実質仕入れ値</span><b>${yen(r.eff)}</b></div>
+    ${b ? `<div class="calc-line"><span>最高買取（${esc(b.shop)}）</span><b>${yen(b.price)}</b></div>` : ''}
+  </div></div>`;
+  $('ck-result').innerHTML = html;
+  $('ck-save').disabled = !S.prod;
+}
+
+async function saveLog() {
+  const L = S.lastCalc, P = S.prod;
+  if (!L || !P) return;
+  const rec = {
+    jan: P.jan, name: (P.rec && P.rec.n) || '', chain: $('ck-chain').value, store: $('ck-store').value.trim(),
+    price: L.price, discount: L.discount, points: L.usePoint ? L.points : 0, pointRate: L.ptRate || 0,
+    coupons: L.used.map(id => S.coupons[id] ? S.coupons[id].title : '').filter(Boolean),
+    eff: L.eff, buy: L.buy, shop: L.shop, profit: L.profit, at: Date.now(), by: (session().email || '').toLowerCase()
+  };
+  $('ck-save').disabled = true;
+  try {
+    const r = await dbPost(ROOT + '/priceLog', rec);
+    S.log[r.name] = rec; renderStoreList();
+    toast('記録しました');
+  } catch (e) { toast('記録できませんでした'); $('ck-save').disabled = false; }
+}
+
+// ---- バーコード読み取り（業務アプリと同じZXing） ----
+let _reader = null, _scanning = false;
+function loadZxing() {
+  if (window.ZXing) return Promise.resolve();
+  return new Promise((res, rej) => {
+    const urls = ['https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js', 'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js'];
+    const tryNext = i => { if (i >= urls.length) return rej(new Error('zxing')); const s = document.createElement('script'); s.src = urls[i]; s.onload = res; s.onerror = () => tryNext(i + 1); document.head.appendChild(s); };
+    tryNext(0);
+  });
+}
+async function toggleScan() { if (_scanning) stopScan(); else startScan(); }
+async function startScan() {
+  try { await loadZxing(); } catch (e) { toast('読み取り機能を読み込めませんでした'); return; }
+  $('scan-wrap').classList.remove('hidden');
+  _scanning = true;
+  const hints = new Map();
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8, ZXing.BarcodeFormat.UPC_A]);
+  _reader = new ZXing.BrowserMultiFormatReader(hints, 150);
+  try {
+    await _reader.decodeFromConstraints({ video: { facingMode: 'environment', width: { ideal: 1280 } } }, $('scan-video'), (res) => {
+      if (res && _scanning) {
+        const code = res.getText();
+        stopScan();
+        if (navigator.vibrate) navigator.vibrate(60);
+        $('ck-q').value = code; lookup(code);
+      }
+    });
+  } catch (e) { stopScan(); toast('カメラを使えませんでした（カメラの許可をご確認ください）'); }
+}
+function stopScan() {
+  _scanning = false;
+  try { _reader && _reader.reset(); } catch (e) {}
+  _reader = null;
+  $('scan-wrap').classList.add('hidden');
+}
+
+// ============================================================
+// クーポン登録
+// ============================================================
+let _editCoupon = null;
+function resetCouponForm() {
+  _editCoupon = null;
+  $('cp-form-title').textContent = 'クーポンを登録する'; $('cp-save').textContent = '登録する';
+  $('cp-chain').value = $('ck-chain').value || CHAINS[0];
+  ['cp-store','cp-title','cp-value','cp-min','cp-cap','cp-tvalue','cp-memo'].forEach(id => $(id).value = '');
+  $('cp-start').value = ymd(); $('cp-end').value = '';
+  $('cp-source').value = '公式アプリ'; $('cp-stack').value = 'no';
+  setSeg('cp-kind', 'yen'); setSeg('cp-target', 'all');
+}
+function editCoupon(id) {
+  const c = S.coupons[id]; if (!c) return;
+  _editCoupon = id;
+  $('cp-form-title').textContent = 'クーポンを編集する'; $('cp-save').textContent = '保存する';
+  $('cp-chain').value = c.chain; $('cp-store').value = c.store || ''; $('cp-title').value = c.title || '';
+  setSeg('cp-kind', c.kind || 'yen'); setSeg('cp-target', c.target || 'all');
+  $('cp-value').value = c.value || ''; $('cp-min').value = c.min || ''; $('cp-cap').value = c.cap || ''; $('cp-tvalue').value = c.tvalue || '';
+  $('cp-start').value = c.start || ''; $('cp-end').value = c.end || ''; $('cp-source').value = c.source || 'その他'; $('cp-stack').value = c.stack || 'no'; $('cp-memo').value = c.memo || '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+async function saveCoupon() {
+  const c = {
+    chain: $('cp-chain').value, store: $('cp-store').value.trim(), title: $('cp-title').value.trim(),
+    kind: segVal('cp-kind'), value: num($('cp-value').value), min: num($('cp-min').value) || 0, cap: num($('cp-cap').value) || 0,
+    target: segVal('cp-target'), tvalue: $('cp-tvalue').value.trim(),
+    start: $('cp-start').value || '', end: $('cp-end').value || '', source: $('cp-source').value, stack: $('cp-stack').value, memo: $('cp-memo').value.trim()
+  };
+  if (!c.title) { toast('クーポン名を入力してください'); return; }
+  if (!c.value) { toast('割引の金額・割合を入力してください'); return; }
+  if (c.kind !== 'yen' && c.value >= 100) { toast('割合は100未満で入力してください'); return; }
+  if (c.target !== 'all' && !c.tvalue) { toast('対象の商品を入力してください'); return; }
+  if (c.start && c.end && c.end < c.start) { toast('終了日が開始日より前になっています'); return; }
+  const me = (session().email || '').toLowerCase();
+  $('cp-save').disabled = true;
+  try {
+    if (_editCoupon) {
+      const old = S.coupons[_editCoupon];
+      const v = { ...old, ...c, updatedAt: Date.now(), updatedBy: me };
+      await dbPut(ROOT + '/coupons/' + _editCoupon, v); S.coupons[_editCoupon] = v;
+      toast('保存しました');
+    } else {
+      const v = { ...c, createdAt: Date.now(), createdBy: me };
+      const r = await dbPost(ROOT + '/coupons', v); S.coupons[r.name] = v;
+      toast('登録しました');
+    }
+    resetCouponForm(); renderCoupons(); renderCouponOptions(); calc(); renderStoreList();
+  } catch (e) { toast('保存できませんでした'); }
+  finally { $('cp-save').disabled = false; }
+}
+async function deleteCoupon(id) {
+  const c = S.coupons[id]; if (!c) return;
+  if (!confirmInline('cpdel-' + id)) return;
+  try { await dbDel(ROOT + '/coupons/' + id); delete S.coupons[id]; renderCoupons(); renderCouponOptions(); calc(); toast('削除しました'); } catch (e) { toast('削除できませんでした'); }
+}
+// ボタンを2回押すと実行（ブラウザの確認ダイアログを使わない）
+const _confirmArm = {};
+function confirmInline(key) {
+  if (_confirmArm[key] && Date.now() - _confirmArm[key] < 4000) { delete _confirmArm[key]; return true; }
+  _confirmArm[key] = Date.now(); toast('もう一度押すと削除します'); return false;
+}
+function renderCoupons() {
+  const f = $('cp-filter').value, today = ymd();
+  const all = Object.entries(S.coupons).filter(([, c]) => !f || c.chain === f);
+  const active = all.filter(([, c]) => couponActive(c, today)).sort((a, b) => (a[1].end || '9999').localeCompare(b[1].end || '9999'));
+  const upcoming = all.filter(([, c]) => c.start && c.start > today).sort((a, b) => a[1].start.localeCompare(b[1].start));
+  const expired = all.filter(([, c]) => c.end && c.end < today).sort((a, b) => b[1].end.localeCompare(a[1].end));
+  const item = ([id, c], state) => {
+    const soon = c.end && state === 'active' && (new Date(c.end) - new Date(today)) / 864e5 <= 2;
+    return `<div class="list-item"><div class="li-top"><div>
+        <div class="li-name">${esc(c.title)}</div>
+        <div class="li-sub"><span class="pill">${esc(c.chain)}</span> ${esc(couponCondText(c))}</div>
+        <div class="li-sub">${c.start ? c.start.replace(/-/g,'/') : ''}〜${c.end ? c.end.replace(/-/g,'/') : '期限なし'}・${esc(c.source || '')}${c.memo ? '・' + esc(c.memo) : ''}</div>
+      </div><div style="text-align:right"><div class="profit" style="color:var(--tiffany-deep)">${esc(couponValueText(c))}</div>
+        ${soon ? '<span class="pill warn">まもなく終了</span>' : ''}${state === 'upcoming' ? '<span class="pill">開始前</span>' : ''}${state === 'expired' ? '<span class="pill">終了</span>' : ''}</div></div>
+      <div class="row" style="margin-top:6px;justify-content:flex-end"><button class="btn small" onclick="editCoupon('${id}')">編集</button><button class="btn small danger" onclick="deleteCoupon('${id}')">削除</button></div></div>`;
+  };
+  let html = active.length ? active.map(x => item(x, 'active')).join('') : '<div class="muted">今使えるクーポンはありません。</div>';
+  if (upcoming.length) html += `<details style="margin-top:8px" open><summary>開始前（${upcoming.length}件）</summary>${upcoming.map(x => item(x, 'upcoming')).join('')}</details>`;
+  if (expired.length) html += `<details style="margin-top:8px"><summary>終了したクーポン（${expired.length}件）</summary>${expired.map(x => item(x, 'expired')).join('')}</details>`;
+  $('cp-list').innerHTML = html;
+}
+
+// ============================================================
+// 記録・利益リスト
+// ============================================================
+async function renderLog() {
+  const chain = $('lg-chain').value, days = +$('lg-days').value, mode = segVal('lg-mode');
+  const since = days ? Date.now() - days * 864e5 : 0;
+  let rows = Object.entries(S.log).filter(([, l]) => (!chain || l.chain === chain) && l.at >= since).sort((a, b) => b[1].at - a[1].at);
+  if (mode === 'profit') { // 同じ商品・同じ店舗は一番新しい記録だけ
+    const seen = new Set();
+    rows = rows.filter(([, l]) => { const k = l.jan + '|' + l.chain + '|' + l.store; if (seen.has(k)) return false; seen.add(k); return true; });
+  }
+  if (!rows.length) { $('lg-list').innerHTML = '<div class="muted">記録はまだありません。「仕入れ判定」で店頭価格を記録すると、ここに表示されます。</div>'; return; }
+  $('lg-list').innerHTML = '<div class="muted">最新の買取価格を確認しています…</div>';
+  const jans = [...new Set(rows.map(([, l]) => l.jan))];
+  if (!S.bbAll && jans.length > 60) { try { await loadBbAll(); } catch (e) {} }
+  for (let i = 0; i < jans.length; i += 10) await Promise.all(jans.slice(i, i + 10).map(getBb));
+  let items = rows.map(([id, l]) => {
+    const b = bestBuy(S.bb[l.jan]);
+    const nowBuy = b ? b.price : null;
+    const profit = nowBuy != null ? nowBuy - l.eff : null;
+    return { id, l, b, profit };
+  });
+  if (mode === 'profit') items = items.filter(x => x.profit != null && x.profit > 0).sort((a, b) => b.profit - a.profit);
+  if (!items.length) { $('lg-list').innerHTML = '<div class="muted">今の買取価格で利益が出る記録はありません。</div>'; return; }
+  $('lg-list').innerHTML = items.map(({ id, l, b, profit }) => {
+    const age = (Date.now() - l.at) / 864e5;
+    const diff = b && l.buy != null ? b.price - l.buy : 0;
+    return `<div class="list-item"><div class="li-top"><div style="min-width:0">
+        <div class="li-name">${esc(l.name || l.jan)}</div>
+        <div class="li-sub"><span class="pill">${esc(l.chain)}</span> ${esc(l.store || '')}　店頭${yen(l.price)}${l.discount ? '・クーポン−' + yen(l.discount) : ''}${l.points ? '・' + l.points.toLocaleString() + 'pt' : ''} → 実質${yen(l.eff)}</div>
+        <div class="li-sub">買取 ${b ? yen(b.price) + '（' + esc(b.shop) + '）' : 'データなし'}${diff ? ` <span class="pill ${diff > 0 ? 'good' : 'bad'}">記録時から${diff > 0 ? '+' : ''}${yen(diff)}</span>` : ''}</div>
+        <div class="li-sub">${fmtDate(l.at)} 記録${age > 14 ? ' <span class="pill warn">店頭価格が古い可能性</span>' : ''}${l.coupons && l.coupons.length ? '・' + esc(l.coupons.join('、')) : ''}</div>
+      </div><div style="text-align:right">
+        <div class="profit ${profit == null ? '' : profit > 0 ? 'plus' : 'minus'}">${profit == null ? '—' : (profit > 0 ? '+' : '') + yen(profit)}</div>
+        <div class="row" style="margin-top:6px;gap:4px;justify-content:flex-end"><button class="btn small" onclick="reuseLog('${id}')">判定へ</button><button class="btn small danger" onclick="deleteLog('${id}')">削除</button></div>
+      </div></div></div>`;
+  }).join('');
+}
+function reuseLog(id) {
+  const l = S.log[id]; if (!l) return;
+  showTab('check');
+  $('ck-chain').value = l.chain; $('ck-store').value = l.store || ''; onChainChange();
+  $('ck-q').value = l.jan; $('ck-price').value = l.price;
+  lookup(l.jan);
+}
+async function deleteLog(id) {
+  if (!confirmInline('lgdel-' + id)) return;
+  try { await dbDel(ROOT + '/priceLog/' + id); delete S.log[id]; renderLog(); toast('削除しました'); } catch (e) { toast('削除できませんでした'); }
+}
+
+// ============================================================
+// 初期表示：ログイン済みならそのまま開く
+// ============================================================
+(async function () {
+  if (session().idToken) { startApp(); }
+  else { $('login').classList.remove('hidden'); }
+})();
+</script>
+</body>
+</html>
