@@ -502,11 +502,11 @@ body.wh-drag-active { cursor:grabbing; user-select:none; -webkit-user-select:non
 .home-action-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 14px 4px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); color: var(--text); cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .home-action-btn:active { background: var(--gold-bg); border-color: var(--gold); }
 /* 管理者のHOME：Quick Menuを小さく（パソコンは横1列、スマホは3つずつ2行） */
-.home-qm { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; padding: 0 12px 12px; }
+.home-qm { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding: 0 12px 12px; }
 .home-qm .home-action-btn { padding: 8px 2px; gap: 3px; position: relative; }
 .home-qm .home-icon { font-size: 18px; }
 .home-qm .home-label { font-size: 11px; white-space: nowrap; }
-@media (max-width: 640px) { .home-qm { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 640px) { .home-qm { grid-template-columns: repeat(4, 1fr); } }
 /* 管理者のHOME：一番上の数字のまとめ */
 .home-kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
 .home-kpi:empty { display: none; }
@@ -957,6 +957,9 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
         <button class="home-action-btn" onclick="TK.filter='mine';openTasksScreen('tasks')" style="position:relative"><span class="home-icon">✅</span><span class="home-label">タスク</span><span class="tk-tile-badge" id="home-tk-badge"></span></button>
         <button class="home-action-btn" onclick="openTasksScreen('cal')"><span class="home-icon">📅</span><span class="home-label">予定</span></button>
         <button class="home-action-btn" onclick="TK.filter='people';openTasksScreen('tasks')"><span class="home-icon">👥</span><span class="home-label">みんなの状況</span></button>
+        <!-- 要望「利益チェッカー（profit.html）へ業務アプリから移動できるようにしたい」への対応。
+             同じタブで開くので、ログイン状態（sessionStorage）がそのまま引き継がれ、再ログインは不要 -->
+        <button class="home-action-btn" onclick="openProfitChecker()"><span class="home-icon">💰</span><span class="home-label">利益チェック</span></button>
       </div>
     </div>
     <div id="home-notify-prompt" style="display:none;align-items:center;justify-content:space-between;gap:8px;background:var(--surface);border:1.2px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:var(--text-muted)">
@@ -2488,7 +2491,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
        「📥 CSVを取り込む」ボタンだけの細い帯を置く（毎日の取り込みはHOMEかここからすぐできる） -->
   <div id="buyback-quick-bar" class="buyback-quick-bar">
     <span id="buyback-quick-text">📊 買取価格CSV：確認中…</span>
-    <label id="buyback-quick-btn" class="buyback-quick-btn" style="display:none">📥 CSVを取り込む<input type="file" accept=".csv" onchange="handleBuybackQuickCsvSelected(event)" style="display:none"></label>
+    <span style="display:flex;gap:6px;flex-wrap:wrap">
+      <label id="buyback-quick-btn" class="buyback-quick-btn" style="display:none">📥 CSVを取り込む<input type="file" accept=".csv" onchange="handleBuybackQuickCsvSelected(event)" style="display:none"></label>
+      <button class="buyback-quick-btn" style="display:inline-flex" onclick="openProfitChecker()">💰 利益チェッカー</button>
+    </span>
   </div>
   <!-- 要望「型番を全部入力して調べるので、パソコンで広げると結果が1件だけ左に出て右側が空く。
        左半分で検索、右半分に検索した履歴を残したい」への対応。パソコン幅（1024px以上）では左に
@@ -16753,6 +16759,8 @@ function showScreen(name) {
 }
 
 // ホーム画面から在庫モードの各画面へワンタップで移動するためのヘルパー
+// 利益チェッカー（別ページ profit.html）を開く。同じタブで移動するのでログインはそのまま使える
+function openProfitChecker() { location.href = 'profit.html'; }
 function goHomeToInv(screenName, packecTab) {
   switchMode('inv');
   setTimeout(() => {
