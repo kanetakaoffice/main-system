@@ -13,7 +13,16 @@
   var ua = navigator.userAgent;
   var isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   var standalone = navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-  if (isIOS && standalone) document.documentElement.classList.add('ios-standalone');
+  if (isIOS && standalone) {
+    document.documentElement.classList.add('ios-standalone');
+    // 画面（表示領域）が端末の画面の一番下まで届いていない場合（ホームバーの分だけ短い）を判定する
+    var check = function () {
+      var portrait = window.innerHeight > window.innerWidth;
+      var screenH = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+      document.documentElement.classList.toggle('short-vp', screenH - window.innerHeight > 8);
+    };
+    check(); window.addEventListener('resize', check); window.addEventListener('orientationchange', function () { setTimeout(check, 300); });
+  }
 })();
 </script>
 <title>利益チェッカー｜KANETAKA</title>
@@ -39,8 +48,10 @@
   --good:#11845b; --good-bg:#e7f6ef; --bad:#c2410c; --bad-bg:#fdf0e9; --warn:#b45309; --warn-bg:#fffbeb;
 }
 *{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:15px;-webkit-text-size-adjust:100%}
+html{background:var(--tiffany)}
+html,body{margin:0;color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:15px;-webkit-text-size-adjust:100%}
 button,input,select,textarea{font:inherit;color:inherit}
+body{background:var(--bg);min-height:100vh}
 .hidden{display:none!important}
 a{color:var(--tiffany-deep)}
 /* iPhoneの時計・電池の表示（ノッチ）の下にヘッダーが潜らないよう、その分の余白を取る */
@@ -122,6 +133,7 @@ table.tbl td.num,table.tbl th.num{text-align:right;white-space:nowrap}
 .seg{display:flex;border:1.5px solid var(--border);border-radius:10px;overflow:hidden}
 .seg button{flex:1;border:none;background:var(--white);padding:9px 6px;font-weight:700;font-size:13px;cursor:pointer;color:var(--text-sub)}
 .seg button.on{background:var(--tiffany);color:var(--text)}
+.seg.multi button+button{border-left:1px solid var(--border)}
 /* 利益リスト：上の集計タイル・絞り込みの帯・パソコン用の表 */
 .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
 .kpi .tile{background:var(--white);border:1.2px solid var(--border);border-radius:14px;padding:12px 14px}
@@ -163,7 +175,10 @@ input[type=number]{-moz-appearance:textfield}
 @media (max-width:759px){
   header{padding-bottom:10px}
   nav{position:fixed;left:0;right:0;bottom:0;margin:0;z-index:30;background:var(--tiffany);border-top:2px solid var(--gold);box-shadow:0 -2px 12px rgba(0,0,0,.08);padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);gap:0;overflow:visible}
-  .ios-standalone nav{padding-bottom:max(env(safe-area-inset-bottom,0px),16px)}
+  /* 下のメニューの下に背景色がのぞかないよう、メニューと同じ色で画面の一番下まで塗る */
+  nav::after{content:'';position:absolute;left:0;right:0;top:100%;height:120px;background:var(--tiffany)}
+  /* iPhoneのアプリ表示で、画面が下のホームバー部分まで届いていないときは、余白を足さない（JSで判定） */
+  .ios-standalone.short-vp nav{padding-bottom:6px}
   nav button{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px 7px;font-size:11px;border-bottom:none;border-top:3px solid transparent}
   nav button.on{border-top-color:var(--gold)}
   .nav-icon{display:block;font-size:19px;line-height:1}
@@ -172,7 +187,8 @@ input[type=number]{-moz-appearance:textfield}
   main{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}
   #toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 }
-.ios-standalone header{padding-top:calc(10px + max(env(safe-area-inset-top,0px),20px))}
+/* iPhoneのアプリ表示では、画面の一番上に時計の表示とぼかしがかかるので、その分よりも少し多めに下げる */
+.ios-standalone header{padding-top:calc(22px + max(env(safe-area-inset-top,0px),20px))}
 .ios-standalone #login{padding-top:calc(16px + max(env(safe-area-inset-top,0px),20px))}
 </style>
 </head>
@@ -321,6 +337,16 @@ input[type=number]{-moz-appearance:textfield}
           <div><div class="label">開始日</div><input type="date" id="cp-start"></div>
           <div><div class="label">終了日</div><input type="date" id="cp-end"></div>
         </div>
+        <div class="label">繰り返し（ポイント○倍デー・○のつく日など）</div>
+        <div class="seg" id="cp-rep">
+          <button data-v="none" class="on" onclick="setSeg('cp-rep','none')">毎日</button>
+          <button data-v="dow" onclick="setSeg('cp-rep','dow')">曜日を指定</button>
+          <button data-v="dom" onclick="setSeg('cp-rep','dom')">日にちを指定</button>
+        </div>
+        <div id="cp-dow-wrap" class="hidden" style="margin-top:6px"><div class="seg multi" id="cp-dow">
+          <button data-d="0" onclick="toggleDow(this)">日</button><button data-d="1" onclick="toggleDow(this)">月</button><button data-d="2" onclick="toggleDow(this)">火</button><button data-d="3" onclick="toggleDow(this)">水</button><button data-d="4" onclick="toggleDow(this)">木</button><button data-d="5" onclick="toggleDow(this)">金</button><button data-d="6" onclick="toggleDow(this)">土</button>
+        </div></div>
+        <div id="cp-dom-wrap" class="hidden"><input type="text" id="cp-dom" style="margin-top:6px" inputmode="numeric" placeholder="例：5, 15, 25（カンマ区切り）"><div class="note" style="margin-top:4px">開始日〜終了日の間で、指定した曜日・日にちだけ使えるクーポンになります。</div></div>
         <div class="grid2">
           <div><div class="label">入手先</div>
             <select id="cp-source"><option>公式アプリ</option><option>チラシ</option><option>LINE</option><option>店頭</option><option>メール・DM</option><option>Webサイト</option><option>その他</option></select></div>
@@ -526,6 +552,10 @@ function setSeg(id, v) {
     $('cp-value-label').textContent = v === 'yen' ? '割引額（円）' : v === 'pct' ? '割引率（％）' : '追加ポイント（％）';
     $('cp-cap-wrap').classList.toggle('hidden', v === 'yen');
   }
+  if (id === 'cp-rep') {
+    $('cp-dow-wrap').classList.toggle('hidden', v !== 'dow');
+    $('cp-dom-wrap').classList.toggle('hidden', v !== 'dom');
+  }
   if (id === 'cp-target') {
     $('cp-tv-wrap').classList.toggle('hidden', v === 'all');
     $('cp-tvalue').placeholder = v === 'jan' ? 'JANコード（複数はカンマ区切り）' : '例：パナソニック, Panasonic, ダイソン';
@@ -624,7 +654,7 @@ async function renderSide() {
   if (!window.matchMedia('(min-width:1200px)').matches) return;
   const chain = $('ck-chain').value, today = ymd();
   $('side-cp-chain').textContent = '（' + chain + '）';
-  const cps = Object.entries(S.coupons).filter(([, c]) => c.chain === chain && couponActive(c, today)).sort((a, b) => (a[1].end || '9999').localeCompare(b[1].end || '9999'));
+  const cps = Object.entries(S.coupons).filter(([, c]) => c.chain === chain && couponToday(c, today)).sort((a, b) => (a[1].end || '9999').localeCompare(b[1].end || '9999'));
   $('side-coupons').innerHTML = cps.length ? cps.map(([, c]) => `<div class="list-item"><div class="li-top"><div style="min-width:0"><div class="li-name">${esc(c.title)}</div><div class="li-sub">${esc(couponCondText(c))}</div></div><div class="profit" style="color:var(--tiffany-deep);font-size:13px">${esc(couponValueText(c))}</div></div></div>`).join('')
     : `<div class="muted">登録されていません。<a href="#" onclick="showTab('coupon');return false">クーポンを登録する</a></div>`;
   const logs = Object.entries(S.log).sort((a, b) => b[1].at - a[1].at).slice(0, 8);
@@ -658,14 +688,38 @@ function renderStoreList() {
 }
 
 // ---- クーポンの判定 ----
+// 期間（開始日〜終了日）の中にあるか
 function couponActive(c, today) {
   today = today || ymd();
   return (!c.start || c.start <= today) && (!c.end || c.end >= today);
 }
+const DOW = ['日','月','火','水','木','金','土'];
+const domList = c => String(c.dom || '').split(/[,、\s]+/).map(x => parseInt(x, 10)).filter(n => n >= 1 && n <= 31);
+// 繰り返し（曜日・日にち）の条件で、その日に使えるか
+function couponRepeatOk(c, dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  if (c.rep === 'dow') return (c.dow || []).includes(d.getDay());
+  if (c.rep === 'dom') return domList(c).includes(d.getDate());
+  return true;
+}
+// 今日（期間内かつ対象の曜日・日にち）使えるか
+function couponToday(c, today) { today = today || ymd(); return couponActive(c, today) && couponRepeatOk(c, today); }
+// 次に使える日（今日を除く、60日先まで探す）
+function couponNextDay(c, today) {
+  const d = new Date((today || ymd()) + 'T00:00:00');
+  for (let i = 1; i <= 60; i++) { d.setDate(d.getDate() + 1); const ds = ymd(d); if (c.end && ds > c.end) return null; if (couponActive(c, ds) && couponRepeatOk(c, ds)) return d; }
+  return null;
+}
+function repeatText(c) {
+  if (c.rep === 'dow' && (c.dow || []).length) return '毎週' + c.dow.slice().sort().map(n => DOW[n]).join('・') + '曜';
+  if (c.rep === 'dom' && domList(c).length) return '毎月' + domList(c).join('・') + '日';
+  return '';
+}
+function toggleDow(btn) { btn.classList.toggle('on'); }
 // お店・店舗・期間・対象商品が合うクーポンかどうか（金額の条件は calcDiscount で見る）
 function couponMatches(c, chain, store, prod, today) {
   if (c.chain !== chain) return false;
-  if (!couponActive(c, today)) return false;
+  if (!couponToday(c, today)) return false;
   // 店舗限定のクーポンは、入力した店舗名と一致（どちらかがもう一方を含む）するときだけ使う
   if (c.store) { const a = norm2(c.store), b = norm2(store); if (!b || !(a.includes(b) || b.includes(a))) return false; }
   // 対象外のキーワード（例：Apple, ゲーム機）が商品名に含まれていたら使わない
@@ -702,6 +756,7 @@ function couponValueText(c) {
 function couponCondText(c) {
   const a = [];
   a.push(c.store ? c.store + '限定' : '全店');
+  if (repeatText(c)) a.push(repeatText(c));
   if (c.min) a.push(yen(c.min) + '以上');
   if (c.target === 'keyword') a.push('対象：' + c.tvalue);
   if (c.target === 'jan') a.push('JAN指定');
@@ -845,7 +900,8 @@ function resetCouponForm() {
   ['cp-store','cp-title','cp-value','cp-min','cp-cap','cp-tvalue','cp-excl','cp-memo'].forEach(id => $(id).value = '');
   $('cp-start').value = ymd(); $('cp-end').value = '';
   $('cp-source').value = '公式アプリ'; $('cp-stack').value = 'no';
-  setSeg('cp-kind', 'yen'); setSeg('cp-target', 'all');
+  setSeg('cp-kind', 'yen'); setSeg('cp-target', 'all'); setSeg('cp-rep', 'none');
+  $('cp-dom').value = ''; document.querySelectorAll('#cp-dow button').forEach(b => b.classList.remove('on'));
 }
 // 複製：同じ内容をフォームに入れて、新しいクーポンとして登録できるようにする（毎月出る同じようなクーポン用）
 function duplicateCoupon(id) {
@@ -860,6 +916,8 @@ function editCoupon(id) {
   _editCoupon = id;
   $('cp-form-title').textContent = 'クーポンを編集する'; $('cp-save').textContent = '保存する';
   $('cp-excl').value = c.excl || '';
+  setSeg('cp-rep', c.rep || 'none'); $('cp-dom').value = c.dom || '';
+  document.querySelectorAll('#cp-dow button').forEach(b => b.classList.toggle('on', (c.dow || []).includes(+b.dataset.d)));
   $('cp-chain').value = c.chain; $('cp-store').value = c.store || ''; $('cp-title').value = c.title || '';
   setSeg('cp-kind', c.kind || 'yen'); setSeg('cp-target', c.target || 'all');
   $('cp-value').value = c.value || ''; $('cp-min').value = c.min || ''; $('cp-cap').value = c.cap || ''; $('cp-tvalue').value = c.tvalue || '';
@@ -871,12 +929,16 @@ async function saveCoupon() {
     chain: $('cp-chain').value, store: $('cp-store').value.trim(), title: $('cp-title').value.trim(),
     kind: segVal('cp-kind'), value: num($('cp-value').value), min: num($('cp-min').value) || 0, cap: num($('cp-cap').value) || 0,
     target: segVal('cp-target'), tvalue: $('cp-tvalue').value.trim(), excl: $('cp-excl').value.trim(),
+    rep: segVal('cp-rep'), dow: [...document.querySelectorAll('#cp-dow button.on')].map(b => +b.dataset.d), dom: $('cp-dom').value.trim(),
     start: $('cp-start').value || '', end: $('cp-end').value || '', source: $('cp-source').value, stack: $('cp-stack').value, memo: $('cp-memo').value.trim()
   };
   if (!c.title) { toast('クーポン名を入力してください'); return; }
   if (!c.value) { toast('割引の金額・割合を入力してください'); return; }
   if (c.kind !== 'yen' && c.value >= 100) { toast('割合は100未満で入力してください'); return; }
   if (c.target !== 'all' && !c.tvalue) { toast('対象の商品を入力してください'); return; }
+  if (c.rep === 'dow' && !c.dow.length) { toast('曜日を選んでください'); return; }
+  if (c.rep === 'dom' && !domList(c).length) { toast('日にちを入力してください（例：5, 15, 25）'); return; }
+  if (c.rep === 'none') { c.dow = []; c.dom = ''; } if (c.rep === 'dow') c.dom = ''; if (c.rep === 'dom') c.dow = [];
   if (c.start && c.end && c.end < c.start) { toast('終了日が開始日より前になっています'); return; }
   const me = (session().email || '').toLowerCase();
   $('cp-save').disabled = true;
@@ -910,9 +972,9 @@ function renderCoupons() {
   const f = $('cp-filter').value, today = ymd();
   const daysLeft = c => c.end ? Math.round((new Date(c.end) - new Date(today)) / 864e5) : null;
   const allC = Object.entries(S.coupons);
-  const actAll = allC.filter(([, c]) => couponActive(c, today));
+  const actAll = allC.filter(([, c]) => couponToday(c, today));
   const soonAll = actAll.filter(([, c]) => { const d = daysLeft(c); return d != null && d <= 2; });
-  $('cp-summary').innerHTML = `<span class="pill good">今使える ${actAll.length}件</span>` + (soonAll.length ? `<span class="pill warn">まもなく終了 ${soonAll.length}件</span>` : '') +
+  $('cp-summary').innerHTML = `<span class="pill good">今日使える ${actAll.length}件</span>` + (soonAll.length ? `<span class="pill warn">まもなく終了 ${soonAll.length}件</span>` : '') +
     `<span class="pill">お店 ${new Set(actAll.map(([, c]) => c.chain)).size}店分</span>`;
   const all = allC.filter(([, c]) => !f || c.chain === f);
   const active = all.filter(([, c]) => couponActive(c, today)).sort((a, b) => (a[1].end || '9999').localeCompare(b[1].end || '9999'));
@@ -921,12 +983,17 @@ function renderCoupons() {
   const item = ([id, c], state) => {
     const d = daysLeft(c);
     const soon = state === 'active' && d != null && d <= 2;
+    let repPill = '';
+    if (state === 'active' && c.rep && c.rep !== 'none') {
+      if (couponRepeatOk(c, today)) repPill = '<span class="pill good">今日は対象日</span>';
+      else { const n = couponNextDay(c, today); repPill = `<span class="pill">今日は対象外${n ? '・次は' + (n.getMonth() + 1) + '/' + n.getDate() + '(' + DOW[n.getDay()] + ')' : ''}</span>`; }
+    }
     return `<div class="list-item"><div class="li-top"><div style="min-width:0">
         <div class="li-name">${esc(c.title)}</div>
         <div class="li-sub">${esc(couponCondText(c))}</div>
         <div class="li-sub">${c.start ? c.start.slice(5).replace('-','/') : ''}〜${c.end ? c.end.slice(5).replace('-','/') : '期限なし'}・${esc(c.source || '')}${c.memo ? '・' + esc(c.memo) : ''}</div>
       </div><div style="text-align:right;flex:none"><div class="profit" style="color:var(--tiffany-deep)">${esc(couponValueText(c))}</div>
-        ${soon ? `<span class="pill warn">${d === 0 ? '今日まで' : 'あと' + d + '日'}</span>` : ''}${state === 'upcoming' ? '<span class="pill">開始前</span>' : ''}${state === 'expired' ? '<span class="pill">終了</span>' : ''}</div></div>
+        ${repPill}${soon ? `<span class="pill warn">${d === 0 ? '今日まで' : 'あと' + d + '日'}</span>` : ''}${state === 'upcoming' ? '<span class="pill">開始前</span>' : ''}${state === 'expired' ? '<span class="pill">終了</span>' : ''}</div></div>
       <div class="row" style="margin-top:6px;justify-content:flex-end;gap:4px"><button class="btn small" onclick="duplicateCoupon('${id}')">複製</button><button class="btn small" onclick="editCoupon('${id}')">編集</button><button class="btn small danger" onclick="deleteCoupon('${id}')">削除</button></div></div>`;
   };
   let html = '';
