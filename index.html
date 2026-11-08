@@ -16760,7 +16760,8 @@ function showScreen(name) {
 
 // ホーム画面から在庫モードの各画面へワンタップで移動するためのヘルパー
 // 利益チェッカー（別ページ profit.html）を開く。同じタブで移動するのでログインはそのまま使える
-function openProfitChecker() { location.href = 'profit.html'; }
+// 毎回URLの末尾に時刻を付けて開くことで、ブラウザに残った古い版ではなく必ず最新の利益チェッカーを読み込む
+function openProfitChecker() { location.href = 'profit.html?v=' + Date.now(); }
 function goHomeToInv(screenName, packecTab) {
   switchMode('inv');
   setTimeout(() => {
