@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-08k">
+<meta name="app-build" content="2026-11-08l">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1429,7 +1429,9 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 
 <!-- 設定スクリーン -->
   <div id="screen-settings" class="screen">
-  <div class="settings-grid"><div class="settings-col">
+  <!-- スタッフ（一般ユーザー）は下のナビが無いため、HOMEへ戻るボタンを出す -->
+  <div id="settings-staff-head" style="display:none;align-items:center;gap:8px;margin-bottom:12px"><div style="font-size:20px;font-weight:700;flex:1">🔐 アカウント設定</div><button class="cm-btn cm-home-btn" onclick="showScreen('home')">‹ HOME</button></div>
+  <div class="settings-grid" id="settings-grid"><div class="settings-col">
     <div class="card">
       <div class="card-title">アカウント情報</div>
       <div class="field">
@@ -1510,7 +1512,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div class="settings-logout" style="padding:0 16px 16px">
       <button onclick="doLogout()" style="width:100%;padding:14px;background:none;border:1.5px solid #555555;border-radius:var(--radius-sm);color:#3a3a3a;font-size:15px;font-weight:600;cursor:pointer">ログアウト</button>
     </div>
-  </div><div class="settings-col">
+  </div><div class="settings-col" id="settings-col-admin">
     <!-- 買取価格データ（買取スキャナーのCSV）の取り込み：以前は「買取価格」画面にあったものを移した -->
   <div class="card" id="buyback-import-card">
     <div class="card-title">買取価格データの取り込み（管理者のみ）</div>
@@ -15369,6 +15371,7 @@ async function renderGeneralHomeScreen() {
         <button class="home-action-btn" onclick="openTasksScreen('cal')"><span class="home-icon">📅</span><span class="home-label">予定</span></button>
         <button class="home-action-btn" onclick="openCommuteFromHome()"><span class="home-icon">🚗</span><span class="home-label">マイカー通勤</span></button>
         <button class="home-action-btn" onclick="openOffFromHome()"><span class="home-icon">🌴</span><span class="home-label">休みの入力</span></button>
+        <button class="home-action-btn" onclick="showScreen('settings')" style="grid-column:1/-1;flex-direction:row;gap:8px;padding:12px"><span class="home-icon" style="font-size:18px;margin:0">🔐</span><span class="home-label">アカウント設定（2段階認証・パスワード変更）</span></button>
       </div>
     </div>
     <div id="home-today-card"></div>
@@ -17199,8 +17202,16 @@ function initSettingsScreen() {
     const el = document.getElementById('current-email-display');
     if (el) el.textContent = parsed.email || '—';
   }
+  // 要望「スタッフも2段階認証・パスワード変更ができるように」への対応：
+  // スタッフにはアカウント情報・2段階認証・メールアドレス／パスワードの変更だけを見せ、
+  // 右側の管理者向けの設定（買取価格の取り込み・楽天・保管場所・HAK）は隠す
+  const staff = !isAdmin();
+  const sh = document.getElementById('settings-staff-head'); if (sh) sh.style.display = staff ? 'flex' : 'none';
+  const sc = document.getElementById('settings-col-admin'); if (sc) sc.style.display = staff ? 'none' : '';
+  const sg = document.getElementById('settings-grid'); if (sg) { sg.style.gridTemplateColumns = staff ? '1fr' : ''; sg.style.maxWidth = staff ? '640px' : ''; }
   mfaRenderSettings();
   authStatusRender();
+  if (staff) return;
   // 保管場所（事務所）の一覧は、保存済みの最新の内容を読み込んでから表示する
   // （読み込む前の初期値のまま保存して、追加済みの事務所を消してしまわないようにするため）
   const locWrap = document.getElementById('stock-location-settings');
