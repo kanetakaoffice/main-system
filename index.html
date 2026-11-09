@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-09g">
+<meta name="app-build" content="2026-11-09i">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -26742,7 +26742,117 @@ async function ercCommit() {
 <script>
 const RT = { returns: {}, mercari: {}, loaded: false, view: 'returns', showDone: false, edit: null, pick: null };
 const RT_KIND = { return: '返品', exchange: '交換', claim: 'クレームのみ' };
-const RT_REASON = ['初期不良・動かない', '配送中の破損・傷', 'イメージと違う', '不要になった・注文間違い', '付属品の欠品', '商品違い・誤配送', 'その他'];
+const RT_REASON = ['初期不良・動かない', '配送中の破損・傷', 'イメージと違う', '性能・品質が良くない', '不要になった・注文間違い', '付属品の欠品', '商品違い・誤配送', 'その他'];
+
+// ============================================================
+// Amazonの返品レポート（出品者出荷の返品レポート・TSV）の取り込み
+// 要望：「Amazonのレポートを読み込んで返品の一覧にも反映させたい」への対応。
+// セラーセントラル → 注文 → 返品管理 →「レポートを表示」→ 出品者出荷の返品レポート（すべての返品・TSV）。
+// 毎月14日に1か月分が自動で作られるので、それをダウンロードして読み込めばよい。
+// ・文字コードは Shift_JIS（注文レポートと同じ読み方で読む）。列名は日本語なので、列名で探し、
+//   見つからない場合はレポートの決まった列の位置で読む（列名が文字化けしても読めるように）。
+// ・注文商品ID（なければ注文番号＋SKU）ごとに1件。何度読み込んでも二重にならない。
+//   すでに手で登録した返品（同じ注文番号）があれば、それに結びつけて更新する。
+// ・Amazon上の状態・到着日・返金された金額などは毎回最新に更新する。理由・メモ・行き先など
+//   こちらで入力した内容は上書きしない。
+// ・お客様の名前・住所はこのレポートには入っていない。
+// ============================================================
+const RT_REPORT_COLS = {
+  orderId: [['注文番号'], 0], orderDate: [['注文日'], 1], reqDate: [['返品リクエスト日'], 2], amzStatus: [['返品リクエストのステータス'], 3],
+  rma: [['Amazon の返品承認 ID', 'Amazonの返品承認ID'], 4], labelType: [['ラベルの種類'], 6], labelCost: [['ラベルの価格'], 7], carrier: [['返品配送業者'], 9],
+  tracking: [['トラッキングID'], 10], labelPayer: [['ラベル支払者'], 11], atoz: [['A-to-z claim'], 12], asin: [['ASIN'], 14], sku: [['出品者SKU'], 15],
+  title: [['商品名'], 16], qty: [['返品数量'], 17], reasonCode: [['返品理由：', '返品理由'], 18], returnType: [['返品種別'], 20], resolution: [['解像度', '解決策'], 21],
+  delivered: [['返品配達日'], 23], orderAmount: [['注文額'], 24], orderQty: [['注文の数量'], 25], refunded: [['返金された金額'], 31], itemId: [['注文商品ID'], 32]
+};
+const RT_REASON_CODE = {
+  'CR-DEFECTIVE': '初期不良・動かない', 'CR-DAMAGED_BY_CARRIER': '配送中の破損・傷', 'CR-DAMAGED_BY_FC': '配送中の破損・傷',
+  'CR-NOT_AS_DESCRIBED': 'イメージと違う', 'CR-NOT_COMPATIBLE': 'イメージと違う', 'CR-QUALITY_UNACCEPTABLE': '性能・品質が良くない',
+  'CR-UNWANTED_ITEM': '不要になった・注文間違い', 'CR-ORDERED_WRONG_ITEM': '不要になった・注文間違い', 'CR-FOUND_BETTER_PRICE': '不要になった・注文間違い',
+  'CR-NO_REASON_GIVEN': '不要になった・注文間違い', 'CR-MISSED_ESTIMATED_DELIVERY': '不要になった・注文間違い', 'CR-UNAUTHORIZED_PURCHASE': '不要になった・注文間違い',
+  'CR-MISSING_PARTS': '付属品の欠品', 'CR-SWITCHEROO': '商品違い・誤配送', 'CR-EXTRA_ITEM': '商品違い・誤配送'
+};
+// お客様都合の理由（元払い・50%返金の目安になる）
+const RT_CUSTOMER_REASONS = ['CR-UNWANTED_ITEM', 'CR-ORDERED_WRONG_ITEM', 'CR-FOUND_BETTER_PRICE', 'CR-NO_REASON_GIVEN', 'CR-MISSED_ESTIMATED_DELIVERY', 'CR-UNAUTHORIZED_PURCHASE'];
+const RT_AMZ_STATUS = { PendingApproval: '承認待ち', Approved: '承認済み', Closed: 'クローズ', Rejected: '却下', Cancelled: '取り消し' };
+function rtParseAmzDate(v) {
+  const m = String(v || '').trim().match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})/);
+  if (m) { const mo = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(m[2].toLowerCase()) + 1; if (mo) return `${m[3]}-${String(mo).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`; }
+  const d = new Date(v); return isNaN(d) ? '' : ymdKey(d);
+}
+function rtParseReport(text) {
+  const lines = String(text || '').replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 1) return null;
+  const head = lines[0].split('\t').map(h => h.trim());
+  // 返品レポートかどうか：ASIN・A-to-z claim の列があり、列の数が十分あること
+  if (!(head.includes('ASIN') && head.includes('A-to-z claim') && head.length >= 25)) return null;
+  const ix = {};
+  Object.entries(RT_REPORT_COLS).forEach(([k, [names, pos]]) => { const f = names.map(n => head.indexOf(n)).find(i => i >= 0); ix[k] = f != null ? f : pos; });
+  return lines.slice(1).map(l => {
+    const c = l.split('\t'); const g = k => String(c[ix[k]] == null ? '' : c[ix[k]]).trim();
+    return { orderId: g('orderId'), orderDate: rtParseAmzDate(g('orderDate')), reqDate: rtParseAmzDate(g('reqDate')), amzStatus: g('amzStatus'),
+      rma: g('rma'), carrier: g('carrier'), tracking: g('tracking'), labelPayer: g('labelPayer'), atoz: g('atoz') === 'Y',
+      asin: g('asin'), sku: g('sku'), title: g('title'), qty: Number(g('qty')) || 1, reasonCode: g('reasonCode'),
+      delivered: rtParseAmzDate(g('delivered')), orderAmount: Number(g('orderAmount')) || 0, orderQty: Number(g('orderQty')) || 0,
+      refunded: Number(g('refunded')) || 0, itemId: g('itemId') };
+  }).filter(r => /^\d{3}-\d{7}-\d{7}$/.test(r.orderId));
+}
+// 在庫に商品がないときは、商品名から型番らしいもの（英数字が混ざった4文字以上・例 EP2-46399、43M550R）を拾う
+function rtGuessModel(title) {
+  const toks = String(title || '').split(/[\s()（）【】\[\]「」、,]+/).filter(t => /^[A-Za-z0-9][A-Za-z0-9\-]{3,}$/.test(t) && /[A-Za-z]/.test(t) && /\d/.test(t) && !/^\d+(GB|TB|MB|W|mm|cm|ch|K|Hz|mAh)$/i.test(t));
+  return toks.length ? toks[toks.length - 1] : '';
+}
+function rtPickReport() { document.getElementById('rt-report-file')?.click(); }
+async function rtOnReport(input) {
+  const file = input.files && input.files[0]; input.value = '';
+  if (!file) return;
+  let rows;
+  try { rows = rtParseReport(await azDecodeFile(file)); } catch (e) { rows = null; }
+  if (!rows) { showToast('返品レポートとして読めませんでした。「出品者出荷の返品レポート」のTSVを選んでください'); return; }
+  if (!rows.length) { showToast('返品はありませんでした'); return; }
+  let added = 0, updated = 0;
+  try {
+    for (const x of rows) {
+      const key = 'amz_' + (x.itemId || (x.orderId + '_' + (x.sku || x.asin)).replace(/[.#$\[\]\/]/g, '_'));
+      // すでにある返品：同じキー → それ。なければ同じ注文番号で、まだレポートと結びついていない手入力の返品
+      let id = Object.keys(RT.returns).find(k => RT.returns[k].importKey === key);
+      if (!id) id = Object.keys(RT.returns).find(k => { const r = RT.returns[k]; return !r.importKey && r.orderId === x.orderId && (!r.sku || !x.sku || r.sku === x.sku); });
+      const isNew = !id; if (isNew) id = key;
+      const r = isNew ? {} : RT.returns[id];
+      const s = azParseSku(x.sku);
+      const pk = r.productKey || (x.asin && AZ.asinMap && AZ.asinMap[x.asin]) || (typeof azMatchProduct === 'function' ? azMatchProduct({ asin: x.asin, title: x.title }) : '') || '';
+      const p = pk && (products || []).find(q => q._key === pk);
+      // Amazonの情報（毎回最新にする）
+      Object.assign(r, { importKey: key, orderId: x.orderId, asin: x.asin, sku: x.sku || r.sku || '', title: x.title || r.title || '',
+        amzStatus: x.amzStatus, reasonCode: x.reasonCode, labelPayer: x.labelPayer, atoz: x.atoz, orderDate: x.orderDate,
+        amzRefunded: x.refunded || 0, tracking: x.tracking || '', carrier: x.carrier || '', importedAt: Date.now() });
+      if (!r.productKey && pk) r.productKey = pk;
+      if (!r.model) r.model = (p && p.model) || rtGuessModel(x.title);
+      if (!r.price && x.orderAmount) r.price = x.orderAmount;
+      if (!r.supplier && s) r.supplier = s.supplier;
+      if (!r.cost && s) r.cost = s.cost;
+      if (!r.qty || isNew) r.qty = x.qty;
+      if (x.delivered && !r.arrivedDate) r.arrivedDate = x.delivered;
+      // Amazonで返金済みになっていれば返金を記録（こちらで入力した返金日があればそのまま）
+      if (x.refunded > 0 && !r.refundDate) { r.refund = r.refund || x.refunded; r.refundDate = todayStr(); r.refundPending = false; r.refundFromReport = true; }
+      if (isNew) {
+        Object.assign(r, { kind: 'return', reason: RT_REASON_CODE[x.reasonCode] || 'その他', reasonDetail: RT_REASON_CODE[x.reasonCode] ? '' : x.reasonCode,
+          receivedDate: x.reqDate || todayStr(), createdAt: Date.now(), createdBy: rtMe() + '（返品レポート）',
+          status: x.amzStatus === 'Closed' ? 'done' : x.delivered ? 'arrived' : x.amzStatus === 'Approved' ? 'waiting' : 'received' });
+        if (r.status === 'done') r.doneAt = x.reqDate || todayStr();
+      } else if (x.delivered && ['received', 'waiting'].includes(r.status) && r.kind !== 'claim') {
+        r.status = 'arrived';
+      } else if (x.amzStatus === 'Approved' && r.status === 'received' && r.kind !== 'claim') {
+        r.status = 'waiting';
+      }
+      r.updatedAt = Date.now(); r.updatedBy = rtMe();
+      Object.keys(r).forEach(k => { if (r[k] === undefined) delete r[k]; });
+      await rtPut('returns/' + id, r); RT.returns[id] = r;
+      isNew ? added++ : updated++;
+    }
+    rtRender(); rtRenderBanner();
+    showToast(`返品レポートを読み込みました（新規 ${added}件・更新 ${updated}件）`);
+  } catch (e) { showToast('保存に失敗しました（途中まで反映されています）'); rtRender(); }
+}
 const RT_STEPS_RETURN = [['received', '受付'], ['waiting', '返送待ち'], ['arrived', '到着・検品'], ['done', '完了']];
 const RT_STEPS_CLAIM = [['received', '受付'], ['handling', '対応中'], ['done', '完了']];
 const RT_RESULT = { resell: '新品として再販（在庫に戻す）', mercari: 'メルカリで販売', supplier: '仕入先へ返品', dispose: '廃棄' };
@@ -26792,6 +26902,7 @@ function rtWarnings(r) {
   if (!rtIsClaim(r) && r.status === 'waiting' && rtDays(r.receivedDate) >= 14) w.push(`返送待ちが${rtDays(r.receivedDate)}日`);
   if (!rtIsClaim(r) && r.arrivedDate && r.kind === 'return' && !r.refundDate) w.push('到着済み・返金がまだ');
   if (r.refundPending) w.push('返金額を代表に確認中');
+  if (r.amzStatus === 'PendingApproval') w.push('Amazonで承認待ち（返品リクエストに対応）');
   if (r.arrivedDate && !r.result && !rtIsClaim(r)) w.push('検品・行き先が未定');
   return w;
 }
@@ -26865,7 +26976,9 @@ function rtReturnsHtml(all) {
   return `<div class="rt-cols">
     <div style="min-width:0">
       <div class="az-card">
-        <div class="az-h"><span>返品・クレーム</span><button class="az-btn primary" onclick="rtOpenForm()">＋ 登録</button></div>
+        <div class="az-h"><span>返品・クレーム</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          <button class="az-btn" onclick="rtPickReport()">📥 返品レポートを読み込む</button><button class="az-btn primary" onclick="rtOpenForm()">＋ 登録</button></span></div>
+        <input type="file" id="rt-report-file" accept=".txt,.tsv,.csv,text/plain,text/tab-separated-values" style="display:none" onchange="rtOnReport(this)">
         ${open.length ? open.map(rtReturnCard).join('') : '<div class="az-empty">対応中の返品・クレームはありません</div>'}
         ${done.length ? `<button class="az-btn small" style="width:100%;margin-top:4px" onclick="RT.showDone=!RT.showDone;rtRender()">${RT.showDone ? '▲ 完了したものを閉じる' : `▼ 完了したもの（${done.length}件）`}</button>${RT.showDone ? '<div style="margin-top:10px">' + done.map(rtReturnCard).join('') + '</div>' : ''}` : ''}
       </div>
@@ -26881,16 +26994,20 @@ function rtReturnCard(r) {
   const stepBtns = steps.map(([k, l], i) => `<button class="${i < ci ? 'past' : i === ci ? 'cur' : ''}" onclick="rtSetStatus('${r.id}','${k}')">${l}</button>`).join('');
   const mc = r.mercariId && RT.mercari[r.mercariId];
   const refundLine = rtIsClaim(r) && !r.refund && !r.refundDate && !r.refundPending ? '' :
-    `<div class="rt-money"><span>返金</span><span>${r.refundPending ? '<span class="az-tag">代表に確認中</span> ' : ''}${r.refund ? rtYen(r.refund) + (r.refundBaseRate ? `（${r.refundBaseRate === 1 ? '全額' : '50%'}${r.shipBack ? ' − 着払い送料 ' + rtYen(r.shipBack) : ''}）` : r.price ? `（販売額の${Math.round(r.refund / r.price * 100)}%）` : '') : '金額未定'}${r.refundDate ? '・' + rtMd(r.refundDate) + ' 返金済み' : ''}</span></div>`;
+    `<div class="rt-money"><span>返金</span><span>${r.refundPending ? '<span class="az-tag">代表に確認中</span> ' : ''}${r.refund ? rtYen(r.refund) + (r.refundBaseRate ? `（${r.refundBaseRate === 1 ? '全額' : '50%'}${r.shipBack ? ' − 着払い送料 ' + rtYen(r.shipBack) : ''}）` : r.price ? `（販売額の${Math.round(r.refund / r.price * 100)}%）` : '') : '金額未定'}${r.refundDate ? (r.refundFromReport ? '・Amazonで返金済み' : '・' + rtMd(r.refundDate) + ' 返金済み') : ''}</span></div>`;
   return `<div class="rt-item ${warns.length ? 'warn' : ''}">
     <div class="rt-body">
       <div style="min-width:0">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
-          <div class="t">${rtEsc(r.model || r.title || '（商品不明）')} <span class="az-tag gray">${rtEsc(RT_KIND[r.kind] || '')}</span> ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''}</div>
+          <div class="t">${rtEsc(r.model || (r.title || '').slice(0, 40) || '（商品不明）')} <span class="az-tag gray">${rtEsc(RT_KIND[r.kind] || '')}</span> ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''}
+            ${r.amzStatus ? `<span class="az-tag gray">Amazon：${rtEsc(RT_AMZ_STATUS[r.amzStatus] || r.amzStatus)}</span>` : ''}
+            ${RT_CUSTOMER_REASONS.includes(r.reasonCode) ? '<span class="az-tag" style="background:#fff7e6;color:#a16207">お客様都合</span>' : ''}
+            ${r.atoz ? '<span class="az-tag">A-to-z保証</span>' : ''}</div>
           <button class="az-btn small" onclick="rtOpenForm('${r.id}')">編集</button>
         </div>
         <div class="s">${rtEsc(r.reason || '')}${r.reasonDetail ? '：' + rtEsc(r.reasonDetail) : ''}</div>
         <div class="s">${r.orderId ? `注文 <a href="${rtScUrl(r.orderId)}" target="_blank" rel="noopener" title="Seller Centralでお客様の情報を確認">${rtEsc(r.orderId)} ↗</a>・` : ''}受付 ${rtMd(r.receivedDate)}${r.arrivedDate ? '・到着 ' + rtMd(r.arrivedDate) : ''}</div>
+        ${r.labelPayer || r.tracking ? `<div class="s">${r.labelPayer ? '返送料：' + (r.labelPayer === 'Customer' ? 'お客様負担（元払い）' : r.labelPayer === 'Seller' ? '当社負担' : rtEsc(r.labelPayer)) : ''}${r.tracking ? '・追跡 ' + rtEsc(r.carrier || '') + ' ' + rtEsc(r.tracking) : ''}</div>` : ''}
         <div class="s">${r.sku ? 'SKU ' + rtEsc(r.sku) + '・' : ''}${r.supplier ? '仕入先 ' + rtEsc(r.supplier) + '・' : ''}${r.cost ? '仕入 ' + rtYen(r.cost) + '・' : ''}${r.price ? '販売 ' + rtYen(r.price) : ''}</div>
         ${warns.length ? `<div style="margin-top:6px">${warns.map(w => `<span class="az-tag">${rtEsc(w)}</span>`).join(' ')}</div>` : ''}
         ${r.memo ? `<div class="s" style="white-space:pre-wrap;margin-top:6px">📝 ${rtEsc(r.memo)}</div>` : ''}
