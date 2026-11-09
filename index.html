@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-09f">
+<meta name="app-build" content="2026-11-09g">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -26715,6 +26715,23 @@ async function ercCommit() {
 .rt-money { display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0; }
 .rt-plus { color:#2e7d32; font-weight:800; }
 .rt-minus { color:#c0392b; font-weight:800; }
+/* パソコンを広げたとき：左に一覧・右に傾向。カードの中も左（情報）と右（状態・返金・操作）に分ける */
+.rt-cols { display:block; }
+.rt-trend-bar { display:flex; align-items:center; gap:8px; font-size:12px; margin:4px 0; }
+.rt-trend-bar .l { flex:0 0 42%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-sub); }
+.rt-trend-bar .b { flex:1; height:8px; background:var(--surface); border-radius:4px; overflow:hidden; }
+.rt-trend-bar .b i { display:block; height:100%; background:#8fcfc9; border-radius:4px; }
+.rt-trend-bar .n { flex:none; width:28px; text-align:right; font-weight:700; }
+.rt-trend-h { font-size:11.5px; font-weight:800; color:var(--text-muted); margin:12px 0 4px; }
+.rt-pseg { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:10px; }
+.rt-pseg button { padding:5px 10px; font-size:11.5px; font-weight:700; border:1.5px solid var(--border); background:var(--white); color:var(--text-muted); border-radius:999px; cursor:pointer; }
+.rt-pseg button.on { background:#3a3a3a; border-color:#3a3a3a; color:#fff; }
+@media (min-width:1100px) {
+  .rt-cols { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:14px; align-items:start; }
+  .rt-cols .rt-side { position:sticky; top:12px; }
+  .rt-item .rt-body { display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,42%); gap:18px; align-items:start; }
+  .rt-item .rt-body .rt-steps { margin-top:0; }
+}
 #rt-inv-banner .rt-bn { display:flex; align-items:center; justify-content:space-between; gap:8px; background:#fff7e6; border:1px solid #f5d48c; color:#8a5a00; border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px; font-weight:700; cursor:pointer; }
 </style>
 
@@ -26806,21 +26823,55 @@ function rtRender() {
     ${body}`;
 }
 
+// 傾向の集計期間：今月／今年度（3月始まり）／直近90日／すべて
+const RT_PERIODS = [['month', '今月'], ['fy', '今年度（3月〜）'], ['d90', '直近90日'], ['all', 'すべて']];
+function rtPeriodFrom(p) {
+  const t = todayStr();
+  if (p === 'month') return t.slice(0, 8) + '01';
+  if (p === 'fy') { const d = new Date(); const y = d.getMonth() >= 2 ? d.getFullYear() : d.getFullYear() - 1; return y + '-03-01'; }
+  if (p === 'd90') return ymdKey(new Date(Date.now() - 90 * 864e5));
+  return '';
+}
+function rtSetPeriod(p) { RT.period = p; try { localStorage.setItem('rt_period', p); } catch (e) {} rtRender(); }
+function rtTrendHtml(all) {
+  if (!RT.period) { try { RT.period = localStorage.getItem('rt_period') || 'fy'; } catch (e) { RT.period = 'fy'; } }
+  const from = rtPeriodFrom(RT.period);
+  const list = all.filter(r => !from || (r.receivedDate || '') >= from);
+  const refundSum = list.reduce((s, r) => s + (r.refundDate ? Number(r.refund) || 0 : 0), 0);
+  const shipSum = list.reduce((s, r) => s + (Number(r.shipBack) || 0), 0);
+  const nReturn = list.filter(r => r.kind !== 'claim').length, nClaim = list.length - nReturn;
+  const bars = (key, title) => {
+    const g = {}; list.forEach(r => { const k = r[key] || '不明'; g[k] = (g[k] || 0) + 1; });
+    const rows = Object.entries(g).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    if (!rows.length) return '';
+    const max = rows[0][1];
+    return `<div class="rt-trend-h">${title}</div>` + rows.map(([k, n]) => `<div class="rt-trend-bar"><span class="l" title="${rtEsc(k)}">${rtEsc(k)}</span><span class="b"><i style="width:${Math.round(n / max * 100)}%"></i></span><span class="n">${n}</span></div>`).join('');
+  };
+  return `<div class="az-card">
+    <div class="az-h"><span>傾向</span></div>
+    <div class="rt-pseg">${RT_PERIODS.map(([k, l]) => `<button class="${RT.period === k ? 'on' : ''}" onclick="rtSetPeriod('${k}')">${l}</button>`).join('')}</div>
+    ${list.length ? `
+      <div class="rt-money"><span>件数</span><b>${list.length}件（返品・交換 ${nReturn}／クレーム ${nClaim}）</b></div>
+      <div class="rt-money"><span>返金の合計（返金済み）</span><b>${rtYen(refundSum)}</b></div>
+      ${shipSum ? `<div class="rt-money"><span>着払いの送料（差し引いた分）</span><span>${rtYen(shipSum)}</span></div>` : ''}
+      ${bars('reason', '理由')}${bars('supplier', '仕入先')}${bars('model', '型番')}`
+    : '<div class="az-empty">この期間の返品・クレームはありません</div>'}
+    <div class="az-sub" style="margin-top:8px">受付日で数えています</div>
+  </div>`;
+}
 function rtReturnsHtml(all) {
   const open = all.filter(r => r.status !== 'done').sort((a, b) => (rtWarnings(b).length - rtWarnings(a).length) || String(a.receivedDate).localeCompare(String(b.receivedDate)));
   const done = all.filter(r => r.status === 'done').sort((a, b) => String(b.doneAt || '').localeCompare(String(a.doneAt || '')));
-  // 理由別・仕入先別の件数（直近90日）…どの商品・仕入先で返品が多いかを見る
-  const since = ymdKey(new Date(Date.now() - 90 * 864e5));
-  const recent = all.filter(r => (r.receivedDate || '') >= since);
-  const count = key => { const g = {}; recent.forEach(r => { const k = r[key] || '不明'; g[k] = (g[k] || 0) + 1; }); return Object.entries(g).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${rtEsc(k)} ${n}`).join('・'); };
-  return `
-    <div class="az-card">
-      <div class="az-h"><span>返品・クレーム</span><button class="az-btn primary" onclick="rtOpenForm()">＋ 登録</button></div>
-      ${open.length ? open.map(rtReturnCard).join('') : '<div class="az-empty">対応中の返品・クレームはありません</div>'}
-      ${done.length ? `<button class="az-btn small" style="width:100%;margin-top:4px" onclick="RT.showDone=!RT.showDone;rtRender()">${RT.showDone ? '▲ 完了したものを閉じる' : `▼ 完了したもの（${done.length}件）`}</button>${RT.showDone ? '<div style="margin-top:10px">' + done.map(rtReturnCard).join('') + '</div>' : ''}` : ''}
+  return `<div class="rt-cols">
+    <div style="min-width:0">
+      <div class="az-card">
+        <div class="az-h"><span>返品・クレーム</span><button class="az-btn primary" onclick="rtOpenForm()">＋ 登録</button></div>
+        ${open.length ? open.map(rtReturnCard).join('') : '<div class="az-empty">対応中の返品・クレームはありません</div>'}
+        ${done.length ? `<button class="az-btn small" style="width:100%;margin-top:4px" onclick="RT.showDone=!RT.showDone;rtRender()">${RT.showDone ? '▲ 完了したものを閉じる' : `▼ 完了したもの（${done.length}件）`}</button>${RT.showDone ? '<div style="margin-top:10px">' + done.map(rtReturnCard).join('') + '</div>' : ''}` : ''}
+      </div>
     </div>
-    ${recent.length ? `<div class="az-card"><div class="az-h"><span>直近90日の傾向（${recent.length}件）</span></div>
-      <div class="az-sub" style="line-height:1.9">理由：${count('reason')}<br>仕入先：${count('supplier')}<br>型番：${count('model')}</div></div>` : ''}`;
+    <div class="rt-side">${rtTrendHtml(all)}</div>
+  </div>`;
 }
 
 function rtReturnCard(r) {
@@ -26832,24 +26883,29 @@ function rtReturnCard(r) {
   const refundLine = rtIsClaim(r) && !r.refund && !r.refundDate && !r.refundPending ? '' :
     `<div class="rt-money"><span>返金</span><span>${r.refundPending ? '<span class="az-tag">代表に確認中</span> ' : ''}${r.refund ? rtYen(r.refund) + (r.refundBaseRate ? `（${r.refundBaseRate === 1 ? '全額' : '50%'}${r.shipBack ? ' − 着払い送料 ' + rtYen(r.shipBack) : ''}）` : r.price ? `（販売額の${Math.round(r.refund / r.price * 100)}%）` : '') : '金額未定'}${r.refundDate ? '・' + rtMd(r.refundDate) + ' 返金済み' : ''}</span></div>`;
   return `<div class="rt-item ${warns.length ? 'warn' : ''}">
-    <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
-      <div style="min-width:0"><div class="t">${rtEsc(r.model || r.title || '（商品不明）')} <span class="az-tag gray">${rtEsc(RT_KIND[r.kind] || '')}</span> ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''}</div>
+    <div class="rt-body">
+      <div style="min-width:0">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+          <div class="t">${rtEsc(r.model || r.title || '（商品不明）')} <span class="az-tag gray">${rtEsc(RT_KIND[r.kind] || '')}</span> ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''}</div>
+          <button class="az-btn small" onclick="rtOpenForm('${r.id}')">編集</button>
+        </div>
         <div class="s">${rtEsc(r.reason || '')}${r.reasonDetail ? '：' + rtEsc(r.reasonDetail) : ''}</div>
         <div class="s">${r.orderId ? `注文 <a href="${rtScUrl(r.orderId)}" target="_blank" rel="noopener" title="Seller Centralでお客様の情報を確認">${rtEsc(r.orderId)} ↗</a>・` : ''}受付 ${rtMd(r.receivedDate)}${r.arrivedDate ? '・到着 ' + rtMd(r.arrivedDate) : ''}</div>
         <div class="s">${r.sku ? 'SKU ' + rtEsc(r.sku) + '・' : ''}${r.supplier ? '仕入先 ' + rtEsc(r.supplier) + '・' : ''}${r.cost ? '仕入 ' + rtYen(r.cost) + '・' : ''}${r.price ? '販売 ' + rtYen(r.price) : ''}</div>
+        ${warns.length ? `<div style="margin-top:6px">${warns.map(w => `<span class="az-tag">${rtEsc(w)}</span>`).join(' ')}</div>` : ''}
+        ${r.memo ? `<div class="s" style="white-space:pre-wrap;margin-top:6px">📝 ${rtEsc(r.memo)}</div>` : ''}
       </div>
-      <button class="az-btn small" onclick="rtOpenForm('${r.id}')">編集</button>
-    </div>
-    ${warns.length ? `<div style="margin-top:6px">${warns.map(w => `<span class="az-tag">${rtEsc(w)}</span>`).join(' ')}</div>` : ''}
-    <div class="rt-steps">${stepBtns}</div>
-    ${refundLine}
-    ${r.result ? `<div class="rt-money"><span>行き先</span><span>${rtEsc(RT_RESULT[r.result])}${r.result === 'resell' && r.resultLoc ? '（' + rtEsc(locName(r.resultLoc)) + '）' : ''}${mc ? '・メルカリ ' + rtEsc((MC_STEPS.find(s => s[0] === mc.status) || [])[1] || '') : ''}</span></div>` : ''}
-    ${r.memo ? `<div class="s" style="white-space:pre-wrap;margin-top:4px">📝 ${rtEsc(r.memo)}</div>` : ''}
-    <div class="rt-row" style="justify-content:flex-end">
-      ${!rtIsClaim(r) && r.arrivedDate && !r.result ? `<button class="az-btn small primary" onclick="rtOpenResult('${r.id}')">検品して行き先を決める</button>` : ''}
-      ${r.status !== 'done' && (r.kind === 'return' || r.refund || r.refundPending) && !r.refundDate ? `<button class="az-btn small" onclick="rtOpenRefund('${r.id}')">返金を記録</button>` : ''}
-      ${mc ? `<button class="az-btn small" onclick="rtSetView('mercari')">メルカリを見る</button>` : ''}
-      ${r.result && r.status !== 'done' && !(mc && ['sold', 'shipped'].includes(mc.status)) ? `<button class="az-btn small" onclick="rtUndoResult('${r.id}')">行き先を取り消す</button>` : ''}
+      <div>
+        <div class="rt-steps">${stepBtns}</div>
+        ${refundLine}
+        ${r.result ? `<div class="rt-money"><span>行き先</span><span>${rtEsc(RT_RESULT[r.result])}${r.result === 'resell' && r.resultLoc ? '（' + rtEsc(locName(r.resultLoc)) + '）' : ''}${mc ? '・メルカリ ' + rtEsc((MC_STEPS.find(s => s[0] === mc.status) || [])[1] || '') : ''}</span></div>` : ''}
+        <div class="rt-row" style="justify-content:flex-end">
+          ${!rtIsClaim(r) && r.arrivedDate && !r.result ? `<button class="az-btn small primary" onclick="rtOpenResult('${r.id}')">検品して行き先を決める</button>` : ''}
+          ${r.status !== 'done' && (r.kind === 'return' || r.refund || r.refundPending) && !r.refundDate ? `<button class="az-btn small" onclick="rtOpenRefund('${r.id}')">返金を記録</button>` : ''}
+          ${mc ? `<button class="az-btn small" onclick="rtSetView('mercari')">メルカリを見る</button>` : ''}
+          ${r.result && r.status !== 'done' && !(mc && ['sold', 'shipped'].includes(mc.status)) ? `<button class="az-btn small" onclick="rtUndoResult('${r.id}')">行き先を取り消す</button>` : ''}
+        </div>
+      </div>
     </div>
   </div>`;
 }
