@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-09i">
+<meta name="app-build" content="2026-11-09k">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -26970,8 +26970,43 @@ function rtTrendHtml(all) {
     <div class="az-sub" style="margin-top:8px">受付日で数えています</div>
   </div>`;
 }
+// 並び順：受付日が新しい順（初期）／古い順／要確認が多い順。絞り込み：すべて／要確認だけ／状態ごと
+const RT_SORTS = [['new', '受付日が新しい順'], ['old', '受付日が古い順'], ['warn', '要確認が多い順']];
+const RT_FILTERS = [['all', 'すべて'], ['warn', '要確認'], ['received', '受付'], ['waiting', '返送待ち'], ['arrived', '到着・検品'], ['handling', 'クレーム対応中']];
+function rtSetSort(v) { RT.sort = v; try { localStorage.setItem('rt_sort', v); } catch (e) {} rtRender(); }
+function rtSetFilter(v) { RT.filter = v; rtRender(); }
+function rtSortList(list) {
+  if (!RT.sort) { try { RT.sort = localStorage.getItem('rt_sort') || 'new'; } catch (e) { RT.sort = 'new'; } }
+  const d = r => String(r.receivedDate || '');
+  const by = { new: (a, b) => d(b).localeCompare(d(a)), old: (a, b) => d(a).localeCompare(d(b)),
+    warn: (a, b) => (rtWarnings(b).length - rtWarnings(a).length) || d(b).localeCompare(d(a)) }[RT.sort] || ((a, b) => d(b).localeCompare(d(a)));
+  return list.sort(by);
+}
+// まとめて完了：Amazonで返金済み（レポートで確認）かつ受付から60日以上たった、まだ完了していない返品。
+// 返品レポートを取り込み始める前の古い返品は、実際にはもう終わっているものがほとんどのため。
+// 完了にしたものには bulkDone の印を付け、個別に「受付」などを押せば元に戻せる。
+const RT_BULK_DAYS = 60;
+function rtBulkTargets() {
+  return Object.entries(RT.returns).filter(([, r]) => r.status !== 'done' && r.refundDate && rtDays(r.receivedDate) >= RT_BULK_DAYS);
+}
+async function rtBulkDone() {
+  const list = rtBulkTargets(); if (!list.length) return;
+  if (!(await showConfirm(`返金済みで、受付から${RT_BULK_DAYS}日以上たった返品 ${list.length}件を、まとめて完了にしますか？\n\n終わっていないものがあれば、あとでそのカードの状態ボタンを押せば戻せます。`))) return;
+  let n = 0;
+  try {
+    for (const [id, r] of list) { r.status = 'done'; r.doneAt = todayStr(); r.bulkDone = true; r.updatedAt = Date.now(); r.updatedBy = rtMe(); await rtPut('returns/' + id, r); n++; }
+    showToast(`${n}件を完了にしました（「完了したもの」から確認できます）`);
+  } catch (e) { showToast(`途中で失敗しました（${n}件は完了済み）`); }
+  rtRender(); rtRenderBanner();
+}
 function rtReturnsHtml(all) {
-  const open = all.filter(r => r.status !== 'done').sort((a, b) => (rtWarnings(b).length - rtWarnings(a).length) || String(a.receivedDate).localeCompare(String(b.receivedDate)));
+  const openAll = all.filter(r => r.status !== 'done');
+  const f = RT.filter || 'all';
+  const cnt = k => k === 'all' ? openAll.length : k === 'warn' ? openAll.filter(r => rtWarnings(r).length).length : openAll.filter(r => r.status === k).length;
+  const open = rtSortList(openAll.filter(r => f === 'all' || (f === 'warn' ? rtWarnings(r).length : r.status === f)));
+  const tools = `<div class="rt-row" style="margin:0 0 10px;justify-content:space-between">
+      <div class="rt-pseg" style="margin:0">${RT_FILTERS.filter(([k]) => k === 'all' || cnt(k)).map(([k, l]) => `<button class="${f === k ? 'on' : ''}" onclick="rtSetFilter('${k}')">${l} ${cnt(k)}</button>`).join('')}</div>
+      <select class="az-loc" onchange="rtSetSort(this.value)">${RT_SORTS.map(([k, l]) => `<option value="${k}" ${RT.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
   const done = all.filter(r => r.status === 'done').sort((a, b) => String(b.doneAt || '').localeCompare(String(a.doneAt || '')));
   return `<div class="rt-cols">
     <div style="min-width:0">
@@ -26979,7 +27014,11 @@ function rtReturnsHtml(all) {
         <div class="az-h"><span>返品・クレーム</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           <button class="az-btn" onclick="rtPickReport()">📥 返品レポートを読み込む</button><button class="az-btn primary" onclick="rtOpenForm()">＋ 登録</button></span></div>
         <input type="file" id="rt-report-file" accept=".txt,.tsv,.csv,text/plain,text/tab-separated-values" style="display:none" onchange="rtOnReport(this)">
-        ${open.length ? open.map(rtReturnCard).join('') : '<div class="az-empty">対応中の返品・クレームはありません</div>'}
+        ${rtBulkTargets().length ? `<div class="rt-row" style="margin:0 0 10px;padding:8px 10px;background:#fff7e6;border:1px solid #f5d48c;border-radius:8px;justify-content:space-between">
+          <span style="font-size:12.5px;color:#8a5a00">返金済みで、受付から${RT_BULK_DAYS}日以上たった返品が <b>${rtBulkTargets().length}件</b> あります。もう終わっている場合はまとめて完了にできます。</span>
+          <button class="az-btn small" onclick="rtBulkDone()">まとめて完了にする</button></div>` : ''}
+        ${tools}
+        ${open.length ? open.map(rtReturnCard).join('') : `<div class="az-empty">${f === 'all' ? '対応中の返品・クレームはありません' : 'この条件の返品・クレームはありません'}</div>`}
         ${done.length ? `<button class="az-btn small" style="width:100%;margin-top:4px" onclick="RT.showDone=!RT.showDone;rtRender()">${RT.showDone ? '▲ 完了したものを閉じる' : `▼ 完了したもの（${done.length}件）`}</button>${RT.showDone ? '<div style="margin-top:10px">' + done.map(rtReturnCard).join('') + '</div>' : ''}` : ''}
       </div>
     </div>
@@ -27002,7 +27041,8 @@ function rtReturnCard(r) {
           <div class="t">${rtEsc(r.model || (r.title || '').slice(0, 40) || '（商品不明）')} <span class="az-tag gray">${rtEsc(RT_KIND[r.kind] || '')}</span> ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''}
             ${r.amzStatus ? `<span class="az-tag gray">Amazon：${rtEsc(RT_AMZ_STATUS[r.amzStatus] || r.amzStatus)}</span>` : ''}
             ${RT_CUSTOMER_REASONS.includes(r.reasonCode) ? '<span class="az-tag" style="background:#fff7e6;color:#a16207">お客様都合</span>' : ''}
-            ${r.atoz ? '<span class="az-tag">A-to-z保証</span>' : ''}</div>
+            ${r.atoz ? '<span class="az-tag">A-to-z保証</span>' : ''}
+            ${r.status === 'done' && r.bulkDone ? '<span class="az-tag gray">まとめて完了</span>' : ''}</div>
           <button class="az-btn small" onclick="rtOpenForm('${r.id}')">編集</button>
         </div>
         <div class="s">${rtEsc(r.reason || '')}${r.reasonDetail ? '：' + rtEsc(r.reasonDetail) : ''}</div>
@@ -27175,7 +27215,7 @@ async function rtSetStatus(id, st) {
     const w = rtWarnings({ ...r, status: 'x' }).filter(x => !x.startsWith('返送待ち'));
     if (w.length && !(await showConfirm(`まだ「${w.join('」「')}」になっています。完了にしますか？`))) return;
     r.doneAt = todayStr();
-  } else delete r.doneAt;
+  } else { delete r.doneAt; delete r.bulkDone; }
   r.status = st; r.updatedAt = Date.now(); r.updatedBy = rtMe();
   try { await rtPut('returns/' + id, r); rtRender(); rtRenderBanner(); } catch (e) { showToast('保存に失敗しました'); }
 }
