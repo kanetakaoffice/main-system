@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-09l">
+<meta name="app-build" content="2026-11-09m">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -26839,6 +26839,8 @@ async function rtOnReport(input) {
           receivedDate: x.reqDate || todayStr(), createdAt: Date.now(), createdBy: rtMe() + '（返品レポート）',
           status: x.amzStatus === 'Closed' ? 'done' : x.delivered ? 'arrived' : x.amzStatus === 'Approved' ? 'waiting' : 'received' });
         if (r.status === 'done') r.doneAt = x.reqDate || todayStr();
+        // Amazonでクローズ・到着日なし → 返送されずに終了したもの
+        if (x.amzStatus === 'Closed' && !x.delivered) r.noReturn = x.refunded > 0 ? 'refunded' : 'norefund';
       } else if (x.delivered && ['received', 'waiting'].includes(r.status) && r.kind !== 'claim') {
         r.status = 'arrived';
       } else if (x.amzStatus === 'Approved' && r.status === 'received' && r.kind !== 'claim') {
@@ -26969,6 +26971,7 @@ function rtTrendHtml(all) {
     ${list.length ? `
       <div class="rt-money"><span>件数</span><b>${list.length}件（返品・交換 ${nReturn}／クレーム ${nClaim}）</b></div>
       <div class="rt-money"><span>返金の合計（返金済み）</span><b>${rtYen(refundSum)}</b></div>
+      ${list.filter(r => r.noReturn).length ? `<div class="rt-money"><span>返送されずに終了</span><span>${list.filter(r => r.noReturn).length}件</span></div>` : ''}
       ${shipSum ? `<div class="rt-money"><span>着払いの送料（差し引いた分）</span><span>${rtYen(shipSum)}</span></div>` : ''}
       ${bars('reason', '理由')}${bars('supplier', '仕入先')}${bars('model', '型番')}`
     : '<div class="az-empty">この期間の返品・クレームはありません</div>'}
@@ -27047,7 +27050,8 @@ function rtReturnCard(r) {
             ${r.amzStatus ? `<span class="az-tag gray">Amazon：${rtEsc(RT_AMZ_STATUS[r.amzStatus] || r.amzStatus)}</span>` : ''}
             ${RT_CUSTOMER_REASONS.includes(r.reasonCode) ? '<span class="az-tag" style="background:#fff7e6;color:#a16207">お客様都合</span>' : ''}
             ${r.atoz ? '<span class="az-tag">A-to-z保証</span>' : ''}
-            ${r.status === 'done' && r.bulkDone ? '<span class="az-tag gray">まとめて完了</span>' : ''}</div>
+            ${r.status === 'done' && r.bulkDone ? '<span class="az-tag gray">まとめて完了</span>' : ''}
+            ${r.noReturn ? `<span class="az-tag" style="background:#eef2ff;color:#4338ca">返送なしで終了${r.noReturn === 'refunded' ? '（返金あり）' : '（返金なし）'}</span>` : ''}</div>
           <button class="az-btn small" onclick="rtOpenForm('${r.id}')">編集</button>
         </div>
         <div class="s">${rtEsc(r.reason || '')}${r.reasonDetail ? '：' + rtEsc(r.reasonDetail) : ''}</div>
@@ -27064,6 +27068,7 @@ function rtReturnCard(r) {
         <div class="rt-row" style="justify-content:flex-end">
           ${!rtIsClaim(r) && r.arrivedDate && (!r.result || r.result === 'maker') ? `<button class="az-btn small primary" onclick="rtOpenResult('${r.id}')">${r.result === 'maker' || r.inspectedDate ? '行き先を決める' : '検品して行き先を決める'}</button>` : ''}
           ${r.status !== 'done' && (r.kind === 'return' || r.refund || r.refundPending) && !r.refundDate ? `<button class="az-btn small" onclick="rtOpenRefund('${r.id}')">返金を記録</button>` : ''}
+          ${!rtIsClaim(r) && ['received', 'waiting'].includes(r.status) && !r.arrivedDate ? `<button class="az-btn small" onclick="rtOpenNoReturn('${r.id}')">返送されずに終了</button>` : ''}
           ${mc ? `<button class="az-btn small" onclick="rtSetView('mercari')">メルカリを見る</button>` : ''}
           ${r.result && r.status !== 'done' && !(mc && ['sold', 'shipped'].includes(mc.status)) ? `<button class="az-btn small" onclick="rtUndoResult('${r.id}')">行き先を取り消す</button>` : ''}
         </div>
@@ -27220,9 +27225,36 @@ async function rtSetStatus(id, st) {
     const w = rtWarnings({ ...r, status: 'x' }).filter(x => !x.startsWith('返送待ち'));
     if (w.length && !(await showConfirm(`まだ「${w.join('」「')}」になっています。完了にしますか？`))) return;
     r.doneAt = todayStr();
-  } else { delete r.doneAt; delete r.bulkDone; }
+  } else { delete r.doneAt; delete r.bulkDone; delete r.noReturn; }
   r.status = st; r.updatedAt = Date.now(); r.updatedBy = rtMe();
   try { await rtPut('returns/' + id, r); rtRender(); rtRenderBanner(); } catch (e) { showToast('保存に失敗しました'); }
+}
+
+// ── 返送されずに終了 ──
+// 要望：「返品リクエストのあと、お客様が商品を返送してこないまま終了するものがある」への対応。
+// 商品が戻ってこないので返品在庫には入れず、noReturn の印を付けて完了にする。
+// 返金なし（リクエストがそのまま終了）と、返金した（返品不要の返金）の両方を選べる。
+function rtOpenNoReturn(id) {
+  const r = RT.returns[id]; if (!r) return;
+  RT.edit = { id };
+  rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:4px">返送されずに終了</div>
+    <div class="az-sub" style="margin-bottom:10px">${rtEsc(r.model || r.title)}・受付 ${rtMd(r.receivedDate)}（${rtDays(r.receivedDate)}日前）</div>
+    <label class="rt-pick" style="display:flex;gap:8px;align-items:center"><input type="radio" name="rt-nr" value="norefund" ${r.refundDate ? '' : 'checked'}> 返金なし（お客様が返送せず、リクエストが終了した）</label>
+    <label class="rt-pick" style="display:flex;gap:8px;align-items:center"><input type="radio" name="rt-nr" value="refund" ${r.refundDate ? 'checked' : ''}> 返金した（商品は返送不要で返金した）</label>
+    <div class="rt-f" style="margin-top:8px"><label>メモ（任意）</label><input type="text" id="rt-nr-note" placeholder="例：返送期限切れでAmazonがクローズ"></div>
+    <div class="az-sub" style="margin-bottom:10px">商品は戻ってこないので、返品在庫には入りません。返金した場合は、金額を「返金を記録」で入れておいてください。</div>
+    <div style="display:flex;gap:8px"><button class="az-btn" style="flex:1" onclick="rtCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="rtSaveNoReturn()">終了にする</button></div>`);
+}
+async function rtSaveNoReturn() {
+  const id = RT.edit && RT.edit.id, r = RT.returns[id]; if (!r) return;
+  const v = (document.querySelector('input[name="rt-nr"]:checked') || {}).value;
+  const note = document.getElementById('rt-nr-note').value.trim();
+  r.noReturn = v === 'refund' ? 'refunded' : 'norefund';
+  if (r.noReturn === 'norefund') { r.refundPending = false; }
+  else if (!r.refundDate) { r.refundDate = todayStr(); }
+  if (note) r.memo = (r.memo ? r.memo + '\n' : '') + '返送なしで終了：' + note;
+  r.status = 'done'; r.doneAt = todayStr(); r.updatedAt = Date.now(); r.updatedBy = rtMe();
+  try { await rtPut('returns/' + id, r); rtCloseModal(); rtRender(); rtRenderBanner(); showToast('返送されずに終了にしました'); } catch (e) { showToast('保存に失敗しました'); }
 }
 
 // ── 返金 ──
