@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-08l">
+<meta name="app-build" content="2026-11-09a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -20252,12 +20252,20 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
 .tk-cl-check { flex-shrink:0; width:20px; height:20px; border-radius:5px; border:2px solid #b8b8b8; background:#fff; color:transparent; font-size:11px; font-weight:900; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; }
 .tk-cl-check.on { background:#16a34a; border-color:#16a34a; color:#fff; }
 .tk-cl-edit { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
-/* 「完了したら次にやること」の入力行 */
-.tk-then-row { display:grid; grid-template-columns:1fr 150px 120px 28px; gap:6px; align-items:center; margin-bottom:6px; }
-#tkf-then .tk-then-row input, #tkf-then .tk-then-row select { width:100%; padding:8px 10px; font-size:13px !important; min-height:38px; border:1.5px solid var(--border); border-radius:8px; font-family:inherit; background-color:var(--white); }
-.tk-then-row button { border:none; background:none; color:var(--text-muted); font-size:18px; cursor:pointer; }
-@media (max-width:640px) { .tk-then-row { grid-template-columns:1fr 1fr 28px; } .tk-then-row input { grid-column:1 / -1; } }
+/* 「完了したら次にやること」（順番に続く流れ）の入力 */
+.tk-flow-step { border:1.5px solid var(--border); border-radius:10px; padding:8px; margin-bottom:4px; background:var(--white); position:relative; }
+.tk-flow-step .hd { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+.tk-flow-step .no { flex:none; width:22px; height:22px; border-radius:50%; background:var(--accent, #c9a24b); color:#fff; font-size:12px; font-weight:800; display:flex; align-items:center; justify-content:center; }
+.tk-flow-step .hd button { margin-left:auto; border:none; background:none; color:var(--text-muted); font-size:18px; cursor:pointer; }
+.tk-flow-step .g { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; }
+.tk-flow-step .g label { font-size:10.5px; color:var(--text-muted); font-weight:700; display:block; margin-bottom:2px; }
+#tkf-then .tk-flow-step input[type=text], #tkf-then .tk-flow-step select { width:100%; padding:7px 9px; font-size:13px !important; min-height:36px; border:1.5px solid var(--border); border-radius:8px; font-family:inherit; background-color:var(--white); }
+.tk-flow-step .opt { display:flex; gap:12px; flex-wrap:wrap; margin-top:6px; font-size:12px; }
+.tk-flow-step .opt label { display:flex; align-items:center; gap:4px; }
+.tk-flow-arrow { text-align:center; color:var(--text-muted); font-size:12px; margin:2px 0 4px; }
+@media (max-width:640px) { .tk-flow-step .g { grid-template-columns:1fr 1fr; } .tk-flow-step .g > div:first-child { grid-column:1 / -1; } }
 .tk-tag.then { background:#fff7e6; border-color:#f5d48c; color:#a16207; }
+.tk-tag.wait { background:#eef2ff; border-color:#c7d2fe; color:#4338ca; }
 .tk-cl-edit input { flex:1; min-width:0; box-sizing:border-box; padding:8px 10px; font-size:16px; font-family:inherit; border:1.5px solid var(--border); border-radius:8px; }
 .tk-cl-edit button { flex-shrink:0; width:32px; height:32px; border:1.5px solid var(--border); border-radius:8px; background:#fff; color:var(--text-sub); font-size:16px; cursor:pointer; }
 .tk-side { display:none; }
@@ -20580,65 +20588,110 @@ function tkInvolved(t, email) {
   return !!email && (t.assignee === email || tkHelpers(t).includes(email));
 }
 // ──────────────────────────────────────────────
-// 「完了したら次にやること」（連携タスク）
-// 要望：毎週の「UPS」が終わったら、必ず「書類をメールで送付」が発生する。前のタスクが完了したら
-//       次にやるべきタスクが自動で作られるようにしたい。
-// タスクに then:[{title, assignee, after}] を持たせ、完了にした瞬間にその分のタスクを作る。
+// 「完了したら次にやること」（順番に続く流れ）
+// 要望：毎週月曜の「入荷カメラ確認・リスト作成」が終わったら「UPS」（だいたい水〜木、遅いと金）、
+//       UPSが終わったら「書類をメールで送付」（相手企業から書類データが届いてから＝いつになるかわからない）、
+//       というように、前のタスクが完了したら次のタスクが自動で作られるようにしたい。
+// タスクに then:[ステップ] を持たせる。ステップは入れ子で、次のステップを then に持つ（①→②→③）。
+//   { title, assignee, start, after(期限), soft(目安), wait(待ちの内容), then:[次のステップ] }
 //   assignee：'__doer__'＝完了にした人／'__same__'＝このタスクの担当者／''＝未定／メールアドレス
-//   after   ：'0'＝当日／'1'〜＝○日後／'bd1'＝翌営業日（土日を飛ばす）
+//   start / after：'0'＝当日／'1'〜＝○日後／'bd1'＝翌営業日／'w3'＝次の水曜（当日を含む）／'none'＝期限なし
+// 完了にした瞬間に①を作り、①には②以降を then として持たせる。①を完了にすると②が作られる。
 // 作ったタスクのIDは元のタスクの thenIds に残す（完了を取り消したとき、まだ手を付けていなければ消す）。
 // 繰り返しタスクは、設定（シリーズ）にも then を持たせるので毎回作られる。
 // ──────────────────────────────────────────────
-const TK_THEN_AFTER = { '0': '当日中', '1': '翌日', 'bd1': '翌営業日', '2': '2日後', '3': '3日後', '7': '1週間後' };
+const TK_THEN_AFTER = { '0': '当日', '1': '翌日', 'bd1': '翌営業日', '2': '2日後', '3': '3日後', '7': '1週間後',
+  'w1': '次の月曜', 'w2': '次の火曜', 'w3': '次の水曜', 'w4': '次の木曜', 'w5': '次の金曜', 'w6': '次の土曜' };
 function tkThen(t) {
   const v = t && t.then;
   if (!v) return [];
   return (Array.isArray(v) ? v : Object.values(v)).filter(x => x && x.title);
 }
-function tkThenDue(after) {
+// 「次の水曜」などは、完了した日を含めて一番近いその曜日
+function tkThenDate(code) {
   const today = tkToday();
-  if (after === 'bd1') { let d = tkAddDays(today, 1); while ([0, 6].includes(tkParse(d).getDay())) d = tkAddDays(d, 1); return d; }
-  return tkAddDays(today, parseInt(after, 10) || 0);
+  if (!code || code === 'none') return '';
+  if (code === 'bd1') { let d = tkAddDays(today, 1); while ([0, 6].includes(tkParse(d).getDay())) d = tkAddDays(d, 1); return d; }
+  if (/^w\d$/.test(code)) { const wd = +code.slice(1); let d = today; while (tkParse(d).getDay() !== wd) d = tkAddDays(d, 1); return d; }
+  return tkAddDays(today, parseInt(code, 10) || 0);
 }
+const tkThenDue = code => tkThenDate(code);
 function tkThenAssignee(x, t, me) {
   if (x.assignee === '__doer__') return me;
   if (x.assignee === '__same__') return t.assignee || '';
   return x.assignee || '';
 }
-function tkThenWhoLabel(a) { return a === '__doer__' ? '完了した人' : a === '__same__' ? 'このタスクの担当者' : a ? tkName(a) : '未定'; }
-function tkThenRowHtml(x) {
-  x = x || { title: '', assignee: '__doer__', after: '0' };
+// 入れ子のステップを①②③…の一列にする／一列から入れ子に戻す
+function tkThenFlatten(list) { const out = []; let cur = list && list[0]; while (cur) { out.push(cur); cur = tkThen(cur)[0]; } return out; }
+function tkThenNest(rows) { let next = null; for (let i = rows.length - 1; i >= 0; i--) { const r = { ...rows[i] }; if (next) r.then = [next]; else delete r.then; next = r; } return next ? [next] : null; }
+function tkThenSummary(t) { return tkThenFlatten(tkThen(t)).map(x => x.title).join(' → '); }
+function tkThenStepHtml(x, n) {
+  x = x || { title: '', assignee: '__doer__', start: '', after: '0', soft: false, wait: '' };
   const who = `<option value="__doer__" ${x.assignee === '__doer__' ? 'selected' : ''}>完了した人</option>` +
-    `<option value="__same__" ${x.assignee === '__same__' ? 'selected' : ''}>このタスクの担当者</option>` +
+    `<option value="__same__" ${x.assignee === '__same__' ? 'selected' : ''}>前のタスクの担当者</option>` +
     `<option value="" ${x.assignee === '' ? 'selected' : ''}>未定（誰かお願い）</option>` +
     tkMemberEmails().map(e => `<option value="${tkEsc(e)}" ${x.assignee === e ? 'selected' : ''}>${tkEsc(tkName(e))}</option>`).join('');
-  const aft = Object.entries(TK_THEN_AFTER).map(([k, l]) => `<option value="${k}" ${String(x.after) === k ? 'selected' : ''}>期限：${l}</option>`).join('');
-  return `<div class="tk-then-row"><input type="text" value="${tkEsc(x.title || '')}" placeholder="例：書類をメールで送付"><select class="w">${who}</select><select class="a">${aft}</select><button type="button" onclick="this.parentElement.remove()" aria-label="削除">×</button></div>`;
+  const dOpts = (sel, noneVal, noneLabel) => `<option value="${noneVal}" ${(sel || noneVal) === noneVal ? 'selected' : ''}>${noneLabel}</option>` +
+    Object.entries(TK_THEN_AFTER).map(([k, l]) => `<option value="${k}" ${String(sel) === k ? 'selected' : ''}>${l}</option>`).join('');
+  return `<div class="tk-flow-step">
+    <div class="hd"><span class="no">${n}</span><input type="text" class="t" value="${tkEsc(x.title || '')}" placeholder="例：UPS"><button type="button" onclick="tkThenRemoveStep(this)" aria-label="削除">×</button></div>
+    <div class="g">
+      <div><label>担当者</label><select class="w">${who}</select></div>
+      <div><label>開始日（任意）</label><select class="s">${dOpts(x.start, '', 'なし')}</select></div>
+      <div><label>期限</label><select class="a">${dOpts(x.after === 'none' ? 'none' : (x.after || '0'), 'none', '期限なし')}</select></div>
+    </div>
+    <div class="opt">
+      <label><input type="checkbox" class="sf" ${x.soft ? 'checked' : ''}>目安（過ぎても期限切れにしない）</label>
+    </div>
+    <div style="margin-top:6px"><input type="text" class="wt" value="${tkEsc(x.wait || '')}" placeholder="待つものがあれば（例：相手企業から書類データが届いたら）"></div>
+  </div>`;
 }
-function tkThenAddRow() {
+function tkThenRenderSteps(steps) {
   const box = document.getElementById('tkf-then');
   if (!box) return;
-  box.insertAdjacentHTML('beforeend', tkThenRowHtml());
-  box.lastElementChild.querySelector('input')?.focus();
+  box.innerHTML = steps.map((x, i) => (i ? '<div class="tk-flow-arrow">↓ 完了したら</div>' : '') + tkThenStepHtml(x, i + 1)).join('');
 }
-function tkThenReadForm() {
-  const rows = [...document.querySelectorAll('#tkf-then .tk-then-row')].map(r => ({
-    title: r.querySelector('input').value.trim(), assignee: r.querySelector('select.w').value, after: r.querySelector('select.a').value
-  })).filter(x => x.title);
-  return rows.length ? rows : null;
+function tkThenReadSteps() {
+  return [...document.querySelectorAll('#tkf-then .tk-flow-step')].map(r => {
+    const x = { title: r.querySelector('.t').value.trim(), assignee: r.querySelector('.w').value, start: r.querySelector('.s').value,
+      after: r.querySelector('.a').value, soft: r.querySelector('.sf').checked, wait: r.querySelector('.wt').value.trim() };
+    if (!x.start) delete x.start; if (!x.soft) delete x.soft; if (!x.wait) delete x.wait;
+    return x;
+  });
 }
-// 完了にしたときに次のタスクを作る（作ったIDの一覧を返す）
+function tkThenAddRow() {
+  const steps = tkThenReadSteps();
+  steps.push(null);
+  tkThenRenderSteps(steps);
+  const all = document.querySelectorAll('#tkf-then .tk-flow-step .t');
+  all[all.length - 1]?.focus();
+}
+function tkThenRemoveStep(btn) {
+  const rows = [...document.querySelectorAll('#tkf-then .tk-flow-step')];
+  const idx = rows.indexOf(btn.closest('.tk-flow-step'));
+  const steps = tkThenReadSteps(); steps.splice(idx, 1);
+  tkThenRenderSteps(steps);
+}
+function tkThenReadForm() { return tkThenNest(tkThenReadSteps().filter(x => x.title)); }
+// 完了にしたときに次のタスク（①）を作る。①には②以降を持たせる
 async function tkCreateThenTasks(id, t, me) {
   const list = tkThen(t);
   if (!list.length || t.thenIds) return [];
   const now = Date.now();
   const made = list.map((x, i) => {
     const nid = tkNewId() + 't' + i;
+    let due = tkThenDate(x.after), start = x.start ? tkThenDate(x.start) : '';
+    if (start && due && start >= due) start = '';
+    if (start && !due) start = '';
     const rec = {
-      title: x.title, detail: `「${t.title}」が完了したので自動で作成しました`,
-      assignee: tkThenAssignee(x, t, me), priority: t.priority || 'normal', due: tkThenDue(x.after), dueTime: '',
+      title: x.title,
+      detail: (x.wait ? `⏳ ${x.wait}\n` : '') + `「${t.title}」が完了したので自動で作成しました`,
+      assignee: tkThenAssignee(x, t, me), priority: t.priority || 'normal', due, dueTime: '',
+      startDate: start || null, dueType: x.soft ? 'soft' : null, wait: x.wait || null,
+      then: tkThen(x).length ? tkThen(x) : null,
       status: 'todo', createdBy: me, createdAt: now, updatedAt: now, updatedBy: me, fromTask: id
     };
+    Object.keys(rec).forEach(k => { if (rec[k] === null) delete rec[k]; });
     TK.tasks[nid] = rec;
     return [nid, rec];
   });
@@ -20692,7 +20745,8 @@ function tkItemHtml(t, compact) {
   const prioTag = t.priority === 'high' ? '<span class="tk-tag high">優先度：高</span>' : '';
   const statusTag = doing ? '<span class="tk-tag doing">作業中</span>' : '';
   const rep = t.repeat && t.repeat !== 'none' ? `<span class="tk-tag">🔁 ${tkEsc(TK_REPEAT[t.repeat] || '')}</span>` : '';
-  const thenTag = tkThen(t).length ? `<span class="tk-tag then">➡ 完了後：${tkEsc(tkThen(t).map(x => x.title).join('、'))}</span>` : '';
+  const thenTag = tkThen(t).length ? `<span class="tk-tag then">➡ 完了後：${tkEsc(tkThenSummary(t))}</span>` : '';
+  const waitTag = t.wait && t.status !== 'done' ? `<span class="tk-tag wait">⏳ 待ち：${tkEsc(t.wait)}</span>` : '';
   const fromTag = t.fromTask && TK.tasks[t.fromTask] ? `<span class="tk-tag">⬅ 「${tkEsc(TK.tasks[t.fromTask].title)}」の次</span>` : '';
   const helpers = tkHelpers(t);
   const helperTag = helpers.length ? `<span class="tk-tag ${helpers.includes(me) ? 'me' : ''}">👥 ${tkEsc(helpers.map(tkName).join('・'))}</span>` : '';
@@ -20719,7 +20773,7 @@ function tkItemHtml(t, compact) {
     : `<button class="tk-start" onclick="tkToggleDoing('${t.id}')">作業開始</button>`;
   // タップで開く中身：詳しいタグ・作業中の人・メモ・チェックリスト・作業開始／編集ボタン
   const detailHtml = open ? `<div class="tk-detail" onclick="event.stopPropagation()">
-      <div class="tk-meta">${statusTag}${assignTag}${helperTag}${dueTag}${prioTag}${clTag}${groupTag}${rep}${thenTag}${fromTag}</div>
+      <div class="tk-meta">${statusTag}${assignTag}${helperTag}${dueTag}${prioTag}${clTag}${groupTag}${rep}${waitTag}${thenTag}${fromTag}</div>
       ${who}
       ${t.detail ? `<div class="tk-detail-memo">${tkEsc(t.detail).replace(/\n/g, '<br>')}</div>` : ''}
       ${clHtml}
@@ -20735,6 +20789,7 @@ function tkItemHtml(t, compact) {
     t.groupId ? '<span class="tk-ic">👪</span>' : '',
     t.repeat && t.repeat !== 'none' ? '<span class="tk-ic">🔁</span>' : '',
     tkThen(t).length && !done ? '<span class="tk-ic" title="完了したら次のタスクが作られます">➡</span>' : '',
+    t.wait && !done ? '<span class="tk-ic" title="待ち">⏳</span>' : '',
   ].join('');
   const showAssignee = !TK._hideAssignee;
   const iAmHelper = helpers.includes(me) && t.assignee !== me;
@@ -21035,7 +21090,7 @@ async function tkToggleDone(id, opts) {
   tkRefreshAll();
   const thenCount = tkThen(t).length && !t.thenIds ? tkThen(t).length : 0;
   showToast((nextRec ? `完了しました。次回（${tkShortDate(nextRec.due)}）の分を作成しました` : '完了しました') +
-    (thenCount ? `。次にやること（${tkThen(t).map(x => x.title).join('、')}）をタスクに追加しました` : ''));
+    (thenCount ? `。次の「${tkThen(t).map(x => x.title).join('、')}」をタスクに追加しました` : ''));
   const ok = await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; if (nextId) delete TK.tasks[nextId]; });
   if (ok && nextRec) await tkSave('tasks/' + nextId, 'PUT', nextRec, () => { delete TK.tasks[nextId]; });
   if (ok && thenCount) await tkCreateThenTasks(id, t, me);
@@ -21300,10 +21355,10 @@ function tkOpenTaskModal(id, presetDue) {
     </div>
     ${t && t.seriesId ? `<div class="tk-f" style="margin-top:-6px;font-size:11px;color:var(--text-muted)">🔁 繰り返しタスクです。やること・担当者・時刻などの変更は今後の分にも反映されます。「なし」にすると繰り返しを止めます。</div>`
       : `<div class="tk-f" style="margin-top:-6px;font-size:11px;color:var(--text-muted)">繰り返しを選ぶと、前回分を完了したかどうかに関係なく、その日になると自動で表示されます。</div>`}
-    <div class="tk-f"><label>完了したら次にやること（任意）</label>
-      <div id="tkf-then">${tkThen(v).map(x => tkThenRowHtml(x)).join('')}</div>
-      <button type="button" class="tk-chip" style="margin-top:2px" onclick="tkThenAddRow()">＋ 次にやることを追加</button>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">このタスクを完了にすると、ここに書いたタスクが自動で作られ、担当者に届きます。繰り返しタスクなら毎回作られます。<br>例：「UPS」→ 完了したら「書類をメールで送付」</div>
+    <div class="tk-f"><label>完了したら次にやること（流れ・任意）</label>
+      <div id="tkf-then"></div>
+      <button type="button" class="tk-chip" style="margin-top:4px" onclick="tkThenAddRow()">＋ 次のステップを追加</button>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">このタスクを完了にすると①が自動で作られ、①を完了にすると②が作られます（順番に続く流れ）。繰り返しタスクなら毎週・毎月その都度作られます。<br>例：入荷カメラ確認・リスト作成 → ① UPS（開始：次の水曜／期限：次の木曜・目安）→ ② 書類をメールで送付（期限なし／相手企業から書類データが届いたら）</div>
     </div>
     ${t ? `<div class="tk-f"><label>状態</label><select id="tkf-status">${opt(TK_STATUS, v.status || 'todo')}</select></div>` : ''}
     <div class="tk-btns">
@@ -21313,6 +21368,7 @@ function tkOpenTaskModal(id, presetDue) {
     </div>
     ${info}
   `);
+  tkThenRenderSteps(tkThenFlatten(tkThen(v)));
   if (!t) setTimeout(() => document.getElementById('tkf-title')?.focus(), 50);
 }
 function tkClEditRow(cid, text, doneName) {
