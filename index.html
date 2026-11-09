@@ -20252,6 +20252,12 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
 .tk-cl-check { flex-shrink:0; width:20px; height:20px; border-radius:5px; border:2px solid #b8b8b8; background:#fff; color:transparent; font-size:11px; font-weight:900; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; }
 .tk-cl-check.on { background:#16a34a; border-color:#16a34a; color:#fff; }
 .tk-cl-edit { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+/* 「完了したら次にやること」の入力行 */
+.tk-then-row { display:grid; grid-template-columns:1fr 150px 120px 28px; gap:6px; align-items:center; margin-bottom:6px; }
+#tkf-then .tk-then-row input, #tkf-then .tk-then-row select { width:100%; padding:8px 10px; font-size:13px !important; min-height:38px; border:1.5px solid var(--border); border-radius:8px; font-family:inherit; background-color:var(--white); }
+.tk-then-row button { border:none; background:none; color:var(--text-muted); font-size:18px; cursor:pointer; }
+@media (max-width:640px) { .tk-then-row { grid-template-columns:1fr 1fr 28px; } .tk-then-row input { grid-column:1 / -1; } }
+.tk-tag.then { background:#fff7e6; border-color:#f5d48c; color:#a16207; }
 .tk-cl-edit input { flex:1; min-width:0; box-sizing:border-box; padding:8px 10px; font-size:16px; font-family:inherit; border:1.5px solid var(--border); border-radius:8px; }
 .tk-cl-edit button { flex-shrink:0; width:32px; height:32px; border:1.5px solid var(--border); border-radius:8px; background:#fff; color:var(--text-sub); font-size:16px; cursor:pointer; }
 .tk-side { display:none; }
@@ -20573,6 +20579,87 @@ function tkHelpers(t) {
 function tkInvolved(t, email) {
   return !!email && (t.assignee === email || tkHelpers(t).includes(email));
 }
+// ──────────────────────────────────────────────
+// 「完了したら次にやること」（連携タスク）
+// 要望：毎週の「UPS」が終わったら、必ず「書類をメールで送付」が発生する。前のタスクが完了したら
+//       次にやるべきタスクが自動で作られるようにしたい。
+// タスクに then:[{title, assignee, after}] を持たせ、完了にした瞬間にその分のタスクを作る。
+//   assignee：'__doer__'＝完了にした人／'__same__'＝このタスクの担当者／''＝未定／メールアドレス
+//   after   ：'0'＝当日／'1'〜＝○日後／'bd1'＝翌営業日（土日を飛ばす）
+// 作ったタスクのIDは元のタスクの thenIds に残す（完了を取り消したとき、まだ手を付けていなければ消す）。
+// 繰り返しタスクは、設定（シリーズ）にも then を持たせるので毎回作られる。
+// ──────────────────────────────────────────────
+const TK_THEN_AFTER = { '0': '当日中', '1': '翌日', 'bd1': '翌営業日', '2': '2日後', '3': '3日後', '7': '1週間後' };
+function tkThen(t) {
+  const v = t && t.then;
+  if (!v) return [];
+  return (Array.isArray(v) ? v : Object.values(v)).filter(x => x && x.title);
+}
+function tkThenDue(after) {
+  const today = tkToday();
+  if (after === 'bd1') { let d = tkAddDays(today, 1); while ([0, 6].includes(tkParse(d).getDay())) d = tkAddDays(d, 1); return d; }
+  return tkAddDays(today, parseInt(after, 10) || 0);
+}
+function tkThenAssignee(x, t, me) {
+  if (x.assignee === '__doer__') return me;
+  if (x.assignee === '__same__') return t.assignee || '';
+  return x.assignee || '';
+}
+function tkThenWhoLabel(a) { return a === '__doer__' ? '完了した人' : a === '__same__' ? 'このタスクの担当者' : a ? tkName(a) : '未定'; }
+function tkThenRowHtml(x) {
+  x = x || { title: '', assignee: '__doer__', after: '0' };
+  const who = `<option value="__doer__" ${x.assignee === '__doer__' ? 'selected' : ''}>完了した人</option>` +
+    `<option value="__same__" ${x.assignee === '__same__' ? 'selected' : ''}>このタスクの担当者</option>` +
+    `<option value="" ${x.assignee === '' ? 'selected' : ''}>未定（誰かお願い）</option>` +
+    tkMemberEmails().map(e => `<option value="${tkEsc(e)}" ${x.assignee === e ? 'selected' : ''}>${tkEsc(tkName(e))}</option>`).join('');
+  const aft = Object.entries(TK_THEN_AFTER).map(([k, l]) => `<option value="${k}" ${String(x.after) === k ? 'selected' : ''}>期限：${l}</option>`).join('');
+  return `<div class="tk-then-row"><input type="text" value="${tkEsc(x.title || '')}" placeholder="例：書類をメールで送付"><select class="w">${who}</select><select class="a">${aft}</select><button type="button" onclick="this.parentElement.remove()" aria-label="削除">×</button></div>`;
+}
+function tkThenAddRow() {
+  const box = document.getElementById('tkf-then');
+  if (!box) return;
+  box.insertAdjacentHTML('beforeend', tkThenRowHtml());
+  box.lastElementChild.querySelector('input')?.focus();
+}
+function tkThenReadForm() {
+  const rows = [...document.querySelectorAll('#tkf-then .tk-then-row')].map(r => ({
+    title: r.querySelector('input').value.trim(), assignee: r.querySelector('select.w').value, after: r.querySelector('select.a').value
+  })).filter(x => x.title);
+  return rows.length ? rows : null;
+}
+// 完了にしたときに次のタスクを作る（作ったIDの一覧を返す）
+async function tkCreateThenTasks(id, t, me) {
+  const list = tkThen(t);
+  if (!list.length || t.thenIds) return [];
+  const now = Date.now();
+  const made = list.map((x, i) => {
+    const nid = tkNewId() + 't' + i;
+    const rec = {
+      title: x.title, detail: `「${t.title}」が完了したので自動で作成しました`,
+      assignee: tkThenAssignee(x, t, me), priority: t.priority || 'normal', due: tkThenDue(x.after), dueTime: '',
+      status: 'todo', createdBy: me, createdAt: now, updatedAt: now, updatedBy: me, fromTask: id
+    };
+    TK.tasks[nid] = rec;
+    return [nid, rec];
+  });
+  t.thenIds = made.map(([nid]) => nid);
+  tkRefreshAll();
+  await tkSave('tasks/' + id, 'PATCH', { thenIds: t.thenIds });
+  for (const [nid, rec] of made) await tkSave('tasks/' + nid, 'PUT', rec, () => { delete TK.tasks[nid]; });
+  return made;
+}
+// 完了を取り消したとき：自動で作ったタスクのうち、まだ誰も手を付けていないものは消す（もう一度完了にしたとき二重にならないように）
+async function tkUndoThenTasks(id, t) {
+  const ids = t.thenIds ? (Array.isArray(t.thenIds) ? t.thenIds : Object.values(t.thenIds)) : [];
+  if (!ids.length) return;
+  const untouched = ids.filter(nid => { const x = TK.tasks[nid]; return x && x.status === 'todo' && x.updatedAt === x.createdAt; });
+  untouched.forEach(nid => delete TK.tasks[nid]);
+  delete t.thenIds;
+  tkRefreshAll();
+  await tkSave('tasks/' + id, 'PATCH', { thenIds: null });
+  for (const nid of untouched) await tkSave('tasks/' + nid, 'DELETE');
+  if (untouched.length) showToast(`自動で作った次のタスク（${untouched.length}件）も取り消しました`);
+}
 // チェックリスト（{項目ID: {text, order, done, doneBy, doneAt}}）を並び順の配列で返す
 function tkChecklist(t) {
   return Object.entries((t && t.checklist) || {}).filter(([, c]) => c && c.text)
@@ -20605,6 +20692,8 @@ function tkItemHtml(t, compact) {
   const prioTag = t.priority === 'high' ? '<span class="tk-tag high">優先度：高</span>' : '';
   const statusTag = doing ? '<span class="tk-tag doing">作業中</span>' : '';
   const rep = t.repeat && t.repeat !== 'none' ? `<span class="tk-tag">🔁 ${tkEsc(TK_REPEAT[t.repeat] || '')}</span>` : '';
+  const thenTag = tkThen(t).length ? `<span class="tk-tag then">➡ 完了後：${tkEsc(tkThen(t).map(x => x.title).join('、'))}</span>` : '';
+  const fromTag = t.fromTask && TK.tasks[t.fromTask] ? `<span class="tk-tag">⬅ 「${tkEsc(TK.tasks[t.fromTask].title)}」の次</span>` : '';
   const helpers = tkHelpers(t);
   const helperTag = helpers.length ? `<span class="tk-tag ${helpers.includes(me) ? 'me' : ''}">👥 ${tkEsc(helpers.map(tkName).join('・'))}</span>` : '';
   const cl = tkChecklist(t);
@@ -20630,7 +20719,7 @@ function tkItemHtml(t, compact) {
     : `<button class="tk-start" onclick="tkToggleDoing('${t.id}')">作業開始</button>`;
   // タップで開く中身：詳しいタグ・作業中の人・メモ・チェックリスト・作業開始／編集ボタン
   const detailHtml = open ? `<div class="tk-detail" onclick="event.stopPropagation()">
-      <div class="tk-meta">${statusTag}${assignTag}${helperTag}${dueTag}${prioTag}${clTag}${groupTag}${rep}</div>
+      <div class="tk-meta">${statusTag}${assignTag}${helperTag}${dueTag}${prioTag}${clTag}${groupTag}${rep}${thenTag}${fromTag}</div>
       ${who}
       ${t.detail ? `<div class="tk-detail-memo">${tkEsc(t.detail).replace(/\n/g, '<br>')}</div>` : ''}
       ${clHtml}
@@ -20645,6 +20734,7 @@ function tkItemHtml(t, compact) {
     cl.length ? `<span class="tk-ic">☑${clDone}/${cl.length}</span>` : '',
     t.groupId ? '<span class="tk-ic">👪</span>' : '',
     t.repeat && t.repeat !== 'none' ? '<span class="tk-ic">🔁</span>' : '',
+    tkThen(t).length && !done ? '<span class="tk-ic" title="完了したら次のタスクが作られます">➡</span>' : '',
   ].join('');
   const showAssignee = !TK._hideAssignee;
   const iAmHelper = helpers.includes(me) && t.assignee !== me;
@@ -20894,7 +20984,8 @@ async function tkToggleDone(id, opts) {
     const patch = { status: 'todo', doneBy: null, doneAt: null, updatedAt: Date.now(), updatedBy: me };
     Object.assign(t, patch); delete t.doneBy; delete t.doneAt;
     tkRefreshAll();
-    await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; });
+    const ok = await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; });
+    if (ok) await tkUndoThenTasks(id, t);
     return;
   }
   if (t.status === 'doing' && t.doingBy && t.doingBy !== me) {
@@ -20928,7 +21019,7 @@ async function tkToggleDone(id, opts) {
       startDate: null,
       checklist: tkChecklist(t).length ? Object.fromEntries(tkChecklist(t).map((c, i) => [tkNewId() + i, { text: c.text, order: i }])) : null,
       due: tkNextDue(t.due || tkToday(), t.repeat), dueTime: t.dueTime || '', repeat: t.repeat,
-      dueType: tkIsSoft(t) ? 'soft' : null,
+      dueType: tkIsSoft(t) ? 'soft' : null, then: tkThen(t).length ? tkThen(t) : null,
       status: 'todo', createdBy: t.createdBy || me, createdAt: Date.now(), updatedAt: Date.now(), updatedBy: me,
       autoRepeat: true // 自動で作った次回分（「新しいタスク」の通知は送らない）
     };
@@ -20942,9 +21033,12 @@ async function tkToggleDone(id, opts) {
     TK.tasks[nextId] = nextRec;
   }
   tkRefreshAll();
-  showToast(nextRec ? `完了しました。次回（${tkShortDate(nextRec.due)}）の分を作成しました` : '完了しました');
+  const thenCount = tkThen(t).length && !t.thenIds ? tkThen(t).length : 0;
+  showToast((nextRec ? `完了しました。次回（${tkShortDate(nextRec.due)}）の分を作成しました` : '完了しました') +
+    (thenCount ? `。次にやること（${tkThen(t).map(x => x.title).join('、')}）をタスクに追加しました` : ''));
   const ok = await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; if (nextId) delete TK.tasks[nextId]; });
   if (ok && nextRec) await tkSave('tasks/' + nextId, 'PUT', nextRec, () => { delete TK.tasks[nextId]; });
+  if (ok && thenCount) await tkCreateThenTasks(id, t, me);
 }
 // チェックリストの1項目を付けたり外したりする（その項目だけを書き換えるので、同時に別の人が
 // ほかの項目をチェックしても上書きし合わない）
@@ -21018,6 +21112,7 @@ function tkSeriesFromTask(t, anchor, me) {
     dueTime: t.dueTime || '', dueType: tkIsSoft(t) ? 'soft' : null,
     repeat: t.repeat, anchor, span: span || null,
     checklistTexts: tkChecklist(t).length ? tkChecklist(t).map(c => c.text) : null,
+    then: tkThen(t).length ? tkThen(t) : null,
     seriesGroup: t.seriesGroup || null,
     createdBy: t.createdBy || me, createdAt: Date.now(), updatedAt: Date.now(), updatedBy: me,
   };
@@ -21032,6 +21127,7 @@ function tkInstanceFromSeries(sid, sr, ymd) {
     due: ymd, startDate: sr.span ? tkAddDays(ymd, -sr.span) : null,
     checklist: cl.length ? Object.fromEntries(cl.map((text, i) => ['c' + i, { text, order: i }])) : null,
     repeat: sr.repeat, seriesId: sid, groupId: sr.seriesGroup ? sr.seriesGroup + '_' + ymd : null,
+    then: tkThen(sr).length ? tkThen(sr) : null,
     status: 'todo', createdBy: sr.createdBy || '', createdAt: Date.now(),
     autoRepeat: true // 自動で作った分（「新しいタスク」の通知は送らない）
   };
@@ -21099,6 +21195,7 @@ async function tkApplyToSeries(id, t, rec, clRows) {
   const fields = {
     title: rec.title, detail: rec.detail, assignee: rec.assignee, priority: rec.priority,
     helpers: rec.helpers || null, dueTime: rec.dueTime || '', dueType: rec.dueType || null,
+    then: rec.then || null,
   };
   const spatch = { ...fields, repeat: rec.repeat, checklistTexts: clRows.length ? clRows.map(r => r.text) : null, updatedAt: Date.now(), updatedBy: me };
   if (rec.repeat !== sr.repeat) spatch.anchor = rec.due || t.due || tkToday(); // 繰り返し方を変えたら、この回を起点にする
@@ -21203,6 +21300,11 @@ function tkOpenTaskModal(id, presetDue) {
     </div>
     ${t && t.seriesId ? `<div class="tk-f" style="margin-top:-6px;font-size:11px;color:var(--text-muted)">🔁 繰り返しタスクです。やること・担当者・時刻などの変更は今後の分にも反映されます。「なし」にすると繰り返しを止めます。</div>`
       : `<div class="tk-f" style="margin-top:-6px;font-size:11px;color:var(--text-muted)">繰り返しを選ぶと、前回分を完了したかどうかに関係なく、その日になると自動で表示されます。</div>`}
+    <div class="tk-f"><label>完了したら次にやること（任意）</label>
+      <div id="tkf-then">${tkThen(v).map(x => tkThenRowHtml(x)).join('')}</div>
+      <button type="button" class="tk-chip" style="margin-top:2px" onclick="tkThenAddRow()">＋ 次にやることを追加</button>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">このタスクを完了にすると、ここに書いたタスクが自動で作られ、担当者に届きます。繰り返しタスクなら毎回作られます。<br>例：「UPS」→ 完了したら「書類をメールで送付」</div>
+    </div>
     ${t ? `<div class="tk-f"><label>状態</label><select id="tkf-status">${opt(TK_STATUS, v.status || 'todo')}</select></div>` : ''}
     <div class="tk-btns">
       ${t ? `<button class="tk-btn-del" onclick="tkDeleteTask('${id}')">削除</button>` : ''}
@@ -21246,6 +21348,7 @@ async function tkSaveTask(id) {
     priority: document.getElementById('tkf-prio').value,
     repeat: document.getElementById('tkf-repeat').value,
     dueType: document.getElementById('tkf-duetype')?.dataset.v === 'soft' ? 'soft' : null,
+    then: tkThenReadForm(),
     updatedAt: now, updatedBy: me,
   };
   if (rec.startDate && (!rec.due || rec.startDate >= rec.due)) rec.startDate = null; // 期限日以降の開始日は使わない
