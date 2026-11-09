@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-09e">
+<meta name="app-build" content="2026-11-09f">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -26830,7 +26830,7 @@ function rtReturnCard(r) {
   const stepBtns = steps.map(([k, l], i) => `<button class="${i < ci ? 'past' : i === ci ? 'cur' : ''}" onclick="rtSetStatus('${r.id}','${k}')">${l}</button>`).join('');
   const mc = r.mercariId && RT.mercari[r.mercariId];
   const refundLine = rtIsClaim(r) && !r.refund && !r.refundDate && !r.refundPending ? '' :
-    `<div class="rt-money"><span>返金</span><span>${r.refundPending ? '<span class="az-tag">代表に確認中</span> ' : ''}${r.refund ? rtYen(r.refund) + (r.price ? `（販売額の${Math.round(r.refund / r.price * 100)}%）` : '') : '金額未定'}${r.refundDate ? '・' + rtMd(r.refundDate) + ' 返金済み' : ''}</span></div>`;
+    `<div class="rt-money"><span>返金</span><span>${r.refundPending ? '<span class="az-tag">代表に確認中</span> ' : ''}${r.refund ? rtYen(r.refund) + (r.refundBaseRate ? `（${r.refundBaseRate === 1 ? '全額' : '50%'}${r.shipBack ? ' − 着払い送料 ' + rtYen(r.shipBack) : ''}）` : r.price ? `（販売額の${Math.round(r.refund / r.price * 100)}%）` : '') : '金額未定'}${r.refundDate ? '・' + rtMd(r.refundDate) + ' 返金済み' : ''}</span></div>`;
   return `<div class="rt-item ${warns.length ? 'warn' : ''}">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
       <div style="min-width:0"><div class="t">${rtEsc(r.model || r.title || '（商品不明）')} <span class="az-tag gray">${rtEsc(RT_KIND[r.kind] || '')}</span> ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''}</div>
@@ -26843,7 +26843,6 @@ function rtReturnCard(r) {
     ${warns.length ? `<div style="margin-top:6px">${warns.map(w => `<span class="az-tag">${rtEsc(w)}</span>`).join(' ')}</div>` : ''}
     <div class="rt-steps">${stepBtns}</div>
     ${refundLine}
-    ${r.shipBack ? `<div class="rt-money"><span>返送料（着払い）</span><span>${rtYen(r.shipBack)}</span></div>` : ''}
     ${r.result ? `<div class="rt-money"><span>行き先</span><span>${rtEsc(RT_RESULT[r.result])}${r.result === 'resell' && r.resultLoc ? '（' + rtEsc(locName(r.resultLoc)) + '）' : ''}${mc ? '・メルカリ ' + rtEsc((MC_STEPS.find(s => s[0] === mc.status) || [])[1] || '') : ''}</span></div>` : ''}
     ${r.memo ? `<div class="s" style="white-space:pre-wrap;margin-top:4px">📝 ${rtEsc(r.memo)}</div>` : ''}
     <div class="rt-row" style="justify-content:flex-end">
@@ -27011,24 +27010,39 @@ async function rtSetStatus(id, st) {
 // ── 返金 ──
 function rtOpenRefund(id) {
   const r = RT.returns[id]; if (!r) return;
-  RT.edit = { id };
+  RT.edit = { id, rate: r.refundBaseRate || null };
+  setTimeout(() => { if (RT.edit && RT.edit.rate) { const b = document.getElementById('rt-pre-' + RT.edit.rate); if (b) b.classList.add('primary'); } }, 0);
   rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:4px">返金を記録</div>
     <div class="az-sub" style="margin-bottom:10px">${rtEsc(r.model || r.title)}${r.price ? '・販売額 ' + rtYen(r.price) : ''}</div>
     ${r.price ? `<div class="rt-row" style="margin:0 0 8px">
-      <button type="button" class="az-btn small" onclick="rtRefundPreset(1)">全額 ${rtYen(r.price)}</button>
-      <button type="button" class="az-btn small" onclick="rtRefundPreset(0.5)">50% ${rtYen(Math.floor(r.price * 0.5))}</button>
-      <span class="az-sub">販売額から計算します（あとで金額を直せます）</span></div>` : '<div class="az-sub" style="margin-bottom:8px">販売額がわからないため、金額を直接入力してください</div>'}
+      <button type="button" class="az-btn small" id="rt-pre-1" onclick="rtRefundPreset(1)">全額 ${rtYen(r.price)}</button>
+      <button type="button" class="az-btn small" id="rt-pre-0.5" onclick="rtRefundPreset(0.5)">50% ${rtYen(Math.floor(r.price * 0.5))}</button>
+      <span class="az-sub">販売額から計算し、着払いの送料を差し引きます（あとで金額を直せます）</span></div>` : '<div class="az-sub" style="margin-bottom:8px">販売額がわからないため、金額を直接入力してください</div>'}
     <div class="rt-g2"><div class="rt-f"><label>返金額</label><input type="number" id="rt-refund" value="${r.refund || ''}" placeholder="${r.price || ''}"></div>
       <div class="rt-f"><label>返金した日</label><input type="date" id="rt-refund-date" value="${rtEsc(r.refundDate || '')}"></div></div>
-    <div class="rt-f"><label>返送料（着払いで当社が払った送料）</label><input type="number" id="rt-shipback" value="${r.shipBack || ''}" placeholder="なければ空欄"></div>
+    <div class="rt-f"><label>着払いの送料（返金額から差し引きます）</label><input type="number" id="rt-shipback" value="${r.shipBack || ''}" placeholder="元払いなら空欄" oninput="rtRefundCalc()"></div>
+    <div id="rt-refund-calc" class="az-sub" style="margin:-4px 0 10px"></div>
     <label style="display:flex;gap:6px;align-items:center;font-size:13px;margin-bottom:10px"><input type="checkbox" id="rt-refund-pending" ${r.refundPending ? 'checked' : ''}> 返金額を代表に確認中（まだ返金していない）</label>
     <div class="az-sub" style="margin-bottom:10px">返金した日を入れると「返金済み」になります。金額だけ決まっていて、まだ返金していない場合は日付を空にしてください。</div>
     <div style="display:flex;gap:8px"><button class="az-btn" style="flex:1" onclick="rtCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="rtSaveRefund()">保存</button></div>`);
 }
 // 全額・50%：販売額（注文の金額）から計算して入れる。お客様都合の返品は50%返金のことがある
+// 着払いで返送されたときは、その送料を返金額から差し引く（元払いなら送料は空欄）
 function rtRefundPreset(rate) {
   const r = RT.returns[RT.edit && RT.edit.id]; if (!r || !r.price) return;
-  document.getElementById('rt-refund').value = Math.floor(r.price * rate);
+  RT.edit.rate = rate;
+  ['1', '0.5'].forEach(k => { const b = document.getElementById('rt-pre-' + k); if (b) b.classList.toggle('primary', Number(k) === rate); });
+  rtRefundCalc();
+}
+function rtRefundCalc() {
+  const r = RT.returns[RT.edit && RT.edit.id]; if (!r) return;
+  const ship = Number(document.getElementById('rt-shipback').value) || 0;
+  const box = document.getElementById('rt-refund-calc');
+  if (!RT.edit.rate || !r.price) { if (box) box.textContent = ''; return; }
+  const base = Math.floor(r.price * RT.edit.rate);
+  const v = Math.max(0, base - ship);
+  document.getElementById('rt-refund').value = v;
+  if (box) box.textContent = `${RT.edit.rate === 1 ? '全額' : '50%'} ${rtYen(base)}${ship ? ' − 着払いの送料 ' + rtYen(ship) : ''} ＝ 返金額 ${rtYen(v)}`;
 }
 async function rtSaveRefund() {
   const id = RT.edit && RT.edit.id, r = RT.returns[id]; if (!r) return;
@@ -27037,8 +27051,10 @@ async function rtSaveRefund() {
   r.refundPending = document.getElementById('rt-refund-pending').checked && !r.refundDate;
   r.shipBack = Number(document.getElementById('rt-shipback').value) || 0;
   if (!r.shipBack) delete r.shipBack;
-  r.refundRate = r.price && r.refund ? Math.round(r.refund / r.price * 100) : null;
-  if (r.refundRate == null) delete r.refundRate;
+  // 全額・50%のどちらを基準にしたか（送料を引く前の割合）を残す
+  const base = RT.edit.rate && r.price ? Math.floor(r.price * RT.edit.rate) : null;
+  if (base != null && r.refund === Math.max(0, base - (r.shipBack || 0))) r.refundBaseRate = RT.edit.rate; else delete r.refundBaseRate;
+  delete r.refundRate;
   r.updatedAt = Date.now(); r.updatedBy = rtMe();
   try { await rtPut('returns/' + id, r); rtCloseModal(); rtRender(); rtRenderBanner(); showToast('返金を記録しました'); } catch (e) { showToast('保存に失敗しました'); }
 }
