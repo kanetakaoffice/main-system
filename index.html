@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-09c">
+<meta name="app-build" content="2026-11-09d">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1816,6 +1816,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   <div style="display:flex;gap:20px;align-items:flex-start">
     <!-- 左：在庫一覧 -->
     <div id="inv-list-col" style="flex:1;min-width:0">
+      <div id="rt-inv-banner"></div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
         <div style="font-size:14px;color:var(--text-sub);font-weight:500" id="inv-list-count">0件</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1943,9 +1944,11 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <button class="tab-switch-btn active" id="packec-tab-amazon" onclick="switchPackecTab('amazon')">📦 Amazon</button>
     <button class="tab-switch-btn" id="packec-tab-list" onclick="switchPackecTab('list')">🚚 出荷リスト</button>
     <button class="tab-switch-btn" id="packec-tab-add" onclick="switchPackecTab('add')">📝 追加</button>
+    <button class="tab-switch-btn" id="packec-tab-returns" onclick="switchPackecTab('returns')">↩️ 返品・メルカリ</button>
     <button class="tab-switch-btn" id="packec-tab-ec" onclick="switchPackecTab('ec')">🛒 EC</button>
   </div>
   <div id="packec-body-amazon"><div id="az-root"></div></div>
+  <div id="packec-body-returns" style="display:none"><div id="rt-root"></div></div>
   <div id="packec-body-list" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <span style="font-size:13px;font-weight:700;color:#3a3a3a">本日の出荷リスト</span>
@@ -4176,6 +4179,7 @@ function showInvScreen(name) {
   }
   if (name === 'inv-list') {
     renderInventoryList();
+    if (typeof rtRenderBanner === 'function') rtRenderBanner();
   }
   if (name === 'inv-packec') {
     const addTab = document.getElementById('packec-tab-add');
@@ -4186,6 +4190,9 @@ function showInvScreen(name) {
     if (listTab) listTab.style.display = 'none';
     if (addTab) addTab.style.display = 'none';
     if (ecTab)  ecTab.style.display  = isAdmin() ? '' : 'none';
+    // 返品・メルカリは返金額や売上を扱うので管理者だけ
+    const rtTab = document.getElementById('packec-tab-returns');
+    if (rtTab) rtTab.style.display = isAdmin() ? '' : 'none';
     // Amazonの自己配送の注文（取り込み・梱包リスト・在庫を減らす）を最初に開く
     switchPackecTab('amazon');
     // 出荷管理画面を開き直すたびに、日別グラフは当月表示に戻す（前回開いた時に過去の月を
@@ -15208,13 +15215,14 @@ function togglePackecSection(name) {
 }
 
 function switchPackecTab(tab) {
-  ['amazon','list','add','ec'].forEach(t => {
+  ['amazon','returns','list','add','ec'].forEach(t => {
     const body = document.getElementById('packec-body-' + t);
     const btn  = document.getElementById('packec-tab-' + t);
     if (body) body.style.display = t === tab ? 'block' : 'none';
     if (btn)  btn.classList.toggle('active', t === tab);
   });
   if (tab === 'amazon' && typeof azOpen === 'function') azOpen();
+  if (tab === 'returns' && typeof rtOpen === 'function') rtOpen();
   if (tab === 'ec') {
     const dateEl = document.getElementById('ec-date-sp');
     if (dateEl && !dateEl.value) dateEl.value = todayStr();
@@ -16414,7 +16422,7 @@ function selectMonth(year, month, btnEl) {
     }).join('');
     html += `
       <div class="accordion-header" onclick="toggleAccordion('ecsales')">
-        <span class="accordion-title">💰 EC売上（Amazon・自社EC） <span style="font-size:11px;color:var(--text-muted);font-weight:400">${ecApps.length}件</span></span>
+        <span class="accordion-title">💰 EC売上（Amazon・メルカリ・自社EC） <span style="font-size:11px;color:var(--text-muted);font-weight:400">${ecApps.length}件</span></span>
         <span style="display:flex;align-items:center;gap:8px">
           <span class="accordion-summary" style="color:var(--teal)">¥${ecTotal.toLocaleString('ja-JP')}</span>
           <span class="accordion-arrow" id="acc-arrow-ecsales">▼</span>
@@ -26654,5 +26662,536 @@ async function ercCommit() {
   } catch (e) { console.error(e); showToast('登録に失敗しました。もう一度お試しください'); }
 }
 </script>
+<!-- ============================================================
+     返品・クレーム／返品在庫／メルカリ（出荷管理の「↩️ 返品・メルカリ」タブ）
+     要望：「Amazonの返品やクレームのリストを作りたい。返品在庫の把握ができていない。どのお客様の
+           どの商品が何が原因で返品・クレームになったのか、返金にあたってどの商品が返送されているかも
+           管理できていない。Amazonで再販できない返品はメルカリで販売しているので、その在庫や売上も
+           管理したい」への対応（返品・クレームは月5件程度、メルカリは月10件程度、対応は1人）。
+
+     ■ データ
+       /returns/{id}  {orderId, asin, sku, title, model, productKey, qty, price, supplier, cost,
+                       kind: return|exchange|claim, reason, reasonDetail, status, receivedDate,
+                       arrivedDate, refund, refundDate, refundPending, result, resultDate, resultLoc,
+                       restockMoveKey, mercariId, memo, createdAt, createdBy, updatedAt, updatedBy, doneAt}
+           status（返品・交換）：received 受付 → waiting 返送待ち → arrived 到着・検品 → done 完了
+           status（クレームのみ）：received 受付 → handling 対応中 → done 完了
+           result（検品後の行き先）：resell 新品として再販（在庫に戻す）／mercari メルカリで販売／
+                                     supplier 仕入先へ返品／dispose 廃棄
+           ※お客様の名前・住所は保存しない。注文IDから Seller Central の注文ページを開いて確認する。
+       /mercari/{id}  {title, model, productKey, fromReturn, cost, status: stock|listed|sold|shipped,
+                       listPrice, listedDate, soldPrice, soldDate, fee, shipCost, shippedDate,
+                       stockMoveKey, stockLoc, memo, createdAt, updatedAt}
+           売れたら EC売上（/ecSales/mc_{id}）に販路「メルカリ」として売値（税込・手数料を引く前）を記録する。
+           返品から来た商品は通常の在庫に入っていないので在庫は動かさない。在庫の商品を直接メルカリに
+           出した場合だけ、売れたときに在庫を減らす。
+     ============================================================ -->
+<style>
+.rt-seg { display:flex; gap:4px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:3px; margin-bottom:12px; }
+.rt-seg button { flex:1; border:none; background:none; padding:8px 6px; font-size:12.5px; font-weight:700; color:var(--text-muted); border-radius:8px; cursor:pointer; white-space:nowrap; }
+.rt-seg button.on { background:var(--white); color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.08); }
+.rt-sum { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin-bottom:12px; }
+.rt-sum > div { background:var(--white); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+.rt-sum .k { font-size:11px; color:var(--text-muted); font-weight:700; }
+.rt-sum .v { font-size:19px; font-weight:800; margin-top:2px; }
+.rt-sum .v.red { color:#c0392b; }
+.rt-item { border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px; background:var(--white); }
+.rt-item.warn { border-color:#e57373; }
+.rt-item .t { font-weight:800; font-size:14px; }
+.rt-item .az-btn.small { flex:none; white-space:nowrap; }
+@media (max-width:640px) { .rt-sum { grid-template-columns:1fr 1fr; } .rt-sum .v { font-size:17px; } }
+.rt-item .s { font-size:12px; color:var(--text-muted); margin-top:3px; line-height:1.6; }
+.rt-steps { display:flex; gap:4px; margin:10px 0 6px; flex-wrap:wrap; }
+.rt-steps button { flex:1; min-width:64px; padding:6px 4px; font-size:11.5px; font-weight:700; border:1.5px solid var(--border); background:var(--white); color:var(--text-muted); border-radius:8px; cursor:pointer; }
+.rt-steps button.past { background:#e8f5e9; border-color:#b5dcb8; color:#2e7d32; }
+.rt-steps button.cur { background:#3a3a3a; border-color:#3a3a3a; color:#fff; }
+.rt-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+.rt-f { margin-bottom:10px; }
+.rt-f label { display:block; font-size:12px; font-weight:700; color:var(--text-sub); margin-bottom:4px; }
+.rt-f input, .rt-f select, .rt-f textarea { width:100%; box-sizing:border-box; padding:9px 10px; font-size:14px; border:1.5px solid var(--border); border-radius:8px; font-family:inherit; background:var(--white); }
+.rt-g2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.rt-pick { padding:8px 6px; border-top:1px solid var(--border); cursor:pointer; font-size:13px; }
+.rt-pick:hover { background:var(--surface); }
+.rt-money { display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0; }
+.rt-plus { color:#2e7d32; font-weight:800; }
+.rt-minus { color:#c0392b; font-weight:800; }
+#rt-inv-banner .rt-bn { display:flex; align-items:center; justify-content:space-between; gap:8px; background:#fff7e6; border:1px solid #f5d48c; color:#8a5a00; border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px; font-weight:700; cursor:pointer; }
+</style>
+
+<div id="rt-modal" class="az-modal" onclick="if(event.target===this)rtCloseModal()">
+  <div class="az-modal-box" style="max-width:520px" id="rt-modal-box"></div>
+</div>
+
+<script>
+const RT = { returns: {}, mercari: {}, loaded: false, view: 'returns', showDone: false, edit: null, pick: null };
+const RT_KIND = { return: '返品', exchange: '交換', claim: 'クレームのみ' };
+const RT_REASON = ['初期不良・動かない', '配送中の破損・傷', 'イメージと違う', '不要になった・注文間違い', '付属品の欠品', '商品違い・誤配送', 'その他'];
+const RT_STEPS_RETURN = [['received', '受付'], ['waiting', '返送待ち'], ['arrived', '到着・検品'], ['done', '完了']];
+const RT_STEPS_CLAIM = [['received', '受付'], ['handling', '対応中'], ['done', '完了']];
+const RT_RESULT = { resell: '新品として再販（在庫に戻す）', mercari: 'メルカリで販売', supplier: '仕入先へ返品', dispose: '廃棄' };
+const MC_STEPS = [['stock', '出品前'], ['listed', '出品中'], ['sold', '売れた'], ['shipped', '発送済み']];
+const MC_FEE_RATE = 0.10; // メルカリの販売手数料（売値の10%）
+
+function rtEsc(s) { return escapeHtmlMain(s == null ? '' : String(s)); }
+function rtYen(n) { return (n < 0 ? '−' : '') + '¥' + Math.abs(Math.round(Number(n) || 0)).toLocaleString('ja-JP'); }
+function rtMe() { return typeof currentSessionEmail === 'function' ? currentSessionEmail() : ''; }
+function rtDays(from) { if (!from) return 0; return Math.floor((new Date(todayStr() + 'T00:00:00') - new Date(from + 'T00:00:00')) / 864e5); }
+function rtMd(d) { return d ? Number(d.slice(5, 7)) + '/' + Number(d.slice(8, 10)) : ''; }
+function rtScUrl(orderId) { return 'https://sellercentral.amazon.co.jp/orders-v3/order/' + encodeURIComponent(orderId); }
+async function rtPut(path, v) { const r = await fetch(authedUrl('/' + path + '.json'), { method: 'PUT', body: JSON.stringify(v) }); if (!r.ok) throw new Error('save'); }
+async function rtDel(path) { const r = await fetch(authedUrl('/' + path + '.json'), { method: 'DELETE' }); if (!r.ok) throw new Error('del'); }
+function rtNewId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+async function rtLoad() {
+  const [r, m] = await Promise.all([
+    fetch(authedUrl('/returns.json')).then(x => x.json()).catch(() => null),
+    fetch(authedUrl('/mercari.json')).then(x => x.json()).catch(() => null)
+  ]);
+  RT.returns = r || {}; RT.mercari = m || {}; RT.loaded = true;
+  if (!products || !products.length) await loadInventory();
+  if (typeof azLoad === 'function' && !AZ.loaded) { try { await azLoad(); } catch (e) {} }
+}
+async function rtOpen() {
+  const root = document.getElementById('rt-root'); if (!root) return;
+  if (!RT.loaded) root.innerHTML = '<div class="az-empty">読み込み中…</div>';
+  try { await rtLoad(); } catch (e) { root.innerHTML = '<div class="az-empty">読み込みに失敗しました</div>'; return; }
+  rtRender(); rtRenderBanner();
+}
+function rtSetView(v) { RT.view = v; rtRender(); }
+
+// ── 状態の判定 ──
+const rtIsClaim = r => r.kind === 'claim';
+const rtSteps = r => rtIsClaim(r) ? RT_STEPS_CLAIM : RT_STEPS_RETURN;
+// 返品在庫：到着した返品で、行き先がまだ決まっていない／メルカリ行きでまだ売れていないもの
+function rtInStock(r) {
+  if (rtIsClaim(r) || !r.arrivedDate) return false;
+  if (!r.result) return true;
+  if (r.result === 'mercari') { const m = RT.mercari[r.mercariId]; return !m || !['sold', 'shipped'].includes(m.status); }
+  return false;
+}
+function rtWarnings(r) {
+  const w = [];
+  if (r.status === 'done') return w;
+  if (!rtIsClaim(r) && r.status === 'waiting' && rtDays(r.receivedDate) >= 14) w.push(`返送待ちが${rtDays(r.receivedDate)}日`);
+  if (!rtIsClaim(r) && r.arrivedDate && r.kind === 'return' && !r.refundDate) w.push('到着済み・返金がまだ');
+  if (r.refundPending) w.push('返金額を代表に確認中');
+  if (r.arrivedDate && !r.result && !rtIsClaim(r)) w.push('検品・行き先が未定');
+  return w;
+}
+
+// ── 画面 ──
+function rtRender() {
+  const root = document.getElementById('rt-root'); if (!root) return;
+  const all = Object.entries(RT.returns).map(([id, r]) => ({ id, ...r }));
+  const open = all.filter(r => r.status !== 'done');
+  const stock = all.filter(rtInStock);
+  const mcAll = Object.entries(RT.mercari).map(([id, m]) => ({ id, ...m }));
+  const ym = todayStr().slice(0, 7);
+  const mcMonth = mcAll.filter(m => ['sold', 'shipped'].includes(m.status) && (m.soldDate || '').startsWith(ym));
+  const warnCount = open.filter(r => rtWarnings(r).length).length;
+  const seg = (v, l) => `<button class="${RT.view === v ? 'on' : ''}" onclick="rtSetView('${v}')">${l}</button>`;
+  let body = '';
+  if (RT.view === 'returns') body = rtReturnsHtml(all);
+  else if (RT.view === 'stock') body = rtStockHtml(stock);
+  else body = rtMercariHtml(mcAll);
+  root.innerHTML = `
+    <div class="rt-sum">
+      <div><div class="k">対応中の返品・クレーム</div><div class="v">${open.length}<span style="font-size:12px">件</span></div></div>
+      <div><div class="k">要確認</div><div class="v ${warnCount ? 'red' : ''}">${warnCount}<span style="font-size:12px">件</span></div></div>
+      <div><div class="k">返品在庫</div><div class="v">${stock.reduce((s, r) => s + (Number(r.qty) || 1), 0)}<span style="font-size:12px">個</span></div></div>
+      <div><div class="k">メルカリ出品中</div><div class="v">${mcAll.filter(m => m.status === 'listed').length}<span style="font-size:12px">件</span></div></div>
+      <div><div class="k">今月のメルカリ売上</div><div class="v">${rtYen(mcMonth.reduce((s, m) => s + (Number(m.soldPrice) || 0), 0))}</div></div>
+    </div>
+    <div class="rt-seg">${seg('returns', '↩️ 返品・クレーム')}${seg('stock', `📦 返品在庫${stock.length ? '（' + stock.length + '）' : ''}`)}${seg('mercari', '🛍 メルカリ')}</div>
+    ${body}`;
+}
+
+function rtReturnsHtml(all) {
+  const open = all.filter(r => r.status !== 'done').sort((a, b) => (rtWarnings(b).length - rtWarnings(a).length) || String(a.receivedDate).localeCompare(String(b.receivedDate)));
+  const done = all.filter(r => r.status === 'done').sort((a, b) => String(b.doneAt || '').localeCompare(String(a.doneAt || '')));
+  // 理由別・仕入先別の件数（直近90日）…どの商品・仕入先で返品が多いかを見る
+  const since = ymdKey(new Date(Date.now() - 90 * 864e5));
+  const recent = all.filter(r => (r.receivedDate || '') >= since);
+  const count = key => { const g = {}; recent.forEach(r => { const k = r[key] || '不明'; g[k] = (g[k] || 0) + 1; }); return Object.entries(g).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${rtEsc(k)} ${n}`).join('・'); };
+  return `
+    <div class="az-card">
+      <div class="az-h"><span>返品・クレーム</span><button class="az-btn primary" onclick="rtOpenForm()">＋ 登録</button></div>
+      ${open.length ? open.map(rtReturnCard).join('') : '<div class="az-empty">対応中の返品・クレームはありません</div>'}
+      ${done.length ? `<button class="az-btn small" style="width:100%;margin-top:4px" onclick="RT.showDone=!RT.showDone;rtRender()">${RT.showDone ? '▲ 完了したものを閉じる' : `▼ 完了したもの（${done.length}件）`}</button>${RT.showDone ? '<div style="margin-top:10px">' + done.map(rtReturnCard).join('') + '</div>' : ''}` : ''}
+    </div>
+    ${recent.length ? `<div class="az-card"><div class="az-h"><span>直近90日の傾向（${recent.length}件）</span></div>
+      <div class="az-sub" style="line-height:1.9">理由：${count('reason')}<br>仕入先：${count('supplier')}<br>型番：${count('model')}</div></div>` : ''}`;
+}
+
+function rtReturnCard(r) {
+  const steps = rtSteps(r);
+  const ci = steps.findIndex(s => s[0] === r.status);
+  const warns = rtWarnings(r);
+  const stepBtns = steps.map(([k, l], i) => `<button class="${i < ci ? 'past' : i === ci ? 'cur' : ''}" onclick="rtSetStatus('${r.id}','${k}')">${l}</button>`).join('');
+  const mc = r.mercariId && RT.mercari[r.mercariId];
+  const refundLine = rtIsClaim(r) && !r.refund && !r.refundDate && !r.refundPending ? '' :
+    `<div class="rt-money"><span>返金</span><span>${r.refundPending ? '<span class="az-tag">代表に確認中</span> ' : ''}${r.refund ? rtYen(r.refund) : '金額未定'}${r.refundDate ? '（' + rtMd(r.refundDate) + ' 返金済み）' : ''}</span></div>`;
+  return `<div class="rt-item ${warns.length ? 'warn' : ''}">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+      <div style="min-width:0"><div class="t">${rtEsc(r.model || r.title || '（商品不明）')} <span class="az-tag gray">${rtEsc(RT_KIND[r.kind] || '')}</span> ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''}</div>
+        <div class="s">${rtEsc(r.reason || '')}${r.reasonDetail ? '：' + rtEsc(r.reasonDetail) : ''}</div>
+        <div class="s">${r.orderId ? `注文 <a href="${rtScUrl(r.orderId)}" target="_blank" rel="noopener" title="Seller Centralでお客様の情報を確認">${rtEsc(r.orderId)} ↗</a>・` : ''}受付 ${rtMd(r.receivedDate)}${r.arrivedDate ? '・到着 ' + rtMd(r.arrivedDate) : ''}</div>
+        <div class="s">${r.sku ? 'SKU ' + rtEsc(r.sku) + '・' : ''}${r.supplier ? '仕入先 ' + rtEsc(r.supplier) + '・' : ''}${r.cost ? '仕入 ' + rtYen(r.cost) + '・' : ''}${r.price ? '販売 ' + rtYen(r.price) : ''}</div>
+      </div>
+      <button class="az-btn small" onclick="rtOpenForm('${r.id}')">編集</button>
+    </div>
+    ${warns.length ? `<div style="margin-top:6px">${warns.map(w => `<span class="az-tag">${rtEsc(w)}</span>`).join(' ')}</div>` : ''}
+    <div class="rt-steps">${stepBtns}</div>
+    ${refundLine}
+    ${r.result ? `<div class="rt-money"><span>行き先</span><span>${rtEsc(RT_RESULT[r.result])}${r.result === 'resell' && r.resultLoc ? '（' + rtEsc(locName(r.resultLoc)) + '）' : ''}${mc ? '・メルカリ ' + rtEsc((MC_STEPS.find(s => s[0] === mc.status) || [])[1] || '') : ''}</span></div>` : ''}
+    ${r.memo ? `<div class="s" style="white-space:pre-wrap;margin-top:4px">📝 ${rtEsc(r.memo)}</div>` : ''}
+    <div class="rt-row" style="justify-content:flex-end">
+      ${!rtIsClaim(r) && r.arrivedDate && !r.result ? `<button class="az-btn small primary" onclick="rtOpenResult('${r.id}')">検品して行き先を決める</button>` : ''}
+      ${r.status !== 'done' && (r.kind === 'return' || r.refund || r.refundPending) && !r.refundDate ? `<button class="az-btn small" onclick="rtOpenRefund('${r.id}')">返金を記録</button>` : ''}
+      ${mc ? `<button class="az-btn small" onclick="rtSetView('mercari')">メルカリを見る</button>` : ''}
+      ${r.result && r.status !== 'done' && !(mc && ['sold', 'shipped'].includes(mc.status)) ? `<button class="az-btn small" onclick="rtUndoResult('${r.id}')">行き先を取り消す</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function rtStockHtml(stock) {
+  return `<div class="az-card"><div class="az-h"><span>返品在庫（到着して、まだ行き先が決まっていない・メルカリで売れていない商品）</span></div>
+    <div class="az-sub" style="margin-bottom:8px">返品された商品は、行き先が決まるまで通常の在庫には数えていません。「新品として再販」にすると在庫に戻ります。</div>
+    ${stock.length ? stock.map(r => { const mc = r.mercariId && RT.mercari[r.mercariId];
+      return `<div class="rt-item"><div class="t">${rtEsc(r.model || r.title)} ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''}</div>
+        <div class="s">到着 ${rtMd(r.arrivedDate)}（${rtDays(r.arrivedDate)}日前）・${rtEsc(r.reason || '')}${r.cost ? '・仕入 ' + rtYen(r.cost) : ''}</div>
+        <div class="rt-row" style="justify-content:space-between">${mc ? `<span class="az-tag ok">メルカリ ${rtEsc((MC_STEPS.find(s => s[0] === mc.status) || [])[1])}${mc.listPrice ? ' ' + rtYen(mc.listPrice) : ''}</span>` : '<span class="az-tag">行き先が未定</span>'}
+          ${mc ? `<button class="az-btn small" onclick="rtSetView('mercari')">メルカリを見る</button>` : `<button class="az-btn small primary" onclick="rtOpenResult('${r.id}')">行き先を決める</button>`}</div></div>`; }).join('')
+      : '<div class="az-empty">返品在庫はありません</div>'}</div>`;
+}
+
+function rtMercariHtml(all) {
+  const order = { stock: 0, listed: 1, sold: 2, shipped: 3 };
+  const active = all.filter(m => m.status !== 'shipped').sort((a, b) => order[a.status] - order[b.status]);
+  const shipped = all.filter(m => m.status === 'shipped').sort((a, b) => String(b.soldDate || '').localeCompare(String(a.soldDate || '')));
+  // 月別の集計（売れた日で数える）
+  const months = {}; all.filter(m => m.soldDate).forEach(m => { const k = m.soldDate.slice(0, 7); const x = months[k] || (months[k] = { n: 0, sale: 0, net: 0 }); x.n++; x.sale += Number(m.soldPrice) || 0; x.net += mcNet(m); });
+  const mRows = Object.entries(months).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 6);
+  return `<div class="az-card">
+      <div class="az-h"><span>メルカリ</span><button class="az-btn primary" onclick="mcOpenForm()">＋ 直接登録</button></div>
+      <div class="az-sub" style="margin-bottom:8px">返品から来た商品は「返品・クレーム」で行き先を「メルカリで販売」にすると、ここに自動で入ります。売れたら売値がEC売上（販路：メルカリ）に記録されます。</div>
+      ${active.length ? active.map(mcCard).join('') : '<div class="az-empty">出品前・出品中・発送待ちの商品はありません</div>'}
+      ${shipped.length ? `<button class="az-btn small" style="width:100%;margin-top:4px" onclick="RT.showMcDone=!RT.showMcDone;rtRender()">${RT.showMcDone ? '▲ 閉じる' : `▼ 発送済み（${shipped.length}件）`}</button>${RT.showMcDone ? '<div style="margin-top:10px">' + shipped.map(mcCard).join('') + '</div>' : ''}` : ''}
+    </div>
+    ${mRows.length ? `<div class="az-card"><div class="az-h"><span>月別（売れた日）</span></div>${mRows.map(([k, x]) => `<div class="rt-money"><span>${Number(k.slice(5))}月 ${x.n}件</span><span>売上 ${rtYen(x.sale)}・入金 ${rtYen(x.net)}</span></div>`).join('')}</div>` : ''}`;
+}
+// 入金額＝売値−手数料−送料
+function mcNet(m) { const p = Number(m.soldPrice) || 0; return p - (m.fee != null ? Number(m.fee) : Math.floor(p * MC_FEE_RATE)) - (Number(m.shipCost) || 0); }
+function mcCard(m) {
+  const ci = MC_STEPS.findIndex(s => s[0] === m.status);
+  const ret = m.fromReturn && RT.returns[m.fromReturn];
+  const sold = ['sold', 'shipped'].includes(m.status);
+  const net = sold ? mcNet(m) : null;
+  const diff = sold && m.cost ? net - m.cost : null;
+  return `<div class="rt-item">
+    <div style="display:flex;justify-content:space-between;gap:8px"><div style="min-width:0"><div class="t">${rtEsc(m.model || m.title)}</div>
+      <div class="s">${ret ? '↩️ 返品から（' + rtEsc(ret.reason || '') + '）・' : ''}${m.cost ? '仕入 ' + rtYen(m.cost) : ''}${m.listedDate ? '・出品 ' + rtMd(m.listedDate) : ''}${m.soldDate ? '・売れた ' + rtMd(m.soldDate) : ''}</div></div>
+      <button class="az-btn small" onclick="mcOpenForm('${m.id}')">編集</button></div>
+    <div class="rt-steps">${MC_STEPS.map(([k, l], i) => `<button class="${i < ci ? 'past' : i === ci ? 'cur' : ''}" onclick="mcStep('${m.id}','${k}')">${l}</button>`).join('')}</div>
+    ${m.listPrice && !sold ? `<div class="rt-money"><span>出品価格</span><span>${rtYen(m.listPrice)}</span></div>` : ''}
+    ${sold ? `<div class="rt-money"><span>売値</span><span>${rtYen(m.soldPrice)}</span></div>
+      <div class="rt-money"><span>手数料・送料</span><span>−${rtYen(m.fee != null ? m.fee : Math.floor((m.soldPrice || 0) * MC_FEE_RATE))}・−${rtYen(m.shipCost || 0)}</span></div>
+      <div class="rt-money"><span>入金</span><b>${rtYen(net)}</b></div>
+      ${diff != null ? `<div class="rt-money"><span>仕入値との差</span><span class="${diff >= 0 ? 'rt-plus' : 'rt-minus'}">${diff >= 0 ? '+' : ''}${rtYen(diff)}</span></div>` : ''}` : ''}
+    ${m.memo ? `<div class="s" style="white-space:pre-wrap">📝 ${rtEsc(m.memo)}</div>` : ''}
+  </div>`;
+}
+
+// ── 在庫一覧の上に「返品在庫 ○個」を出す ──
+async function rtRenderBanner() {
+  const el = document.getElementById('rt-inv-banner'); if (!el) return;
+  if (!isAdmin()) { el.innerHTML = ''; return; }
+  if (!RT.loaded) { try { await rtLoad(); } catch (e) { return; } }
+  const stock = Object.values(RT.returns).filter(rtInStock);
+  const open = Object.values(RT.returns).filter(r => r.status !== 'done' && rtWarnings(r).length).length;
+  if (!stock.length && !open) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="rt-bn" onclick="rtGoto('stock')"><span>↩️ 返品在庫 ${stock.reduce((s, r) => s + (Number(r.qty) || 1), 0)}個${open ? `・要確認の返品 ${open}件` : ''}（通常の在庫には含まれていません）</span><span>開く ›</span></div>`;
+}
+function rtGoto(view) { RT.view = view; showInvScreen('inv-packec'); switchPackecTab('returns'); }
+
+// ── 返品・クレームの登録・編集 ──
+function rtOpenModal(html) { document.getElementById('rt-modal-box').innerHTML = html; document.getElementById('rt-modal').style.display = 'flex'; }
+function rtCloseModal() { document.getElementById('rt-modal').style.display = 'none'; RT.edit = null; }
+function rtOpenForm(id) {
+  const r = id ? RT.returns[id] : { kind: 'return', status: 'received', receivedDate: todayStr(), qty: 1 };
+  RT.edit = { id: id || null, data: { ...r } };
+  const opt = (obj, v) => Object.entries(obj).map(([k, l]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${l}</option>`).join('');
+  rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:10px">${id ? '返品・クレームを編集' : '返品・クレームを登録'}</div>
+    <div class="rt-f"><label>Amazonの注文ID</label>
+      <div style="display:flex;gap:6px"><input type="text" id="rt-order" value="${rtEsc(r.orderId || '')}" placeholder="例：249-1234567-1234567" oninput="rtFindOrder()"></div>
+      <div id="rt-order-hits"></div></div>
+    <div class="rt-f"><label>商品</label><div id="rt-prod-line" class="az-sub" style="margin-bottom:6px">${rtEsc(r.model || r.title || '注文IDを入れると自動で入ります')}</div>
+      <input type="text" id="rt-prod-q" placeholder="注文が見つからないときは、型番・商品名で在庫から選ぶ" oninput="rtFindProduct()"><div id="rt-prod-hits"></div></div>
+    <div class="rt-g2">
+      <div class="rt-f"><label>種類</label><select id="rt-kind">${opt(RT_KIND, r.kind)}</select></div>
+      <div class="rt-f"><label>個数</label><input type="number" id="rt-qty" min="1" value="${r.qty || 1}"></div>
+    </div>
+    <div class="rt-f"><label>理由</label><select id="rt-reason">${RT_REASON.map(x => `<option ${x === r.reason ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+    <div class="rt-f"><label>理由の詳細（お客様からの連絡内容など）</label><textarea id="rt-detail" rows="2">${rtEsc(r.reasonDetail || '')}</textarea></div>
+    <div class="rt-g2">
+      <div class="rt-f"><label>受付日</label><input type="date" id="rt-received" value="${rtEsc(r.receivedDate || '')}"></div>
+      <div class="rt-f"><label>到着日（届いたら）</label><input type="date" id="rt-arrived" value="${rtEsc(r.arrivedDate || '')}"></div>
+    </div>
+    <div class="rt-f"><label>メモ</label><textarea id="rt-memo" rows="2">${rtEsc(r.memo || '')}</textarea></div>
+    <div style="display:flex;gap:8px;margin-top:8px">${id ? `<button class="az-btn" style="color:#c0392b" onclick="rtDelete('${id}')">削除</button>` : ''}
+      <button class="az-btn" style="flex:1" onclick="rtCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="rtSave()">保存</button></div>`);
+}
+// 注文IDから、取り込み済みのAmazonの注文を探す（同じ注文に複数の商品があれば選べるようにする）
+function rtFindOrder() {
+  const q = document.getElementById('rt-order').value.trim();
+  const box = document.getElementById('rt-order-hits');
+  if (q.length < 5) { box.innerHTML = ''; return; }
+  const hits = Object.entries(AZ.orders || {}).filter(([, o]) => String(o.orderId || '').includes(q)).slice(0, 8);
+  box.innerHTML = hits.length ? hits.map(([k, o]) => `<div class="rt-pick" onclick="rtPickOrder('${k}')"><b>${rtEsc(azModelOf(o) || '（型番不明）')}</b> ×${o.qty}<div class="az-sub">${rtEsc(o.orderId)}・${rtEsc((o.title || '').slice(0, 40))}</div></div>`).join('')
+    : '<div class="az-sub" style="margin-top:4px">取り込み済みの注文に見つかりません（90日より前の注文は残っていません）。下で商品を選んでください。</div>';
+}
+function rtPickOrder(k) {
+  const o = AZ.orders[k]; if (!o) return;
+  const s = azParseSku(o.sku);
+  Object.assign(RT.edit.data, { orderId: o.orderId, asin: o.asin || '', sku: o.sku || '', title: o.title || '', model: azModelOf(o) || '',
+    productKey: o.productKey || '', price: Number(o.price) || 0, supplier: s ? s.supplier : '', cost: s ? s.cost : 0 });
+  document.getElementById('rt-order').value = o.orderId;
+  document.getElementById('rt-qty').value = o.qty || 1;
+  document.getElementById('rt-order-hits').innerHTML = '';
+  document.getElementById('rt-prod-line').innerHTML = `<b>${rtEsc(RT.edit.data.model || '（型番不明）')}</b> ${rtEsc((o.title || '').slice(0, 50))}<br>${s ? `SKU ${rtEsc(o.sku)}・仕入 ${rtYen(s.cost)}・${rtEsc(s.supplier)}` : ''}`;
+}
+function rtFindProduct() {
+  const raw = document.getElementById('rt-prod-q').value.trim(), q = normalizeModelStr(raw);
+  const box = document.getElementById('rt-prod-hits');
+  if (!raw) { box.innerHTML = ''; return; }
+  const list = (products || []).filter(p => (q && normalizeModelStr(p.model).includes(q)) || String(p.name || '').includes(raw) || (q && String(p.jan || '').includes(q))).slice(0, 10);
+  box.innerHTML = list.map(p => `<div class="rt-pick" onclick="rtPickProduct('${p._key}')"><b>${rtEsc(p.model || '（型番なし）')}</b><div class="az-sub">${rtEsc(p.name || '')}</div></div>`).join('') || '<div class="az-sub">見つかりません</div>';
+}
+function rtPickProduct(key) {
+  const p = (products || []).find(x => x._key === key); if (!p) return;
+  Object.assign(RT.edit.data, { productKey: key, model: p.model || '', title: RT.edit.data.title || p.name || '' });
+  document.getElementById('rt-prod-hits').innerHTML = ''; document.getElementById('rt-prod-q').value = '';
+  document.getElementById('rt-prod-line').innerHTML = `<b>${rtEsc(p.model || '')}</b> ${rtEsc(p.name || '')}`;
+}
+async function rtSave() {
+  const e = RT.edit; if (!e) return;
+  const d = e.data, v = id => document.getElementById(id).value;
+  Object.assign(d, { orderId: v('rt-order').trim() || d.orderId || '', kind: v('rt-kind'), qty: Math.max(1, Number(v('rt-qty')) || 1), reason: v('rt-reason'),
+    reasonDetail: v('rt-detail').trim(), receivedDate: v('rt-received') || todayStr(), arrivedDate: v('rt-arrived') || '', memo: v('rt-memo').trim(),
+    updatedAt: Date.now(), updatedBy: rtMe() });
+  if (!d.model && !d.title) { showToast('注文IDから選ぶか、在庫から商品を選んでください'); return; }
+  // 到着日を入れたら状態も「到着・検品」まで進める（クレームのみは対象外）
+  if (d.kind !== 'claim' && d.arrivedDate && ['received', 'waiting'].includes(d.status)) d.status = 'arrived';
+  if (d.kind === 'claim' && !['received', 'handling', 'done'].includes(d.status)) d.status = 'handling';
+  if (d.kind !== 'claim' && d.status === 'handling') d.status = 'received';
+  const id = e.id || rtNewId();
+  if (!e.id) { d.createdAt = Date.now(); d.createdBy = rtMe(); }
+  try { await rtPut('returns/' + id, d); RT.returns[id] = d; rtCloseModal(); rtRender(); rtRenderBanner(); showToast('保存しました'); }
+  catch (err) { showToast('保存に失敗しました'); }
+}
+async function rtDelete(id) {
+  const r = RT.returns[id]; if (!r) return;
+  if (r.restockMoveKey || r.mercariId) { showToast('在庫に戻した・メルカリに出した返品は削除できません。先に行き先を取り消してください'); return; }
+  if (!(await showConfirm('この返品・クレームを削除しますか？'))) return;
+  try { await rtDel('returns/' + id); delete RT.returns[id]; rtCloseModal(); rtRender(); rtRenderBanner(); showToast('削除しました'); } catch (e) { showToast('削除に失敗しました'); }
+}
+async function rtSetStatus(id, st) {
+  const r = RT.returns[id]; if (!r || r.status === st) return;
+  if (st === 'arrived' && !r.arrivedDate) r.arrivedDate = todayStr();
+  if (st === 'done') {
+    const w = rtWarnings({ ...r, status: 'x' }).filter(x => !x.startsWith('返送待ち'));
+    if (w.length && !(await showConfirm(`まだ「${w.join('」「')}」になっています。完了にしますか？`))) return;
+    r.doneAt = todayStr();
+  } else delete r.doneAt;
+  r.status = st; r.updatedAt = Date.now(); r.updatedBy = rtMe();
+  try { await rtPut('returns/' + id, r); rtRender(); rtRenderBanner(); } catch (e) { showToast('保存に失敗しました'); }
+}
+
+// ── 返金 ──
+function rtOpenRefund(id) {
+  const r = RT.returns[id]; if (!r) return;
+  RT.edit = { id };
+  rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:4px">返金を記録</div>
+    <div class="az-sub" style="margin-bottom:10px">${rtEsc(r.model || r.title)}${r.price ? '・販売額 ' + rtYen(r.price) : ''}</div>
+    <div class="rt-g2"><div class="rt-f"><label>返金額</label><input type="number" id="rt-refund" value="${r.refund || ''}" placeholder="${r.price || ''}"></div>
+      <div class="rt-f"><label>返金した日</label><input type="date" id="rt-refund-date" value="${rtEsc(r.refundDate || '')}"></div></div>
+    <label style="display:flex;gap:6px;align-items:center;font-size:13px;margin-bottom:10px"><input type="checkbox" id="rt-refund-pending" ${r.refundPending ? 'checked' : ''}> 返金額を代表に確認中（まだ返金していない）</label>
+    <div class="az-sub" style="margin-bottom:10px">返金した日を入れると「返金済み」になります。金額だけ決まっていて、まだ返金していない場合は日付を空にしてください。</div>
+    <div style="display:flex;gap:8px"><button class="az-btn" style="flex:1" onclick="rtCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="rtSaveRefund()">保存</button></div>`);
+}
+async function rtSaveRefund() {
+  const id = RT.edit && RT.edit.id, r = RT.returns[id]; if (!r) return;
+  r.refund = Number(document.getElementById('rt-refund').value) || 0;
+  r.refundDate = document.getElementById('rt-refund-date').value || '';
+  r.refundPending = document.getElementById('rt-refund-pending').checked && !r.refundDate;
+  r.updatedAt = Date.now(); r.updatedBy = rtMe();
+  try { await rtPut('returns/' + id, r); rtCloseModal(); rtRender(); rtRenderBanner(); showToast('返金を記録しました'); } catch (e) { showToast('保存に失敗しました'); }
+}
+
+// ── 検品して行き先を決める ──
+function rtOpenResult(id) {
+  const r = RT.returns[id]; if (!r) return;
+  RT.edit = { id };
+  const p = r.productKey && (products || []).find(x => x._key === r.productKey);
+  rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:4px">検品して行き先を決める</div>
+    <div class="az-sub" style="margin-bottom:10px">${rtEsc(r.model || r.title)}（${r.qty || 1}個）</div>
+    ${Object.entries(RT_RESULT).map(([k, l]) => `<label class="rt-pick" style="display:flex;gap:8px;align-items:center"><input type="radio" name="rt-res" value="${k}" ${k === 'mercari' ? 'checked' : ''} onchange="document.getElementById('rt-res-loc').style.display=this.value==='resell'?'block':'none'"> ${l}</label>`).join('')}
+    <div id="rt-res-loc" style="display:none;margin-top:8px" class="rt-f"><label>戻す事務所</label>
+      ${p ? `<select id="rt-loc">${stockLocations.map(l => `<option value="${rtEsc(l.id)}">${rtEsc(l.name)}</option>`).join('')}</select>` : '<div class="az-tag">在庫の商品が選ばれていません。先に「編集」で商品を選んでください</div>'}</div>
+    <div class="rt-f" style="margin-top:8px"><label>検品メモ（状態・付属品など）</label><textarea id="rt-res-note" rows="2"></textarea></div>
+    <div style="display:flex;gap:8px"><button class="az-btn" style="flex:1" onclick="rtCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="rtSaveResult()">決定</button></div>`);
+}
+async function rtSaveResult() {
+  const id = RT.edit && RT.edit.id, r = RT.returns[id]; if (!r) return;
+  const res = (document.querySelector('input[name="rt-res"]:checked') || {}).value;
+  const note = document.getElementById('rt-res-note').value.trim();
+  if (!res) return;
+  try {
+    if (res === 'resell') {
+      // 新品として再販：通常の在庫に戻す（入出庫の記録を残す）
+      const p = (products || []).find(x => x._key === r.productKey);
+      if (!p) { showToast('在庫の商品が選ばれていません'); return; }
+      const loc = document.getElementById('rt-loc').value;
+      const qty = Number(r.qty) || 1, before = Number(p.stock) || 0;
+      const st = locStateAfterDelta(p, loc, qty);
+      await saveProductLocState(p, st.stock, st.locQty);
+      const mv = await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
+        productKey: p._key, productName: p.name || '', jan: p.jan || '', type: 'in', qty, date: todayStr(), channel: 'Amazon返品', loc,
+        memo: 'Amazon返品を新品として再販' + (r.orderId ? '（注文 ' + r.orderId + '）' : ''), stockBefore: before, stockAfter: st.stock, createdAt: Date.now() }) }).then(x => x.json()).catch(() => null);
+      r.restockMoveKey = (mv && mv.name) || ''; r.resultLoc = loc;
+      await loadInventory();
+    }
+    if (res === 'mercari') {
+      // メルカリで販売：メルカリの一覧に「出品前」で入れる（通常の在庫には入れない）
+      const mid = rtNewId();
+      const m = { title: r.title || r.model || '', model: r.model || '', productKey: r.productKey || '', fromReturn: id, cost: Number(r.cost) || 0,
+        status: 'stock', memo: note, createdAt: Date.now(), updatedAt: Date.now() };
+      await rtPut('mercari/' + mid, m); RT.mercari[mid] = m; r.mercariId = mid;
+    }
+    r.result = res; r.resultDate = todayStr(); if (note) r.memo = (r.memo ? r.memo + '\n' : '') + '検品：' + note;
+    if (!r.arrivedDate) r.arrivedDate = todayStr();
+    if (['received', 'waiting'].includes(r.status)) r.status = 'arrived';
+    r.updatedAt = Date.now(); r.updatedBy = rtMe();
+    await rtPut('returns/' + id, r);
+    rtCloseModal(); rtRender(); rtRenderBanner();
+    showToast(res === 'resell' ? '在庫に戻しました' : res === 'mercari' ? 'メルカリの一覧に追加しました' : '行き先を記録しました');
+  } catch (e) { showToast('保存に失敗しました'); }
+}
+
+// 行き先の取り消し：在庫に戻した分は在庫から引き直す／メルカリはまだ売れていなければ一覧から外す
+async function rtUndoResult(id) {
+  const r = RT.returns[id]; if (!r || !r.result) return;
+  const mc = r.mercariId && RT.mercari[r.mercariId];
+  if (mc && ['sold', 'shipped'].includes(mc.status)) { showToast('メルカリで売れているため取り消せません'); return; }
+  if (!(await showConfirm(`行き先「${RT_RESULT[r.result]}」を取り消して、未定に戻しますか？` + (r.result === 'resell' ? '\n在庫に戻した分を在庫から引き直します' : '')))) return;
+  try {
+    if (r.result === 'resell' && r.restockMoveKey !== undefined) {
+      const p = (products || []).find(x => x._key === r.productKey);
+      if (p) { const st = locStateAfterDelta(p, r.resultLoc || getHomeLoc(p), -(Number(r.qty) || 1)); await saveProductLocState(p, st.stock, st.locQty); }
+      if (r.restockMoveKey) await rtDel('stockMoves/' + r.restockMoveKey).catch(() => {});
+      await loadInventory();
+    }
+    if (mc) { await rtDel('mercari/' + r.mercariId); delete RT.mercari[r.mercariId]; }
+    ['result', 'resultDate', 'resultLoc', 'restockMoveKey', 'mercariId'].forEach(k => delete r[k]);
+    r.updatedAt = Date.now(); r.updatedBy = rtMe();
+    await rtPut('returns/' + id, r); rtRender(); rtRenderBanner(); showToast('行き先を取り消しました');
+  } catch (e) { showToast('取り消しに失敗しました'); }
+}
+
+// ── メルカリ ──
+function mcOpenForm(id) {
+  const m = id ? RT.mercari[id] : { status: 'stock' };
+  RT.edit = { id: id || null, data: { ...m } };
+  const sold = ['sold', 'shipped'].includes(m.status);
+  rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:10px">${id ? 'メルカリの商品を編集' : 'メルカリに直接登録'}</div>
+    ${m.fromReturn ? '<div class="az-sub" style="margin-bottom:8px">↩️ 返品から来た商品です（通常の在庫には入っていません）</div>' : ''}
+    <div class="rt-f"><label>商品</label><div id="rt-prod-line" class="az-sub" style="margin-bottom:6px">${rtEsc(m.model || m.title || '')}</div>
+      ${m.fromReturn ? '' : `<input type="text" id="rt-prod-q" placeholder="在庫の商品から選ぶ（型番・商品名）" oninput="rtFindProduct()"><div id="rt-prod-hits"></div>
+      <input type="text" id="mc-title" style="margin-top:6px" value="${rtEsc(m.title || '')}" placeholder="在庫にない商品は、商品名を入力">`}</div>
+    <div class="rt-g2"><div class="rt-f"><label>仕入値（わかれば）</label><input type="number" id="mc-cost" value="${m.cost || ''}"></div>
+      <div class="rt-f"><label>出品価格</label><input type="number" id="mc-list" value="${m.listPrice || ''}"></div></div>
+    <div class="rt-g2"><div class="rt-f"><label>出品日</label><input type="date" id="mc-listed" value="${rtEsc(m.listedDate || '')}"></div>
+      <div class="rt-f"><label>売れた日</label><input type="date" id="mc-soldd" value="${rtEsc(m.soldDate || '')}"></div></div>
+    <div class="rt-g2"><div class="rt-f"><label>売値</label><input type="number" id="mc-sold" value="${m.soldPrice || ''}" oninput="document.getElementById('mc-fee').placeholder=Math.floor((Number(this.value)||0)*${MC_FEE_RATE})"></div>
+      <div class="rt-f"><label>手数料（空欄なら売値の10%）</label><input type="number" id="mc-fee" value="${m.fee != null ? m.fee : ''}" placeholder="${Math.floor((m.soldPrice || 0) * MC_FEE_RATE) || ''}"></div></div>
+    <div class="rt-g2"><div class="rt-f"><label>送料</label><input type="number" id="mc-ship" value="${m.shipCost || ''}"></div>
+      <div class="rt-f"><label>発送日</label><input type="date" id="mc-shipped" value="${rtEsc(m.shippedDate || '')}"></div></div>
+    <div class="rt-f"><label>メモ</label><textarea id="mc-memo" rows="2">${rtEsc(m.memo || '')}</textarea></div>
+    <div class="az-sub" style="margin-bottom:8px">売れた日と売値を入れると「売れた」になり、売値がEC売上（販路：メルカリ）に記録されます。${m.fromReturn ? '' : '在庫の商品を選んだ場合は、売れたときに在庫も減らします。'}</div>
+    <div style="display:flex;gap:8px">${id ? `<button class="az-btn" style="color:#c0392b" onclick="mcDelete('${id}')">削除</button>` : ''}
+      <button class="az-btn" style="flex:1" onclick="rtCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="mcSave()">保存</button></div>`);
+}
+async function mcSave() {
+  const e = RT.edit; if (!e) return;
+  const m = e.data, num = id => { const x = document.getElementById(id); return x && x.value !== '' ? Number(x.value) : null; }, val = id => (document.getElementById(id) || {}).value || '';
+  if (!m.fromReturn && val('mc-title').trim()) m.title = val('mc-title').trim();
+  if (!m.title && !m.model) { showToast('商品を選ぶか、商品名を入力してください'); return; }
+  m.cost = num('mc-cost') || 0; m.listPrice = num('mc-list') || 0; m.listedDate = val('mc-listed'); m.soldDate = val('mc-soldd');
+  m.soldPrice = num('mc-sold') || 0; m.fee = num('mc-fee'); m.shipCost = num('mc-ship') || 0; m.shippedDate = val('mc-shipped'); m.memo = val('mc-memo').trim();
+  if (m.fee == null) delete m.fee;
+  // 入力された日付から状態を決める
+  m.status = m.shippedDate && m.soldDate ? 'shipped' : m.soldDate && m.soldPrice ? 'sold' : m.listedDate ? 'listed' : 'stock';
+  if (m.soldDate && !m.soldPrice) { showToast('売値を入力してください'); return; }
+  m.updatedAt = Date.now(); if (!e.id) m.createdAt = Date.now();
+  const id = e.id || rtNewId();
+  try { await mcApply(id, m); rtCloseModal(); rtRender(); rtRenderBanner(); showToast('保存しました'); }
+  catch (err) { showToast('保存に失敗しました'); }
+}
+// 保存＋売上・在庫の連動（売れた → EC売上に記録・在庫の商品なら在庫を減らす／売れていない → 取り消す）
+async function mcApply(id, m) {
+  const sold = ['sold', 'shipped'].includes(m.status);
+  if (sold) {
+    await rtPut('ecSales/mc_' + id, { channel: 'メルカリ', amount: Number(m.soldPrice) || 0, date: m.soldDate, note: 'メルカリ ' + (m.model || m.title || ''), auto: true });
+    if (!m.fromReturn && m.productKey && !m.stockMoveKey) {
+      const p = (products || []).find(x => x._key === m.productKey);
+      if (p) {
+        const loc = getHomeLoc(p), before = Number(p.stock) || 0, st = locStateAfterDelta(p, loc, -1);
+        await saveProductLocState(p, st.stock, st.locQty);
+        const mv = await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({ productKey: p._key, productName: p.name || '', jan: p.jan || '',
+          type: 'out', qty: 1, date: m.soldDate, channel: 'メルカリ', loc, memo: 'メルカリで販売', stockBefore: before, stockAfter: st.stock, createdAt: Date.now() }) }).then(x => x.json()).catch(() => null);
+        m.stockMoveKey = (mv && mv.name) || 'x'; m.stockLoc = loc;
+      }
+    }
+  } else {
+    await rtDel('ecSales/mc_' + id).catch(() => {});
+    if (m.stockMoveKey) await mcRestoreStock(m);
+  }
+  await rtPut('mercari/' + id, m); RT.mercari[id] = m;
+  if (typeof AZ !== 'undefined' && AZ.ec) { if (sold) AZ.ec['mc_' + id] = { channel: 'メルカリ', amount: m.soldPrice, date: m.soldDate }; else delete AZ.ec['mc_' + id]; }
+}
+async function mcRestoreStock(m) {
+  const p = (products || []).find(x => x._key === m.productKey);
+  if (p) { const st = locStateAfterDelta(p, m.stockLoc || getHomeLoc(p), 1); await saveProductLocState(p, st.stock, st.locQty); }
+  if (m.stockMoveKey && m.stockMoveKey !== 'x') await rtDel('stockMoves/' + m.stockMoveKey).catch(() => {});
+  delete m.stockMoveKey; delete m.stockLoc;
+}
+// 状態ボタン：売れた・発送済みは日付と売値が必要なので、足りなければ編集画面を開く
+async function mcStep(id, st) {
+  const m = RT.mercari[id]; if (!m || m.status === st) return;
+  const t = todayStr();
+  if (['sold', 'shipped'].includes(st) && !m.soldPrice) { mcOpenForm(id); showToast('売値と売れた日を入れてください'); return; }
+  if (st === 'stock') { m.listedDate = ''; m.soldDate = ''; m.shippedDate = ''; }
+  if (st === 'listed') { m.listedDate = m.listedDate || t; m.soldDate = ''; m.shippedDate = ''; }
+  if (st === 'sold') { m.soldDate = m.soldDate || t; m.shippedDate = ''; }
+  if (st === 'shipped') { m.soldDate = m.soldDate || t; m.shippedDate = m.shippedDate || t; }
+  if (st === 'listed' && !m.listPrice) { mcOpenForm(id); showToast('出品価格を入れてください'); return; }
+  m.status = st; m.updatedAt = Date.now();
+  try { await mcApply(id, m); rtRender(); rtRenderBanner(); } catch (e) { showToast('保存に失敗しました'); }
+}
+async function mcDelete(id) {
+  const m = RT.mercari[id]; if (!m) return;
+  if (!(await showConfirm('このメルカリの商品を削除しますか？' + (['sold', 'shipped'].includes(m.status) ? '\nEC売上の記録も消えます' : '')))) return;
+  try {
+    await rtDel('ecSales/mc_' + id).catch(() => {});
+    if (m.stockMoveKey) await mcRestoreStock(m);
+    await rtDel('mercari/' + id); delete RT.mercari[id];
+    // 返品から来た商品なら、返品の行き先を未定に戻す
+    const r = m.fromReturn && RT.returns[m.fromReturn];
+    if (r) { delete r.mercariId; delete r.result; delete r.resultDate; await rtPut('returns/' + m.fromReturn, r); }
+    rtCloseModal(); rtRender(); rtRenderBanner(); showToast('削除しました');
+  } catch (e) { showToast('削除に失敗しました'); }
+}
+</script>
+
 </body>
 </html>
