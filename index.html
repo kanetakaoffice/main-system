@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-09a">
+<meta name="app-build" content="2026-11-09b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -24303,24 +24303,46 @@ function azRenderMatchResults() {
       <span class="az-sub">在庫 ${azEsc(locBreakdownText(p))}</span><div class="az-title">${azEsc(p.name || '')}</div></div>`).join('')
     : '<div class="az-empty">見つかりません。型番の一部で検索してください</div>';
 }
+// 要望：「Amazonのレポートを読み込んだ後、商品を間違えて選んでしまったときに直したい」への対応。
+// 以前は、出荷済みで在庫を減らした注文の商品を選び直すと、間違えた商品の在庫が減ったまま残っていた。
+// 選び直したときは、間違えた商品の在庫を戻してから、選んだ商品の在庫を（同じ事務所から）減らし直す。
+// 同じASINで、同じく間違えた商品に結びついていた注文もまとめて直す（ASINの結びつけも選び直した商品に変わる）。
 async function azChooseProduct(productKey) {
   const id = AZ.matchFor; const o = AZ.orders[id]; if (!o) return;
   azCloseMatch();
+  const oldKey = o.productKey || '';
+  if (oldKey === productKey) { showToast('同じ商品が選ばれています'); return; }
+  const sameItem = k => (o.asin && AZ.orders[k].asin === o.asin) || (!o.asin && AZ.orders[k].title === o.title);
+  // 対象：選んだ注文／同じ商品でまだ在庫を減らしていない注文／同じ商品で、間違えた商品の在庫を減らしてしまった注文
+  const same = Object.keys(AZ.orders).filter(k => k === id || (sameItem(k) &&
+    (!AZ.orders[k].deducted || (oldKey && AZ.orders[k].productKey === oldKey))));
+  const moving = same.filter(k => AZ.orders[k].deducted && AZ.orders[k].productKey && AZ.orders[k].productKey !== productKey);
+  if (moving.length) {
+    const oldP = azProduct(oldKey), newP = azProduct(productKey);
+    const qty = moving.reduce((a, k) => a + (Number(AZ.orders[k].qty) || 0), 0);
+    const ok = await showConfirm(`出荷済みの注文${moving.length}件（${qty}個）は、すでに「${(oldP && (oldP.model || oldP.name)) || '前の商品'}」の在庫を減らしています。\n\nその在庫を戻して、「${(newP && (newP.model || newP.name)) || '選んだ商品'}」の在庫を同じ事務所から減らし直しますか？`);
+    if (!ok) return;
+  }
   try {
-    // 同じASIN（または同じ商品名）の注文はまとめて同じ商品に結びつけ、次回からも自動にする
     if (o.asin) { AZ.asinMap[o.asin] = productKey; await fetch(authedUrl('/amazonAsinMap/' + azFirebaseKey(o.asin) + '.json'), { method: 'PUT', body: JSON.stringify(productKey) }); }
-    const same = Object.keys(AZ.orders).filter(k => k === id || (!AZ.orders[k].deducted && ((o.asin && AZ.orders[k].asin === o.asin) || (!o.asin && AZ.orders[k].title === o.title))));
-    let deducted = 0;
+    let deducted = 0, moved = 0;
     for (const k of same) {
       const r = AZ.orders[k];
+      if (r.deducted && r.productKey !== productKey) {
+        const fromLoc = r.deductLoc || r.loc;
+        await azRestore(r);            // 間違えた商品の在庫を戻す（入出庫の記録も消す）
+        r.loc = fromLoc;               // 実際に出荷した事務所から減らし直す
+        moved++;
+      }
       r.productKey = productKey;
       if (r.status === 'unshipped') r.loc = azSuggestLoc(azProduct(productKey), r.qty || 1);
       if (r.status === 'shipped' && !r.deducted && !r.skipped) { if (await azDeduct(k, r)) deducted++; }
       await azSaveOne(k);
     }
-    if (deducted) await loadInventory();
+    if (deducted || moved) await loadInventory();
     azRender();
-    showToast(deducted ? `商品を結びつけ、在庫を${deducted}件減らしました` : '商品を結びつけました');
+    showToast(moved ? `商品を選び直しました。前の商品の在庫を戻し、選んだ商品の在庫を${deducted}件減らしました`
+      : deducted ? `商品を結びつけ、在庫を${deducted}件減らしました` : '商品を結びつけました');
   } catch (e) { showToast('保存に失敗しました'); }
 }
 
@@ -24491,7 +24513,7 @@ function azRender() {
 
   const recentRow = o => `<div class="az-grp"><div><div><b>${azEsc(azModelOf(o))}</b> ×${o.qty} <span class="az-sub">${azEsc(locName(o.deductLoc))}から</span></div>
       <div class="az-sub">${azEsc(o.shipDate || '')} 出荷・${azEsc(o.orderId)}</div></div>
-      <button class="az-btn small" onclick="azUndo('${o._id}')">在庫を戻す</button></div>`;
+      <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="az-btn small" onclick="azOpenMatch('${o._id}')">商品を変更</button><button class="az-btn small" onclick="azUndo('${o._id}')">在庫を戻す</button></span></div>`;
 
   const cutSel = `<select class="az-loc" onchange="azSetCutoff(this.value)">${[10, 11, 12, 13, 14, 15, 16, 17].map(h => `<option value="${h}" ${h === azCutoff() ? 'selected' : ''}>${h}時</option>`).join('')}</select>`;
 
