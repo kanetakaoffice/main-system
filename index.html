@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-09b">
+<meta name="app-build" content="2026-11-09c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -20259,7 +20259,7 @@ window.bzRefreshSidePanels = bzRefreshSidePanels;
 .tk-flow-step .hd button { margin-left:auto; border:none; background:none; color:var(--text-muted); font-size:18px; cursor:pointer; }
 .tk-flow-step .g { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; }
 .tk-flow-step .g label { font-size:10.5px; color:var(--text-muted); font-weight:700; display:block; margin-bottom:2px; }
-#tkf-then .tk-flow-step input[type=text], #tkf-then .tk-flow-step select { width:100%; padding:7px 9px; font-size:13px !important; min-height:36px; border:1.5px solid var(--border); border-radius:8px; font-family:inherit; background-color:var(--white); }
+#tkf-then .tk-flow-step input[type=text], #tkf-then .tk-flow-step select, #tkf-then .tk-flow-step textarea { width:100%; padding:7px 9px; font-size:13px !important; min-height:36px; border:1.5px solid var(--border); border-radius:8px; font-family:inherit; background-color:var(--white); }
 .tk-flow-step .opt { display:flex; gap:12px; flex-wrap:wrap; margin-top:6px; font-size:12px; }
 .tk-flow-step .opt label { display:flex; align-items:center; gap:4px; }
 .tk-flow-arrow { text-align:center; color:var(--text-muted); font-size:12px; margin:2px 0 4px; }
@@ -20616,6 +20616,8 @@ function tkThenDate(code) {
   return tkAddDays(today, parseInt(code, 10) || 0);
 }
 const tkThenDue = code => tkThenDate(code);
+// ステップのチェックリスト（文字の配列）
+function tkThenCl(x) { const v = x && x.cl; return v ? (Array.isArray(v) ? v : Object.values(v)).map(t => String(t || '').trim()).filter(Boolean) : []; }
 function tkThenAssignee(x, t, me) {
   if (x.assignee === '__doer__') return me;
   if (x.assignee === '__same__') return t.assignee || '';
@@ -20644,6 +20646,8 @@ function tkThenStepHtml(x, n) {
       <label><input type="checkbox" class="sf" ${x.soft ? 'checked' : ''}>目安（過ぎても期限切れにしない）</label>
     </div>
     <div style="margin-top:6px"><input type="text" class="wt" value="${tkEsc(x.wait || '')}" placeholder="待つものがあれば（例：相手企業から書類データが届いたら）"></div>
+    <div style="margin-top:6px"><label style="font-size:10.5px;color:var(--text-muted);font-weight:700;display:block;margin-bottom:2px">チェックリスト（1行に1項目・任意）</label>
+      <textarea class="cl" rows="${Math.max(2, tkThenCl(x).length + 1)}" placeholder="例：&#10;インボイスを作成&#10;UPSの集荷を予約&#10;追跡番号を共有">${tkEsc(tkThenCl(x).join('\n'))}</textarea></div>
   </div>`;
 }
 function tkThenRenderSteps(steps) {
@@ -20654,8 +20658,9 @@ function tkThenRenderSteps(steps) {
 function tkThenReadSteps() {
   return [...document.querySelectorAll('#tkf-then .tk-flow-step')].map(r => {
     const x = { title: r.querySelector('.t').value.trim(), assignee: r.querySelector('.w').value, start: r.querySelector('.s').value,
-      after: r.querySelector('.a').value, soft: r.querySelector('.sf').checked, wait: r.querySelector('.wt').value.trim() };
-    if (!x.start) delete x.start; if (!x.soft) delete x.soft; if (!x.wait) delete x.wait;
+      after: r.querySelector('.a').value, soft: r.querySelector('.sf').checked, wait: r.querySelector('.wt').value.trim(),
+      cl: r.querySelector('.cl').value.split(/\r?\n/).map(t => t.trim()).filter(Boolean) };
+    if (!x.start) delete x.start; if (!x.soft) delete x.soft; if (!x.wait) delete x.wait; if (!x.cl.length) delete x.cl;
     return x;
   });
 }
@@ -20689,6 +20694,7 @@ async function tkCreateThenTasks(id, t, me) {
       assignee: tkThenAssignee(x, t, me), priority: t.priority || 'normal', due, dueTime: '',
       startDate: start || null, dueType: x.soft ? 'soft' : null, wait: x.wait || null,
       then: tkThen(x).length ? tkThen(x) : null,
+      checklist: tkThenCl(x).length ? Object.fromEntries(tkThenCl(x).map((text, k) => ['c' + k, { text, order: k }])) : null,
       status: 'todo', createdBy: me, createdAt: now, updatedAt: now, updatedBy: me, fromTask: id
     };
     Object.keys(rec).forEach(k => { if (rec[k] === null) delete rec[k]; });
