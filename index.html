@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-12e">
+<meta name="app-build" content="2026-11-12f">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -27376,11 +27376,23 @@ function mcCard(m) {
   const sold = ['sold', 'shipped'].includes(m.status);
   const net = sold ? mcNet(m) : null;
   const diff = sold && m.cost ? net - m.cost : null;
-  return `<div class="rt-item">
-    <div style="display:flex;justify-content:space-between;gap:8px"><div style="min-width:0"><div class="t">${rtEsc(m.model || m.title)}</div>
+  // 閉じているとき：型番・状態と1行の要約だけ。タップで開く
+  const isOpen = RT.openCards && RT.openCards.has('m:' + m.id);
+  const stLabel = (MC_STEPS.find(s => s[0] === m.status) || [])[1] || '';
+  const money = sold ? `売値 ${rtYen(m.soldPrice)}・入金 ${rtYen(net)}${diff != null ? `・<span class="${diff >= 0 ? 'rt-plus' : 'rt-minus'}">仕入値との差 ${diff >= 0 ? '+' : ''}${rtYen(diff)}</span>` : ''}` : (m.listPrice ? '出品価格 ' + rtYen(m.listPrice) : '');
+  const head = `<div class="rt-sumrow" role="button" tabindex="0" aria-expanded="${isOpen ? 'true' : 'false'}" onclick="rtToggleFold('m','${m.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();rtToggleFold('m','${m.id}')}">
+      <div class="rt-sumline">
+        <div class="t">${rtEsc(m.model || m.title)} <span class="rt-st ${sold ? 'done' : ''}">${rtEsc(stLabel)}</span> ${ret && ret.condRank ? rtCondTag(ret.condRank) : ''}</div>
+        <div class="s rt-sumdet">${ret ? '↩️ 返品から・' : ''}${m.cost ? '仕入 ' + rtYen(m.cost) : ''}${m.listedDate ? '・出品 ' + rtMd(m.listedDate) : ''}${m.soldDate ? '・売れた ' + rtMd(m.soldDate) : ''}${money ? '・' + money : ''}</div>
+      </div>
+      <span class="rt-chev" aria-hidden="true">${isOpen ? '▲' : '▼'}</span>
+    </div>`;
+  if (!isOpen) return `<div class="rt-item rt-fold" id="rtm-${m.id}">${head}</div>`;
+  return `<div class="rt-item rt-fold open" id="rtm-${m.id}">${head}
+    <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
+    <div style="display:flex;justify-content:space-between;gap:8px"><div style="min-width:0">
       <div class="s">${ret ? '↩️ 返品から（' + rtEsc(ret.reason || '') + '）・' : ''}${m.cost ? '仕入 ' + rtYen(m.cost) : ''}${m.listedDate ? '・出品 ' + rtMd(m.listedDate) : ''}${m.soldDate ? '・売れた ' + rtMd(m.soldDate) : ''}</div></div>
       <span style="display:flex;gap:6px;flex:none">${sold ? '' : `<button class="az-btn small" onclick="mcOpenText('${m.id}')">📝 出品文を作る</button>`}<button class="az-btn small" onclick="mcOpenForm('${m.id}')">編集</button></span></div>
-    ${ret && ret.condRank ? `<div style="margin-top:6px">${rtCondTag(ret.condRank)}</div>` : ''}
     <div class="rt-steps">${MC_STEPS.map(([k, l], i) => `<button class="${i < ci ? 'past' : i === ci ? 'cur' : ''}" onclick="mcStep('${m.id}','${k}')">${l}</button>`).join('')}</div>
     ${m.listPrice && !sold ? `<div class="rt-money"><span>出品価格</span><span>${rtYen(m.listPrice)}</span></div>` : ''}
     ${sold ? `<div class="rt-money"><span>売値</span><span>${rtYen(m.soldPrice)}</span></div>
@@ -27388,7 +27400,17 @@ function mcCard(m) {
       <div class="rt-money"><span>入金</span><b>${rtYen(net)}</b></div>
       ${diff != null ? `<div class="rt-money"><span>仕入値との差</span><span class="${diff >= 0 ? 'rt-plus' : 'rt-minus'}">${diff >= 0 ? '+' : ''}${rtYen(diff)}</span></div>` : ''}` : ''}
     ${m.memo ? `<div class="s" style="white-space:pre-wrap">📝 ${rtEsc(m.memo)}</div>` : ''}
-  </div>`;
+  </div></div>`;
+}
+// 開閉（返品・返品在庫・メルカリ・対応ルール共通）。開いたものは描き直しても開いたまま。そのカードだけ差し替える
+function rtToggleFold(kind, id) {
+  RT.openCards = RT.openCards || new Set();
+  const k = kind + ':' + id; RT.openCards.has(k) ? RT.openCards.delete(k) : RT.openCards.add(k);
+  const el = document.getElementById('rt' + kind + '-' + id);
+  let html = '';
+  if (kind === 'm' && RT.mercari[id]) html = mcCard({ id, ...RT.mercari[id] });
+  if (kind === 'r' && RT.rules && RT.rules[id]) html = rtRuleCard({ id, ...RT.rules[id] });
+  if (el && html) el.outerHTML = html; else rtRender();
 }
 
 // ── 在庫一覧の上に「返品在庫 ○個」を出す ──
@@ -27930,19 +27952,33 @@ async function mcCopy(elId) {
 // ── 対応ルール ──
 function rtRulesHtml() {
   const rules = Object.entries(RT.rules || {}).map(([id, x]) => ({ id, ...x })).sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'ja'));
-  const used = {}; Object.values(RT.returns).forEach(r => { if (r.caution && r.caution.ruleId) used[r.caution.ruleId] = (used[r.caution.ruleId] || 0) + 1; });
   return `<div class="az-card">
     <div class="az-h"><span>対応ルール（こういうときはどうするか）</span><button class="az-btn primary" onclick="rtOpenRule()">＋ ルールを追加</button></div>
     <div class="az-sub" style="margin-bottom:10px">揉めたときの対応の仕方・注意点をまとめておく場所です。返品の「⚠️ 要注意」から関係するルールを選ぶと、カードからすぐ開けます。</div>
-    ${rules.length ? rules.map(x => `<div class="rt-rule">
-      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div class="t">${rtEsc(x.title)}</div>
-        <span style="display:flex;gap:6px;flex:none">${used[x.id] ? `<button class="az-btn small" onclick="RT.filter='caution';rtSetView('returns')">要注意 ${used[x.id]}件</button>` : ''}<button class="az-btn small" onclick="rtEditRule('${x.id}')">編集</button></span></div>
+    ${rules.length ? rules.map(rtRuleCard).join('')
+    : `<div class="az-empty">まだルールがありません</div><button class="az-btn" style="width:100%" onclick="rtAddSampleRules()">例を3つ入れる（あとで自由に直せます）</button>`}
+  </div>`;
+}
+// 対応ルールのカード：閉じているときはタイトルと「こんなとき」の一部だけ。タップで全文と編集ボタン
+function rtRuleCard(x) {
+  const used = Object.values(RT.returns).filter(r => r.caution && r.caution.ruleId === x.id).length;
+  const isOpen = RT.openCards && RT.openCards.has('r:' + x.id);
+  const head = `<div class="rt-sumrow" role="button" tabindex="0" aria-expanded="${isOpen ? 'true' : 'false'}" onclick="rtToggleFold('r','${x.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();rtToggleFold('r','${x.id}')}">
+      <div class="rt-sumline">
+        <div class="t">📘 ${rtEsc(x.title)}${used ? ` <span class="az-tag">要注意 ${used}件</span>` : ''}</div>
+        ${x.situation && !isOpen ? `<div class="s rt-sumdet" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${rtEsc(String(x.situation).replace(/\s+/g, ' '))}</div>` : ''}
+      </div>
+      <span class="rt-chev" aria-hidden="true">${isOpen ? '▲' : '▼'}</span>
+    </div>`;
+  if (!isOpen) return `<div class="rt-rule rt-fold" id="rtr-${x.id}">${head}</div>`;
+  return `<div class="rt-rule rt-fold open" id="rtr-${x.id}">${head}
+    <div style="margin-top:10px;padding-top:4px;border-top:1px dashed var(--border)">
       ${x.situation ? `<div class="k">こんなとき</div><div class="v">${rtEsc(x.situation)}</div>` : ''}
       ${x.steps ? `<div class="k">対応の仕方</div><div class="v">${rtEsc(x.steps)}</div>` : ''}
       ${x.caution ? `<div class="k">注意</div><div class="v warn">${rtEsc(x.caution)}</div>` : ''}
-      <div class="az-sub" style="margin-top:6px">${x.updatedAt ? '更新 ' + rtMd(ymdKey(new Date(x.updatedAt))) : ''}</div></div>`).join('')
-    : `<div class="az-empty">まだルールがありません</div><button class="az-btn" style="width:100%" onclick="rtAddSampleRules()">例を3つ入れる（あとで自由に直せます）</button>`}
-  </div>`;
+      <div class="rt-row" style="justify-content:space-between"><span class="az-sub">${x.updatedAt ? '更新 ' + rtMd(ymdKey(new Date(x.updatedAt))) : ''}</span>
+        <span style="display:flex;gap:6px">${used ? `<button class="az-btn small" onclick="RT.filter='caution';rtSetView('returns')">要注意の返品を見る</button>` : ''}<button class="az-btn small" onclick="rtEditRule('${x.id}')">編集</button></span></div>
+    </div></div>`;
 }
 // カードのリンクから開く：内容を表示（編集ボタン付き）
 function rtOpenRule(id) {
