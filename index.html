@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-12a">
+<meta name="app-build" content="2026-11-12b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -26865,6 +26865,7 @@ async function rtOnReport(input) {
       if (!r.cost && s) r.cost = s.cost;
       if (!r.qty || isNew) r.qty = x.qty;
       if (x.delivered && !r.arrivedDate) r.arrivedDate = x.delivered;
+      if (r.arrivedDate) delete r.arrivedUnknown;
       // Amazonで返金済みになっていれば返金を記録（こちらで入力した返金日があればそのまま）
       if (x.refunded > 0 && !r.refundDate) { r.refund = r.refund || x.refunded; r.refundDate = todayStr(); r.refundPending = false; r.refundFromReport = true; }
       if (isNew) {
@@ -27048,9 +27049,15 @@ function rtSetView(v) { RT.view = v; rtRender(); }
 // ── 状態の判定 ──
 const rtIsClaim = r => r.kind === 'claim';
 const rtSteps = r => rtIsClaim(r) ? RT_STEPS_CLAIM : RT_STEPS_RETURN;
+// 届いているか：到着日がある、または「到着日不明（手元にあり）」にチェックしたもの
+// 要望：「完了したもので届いているのに到着日がわからず、返品在庫に出ないものがある」への対応（r.arrivedUnknown）
+const rtArrived = r => !!(r.arrivedDate || r.arrivedUnknown);
+// 経過日数の起点：到着日。到着日不明のときは受付日（実際の到着より前なので、少し長めに数える）
+const rtArrBase = r => r.arrivedDate || (r.arrivedUnknown ? r.receivedDate || '' : '');
+const rtArrText = r => r.arrivedDate ? '到着 ' + rtMd(r.arrivedDate) + '（' + rtDays(r.arrivedDate) + '日前）' : r.arrivedUnknown ? '到着日不明・手元にあり（受付 ' + rtMd(r.receivedDate) + 'から' + rtDays(r.receivedDate) + '日）' : '';
 // 返品在庫：到着した返品で、行き先がまだ決まっていない／メルカリ行きでまだ売れていないもの
 function rtInStock(r) {
-  if (rtIsClaim(r) || !r.arrivedDate) return false;
+  if (rtIsClaim(r) || !rtArrived(r)) return false;
   if (!r.result || r.result === 'maker') return true;
   if (r.result === 'mercari') { const m = RT.mercari[r.mercariId]; return !m || !['sold', 'shipped'].includes(m.status); }
   return false;
@@ -27059,10 +27066,10 @@ function rtWarnings(r) {
   const w = [];
   if (r.status === 'done') return w;
   if (!rtIsClaim(r) && r.status === 'waiting' && rtDays(r.receivedDate) >= 14) w.push(`返送待ちが${rtDays(r.receivedDate)}日`);
-  if (!rtIsClaim(r) && r.arrivedDate && r.kind === 'return' && !r.refundDate) w.push('到着済み・返金がまだ');
+  if (!rtIsClaim(r) && rtArrived(r) && r.kind === 'return' && !r.refundDate) w.push('到着済み・返金がまだ');
   if (r.refundPending) w.push('返金額を代表に確認中');
   if (r.amzStatus === 'PendingApproval') w.push('Amazonで承認待ち（返品リクエストに対応）');
-  if (r.arrivedDate && !r.result && !rtIsClaim(r)) w.push(r.inspectedDate ? '行き先が未定（検品済み）' : '検品・行き先が未定');
+  if (rtArrived(r) && !r.result && !rtIsClaim(r)) w.push(r.inspectedDate ? '行き先が未定（検品済み）' : '検品・行き先が未定');
   return w;
 }
 
@@ -27214,7 +27221,7 @@ function rtReturnCard(r) {
       <div style="min-width:0">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
           <div class="t">${cv ? '<span class="az-tag" style="background:#a3261a;color:#fff">⚠️ 要注意</span> ' : ''}${rtEsc(r.model || (r.title || '').slice(0, 40) || '（商品不明）')} <span class="az-tag gray">${rtEsc(RT_KIND[r.kind] || '')}</span> ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''}
-            ${!rtIsClaim(r) && r.arrivedDate ? rtCondTag(r.condRank) : ''} ${rtModelTag(r)}
+            ${!rtIsClaim(r) && rtArrived(r) ? rtCondTag(r.condRank) : ''} ${rtModelTag(r)}
             ${r.amzStatus ? `<span class="az-tag gray">Amazon：${rtEsc(RT_AMZ_STATUS[r.amzStatus] || r.amzStatus)}</span>` : ''}
             ${RT_CUSTOMER_REASONS.includes(r.reasonCode) ? '<span class="az-tag" style="background:#fff7e6;color:#a16207">お客様都合</span>' : ''}
             ${r.atoz ? '<span class="az-tag">A-to-z保証</span>' : ''}
@@ -27223,7 +27230,7 @@ function rtReturnCard(r) {
           <button class="az-btn small" onclick="rtOpenForm('${r.id}')">編集</button>
         </div>
         <div class="s">${rtEsc(r.reason || '')}${r.reasonDetail ? '：' + rtEsc(r.reasonDetail) : ''}</div>
-        <div class="s">${r.orderId ? `注文 <a href="${rtScUrl(r.orderId)}" target="_blank" rel="noopener" title="Seller Centralでお客様の情報を確認">${rtEsc(r.orderId)} ↗</a>・` : ''}受付 ${rtMd(r.receivedDate)}${r.arrivedDate ? '・到着 ' + rtMd(r.arrivedDate) : ''}</div>
+        <div class="s">${r.orderId ? `注文 <a href="${rtScUrl(r.orderId)}" target="_blank" rel="noopener" title="Seller Centralでお客様の情報を確認">${rtEsc(r.orderId)} ↗</a>・` : ''}受付 ${rtMd(r.receivedDate)}${r.arrivedDate ? '・到着 ' + rtMd(r.arrivedDate) : r.arrivedUnknown ? '・<b>到着日不明（手元にあり）</b>' : ''}</div>
         ${r.labelPayer || r.tracking ? `<div class="s">${r.labelPayer ? '返送料：' + (r.labelPayer === 'Customer' ? 'お客様負担（元払い）' : r.labelPayer === 'Seller' ? '当社負担' : rtEsc(r.labelPayer)) : ''}${r.tracking ? '・追跡 ' + rtEsc(r.carrier || '') + ' ' + rtEsc(r.tracking) : ''}</div>` : ''}
         <div class="s">${r.sku ? 'SKU ' + rtEsc(r.sku) + '・' : ''}${r.supplier ? '仕入先 ' + rtEsc(r.supplier) + '・' : ''}${r.cost ? '仕入 ' + rtYen(r.cost) + '・' : ''}${r.price ? '販売 ' + rtYen(r.price) : ''}</div>
         ${warns.length ? `<div style="margin-top:6px">${warns.map(w => `<span class="az-tag">${rtEsc(w)}</span>`).join(' ')}</div>` : ''}
@@ -27239,10 +27246,10 @@ function rtReturnCard(r) {
         ${r.result ? `<div class="rt-money"><span>行き先</span><span>${rtEsc(rtResultText(r))}${r.result === 'resell' && r.resultLoc ? '（' + rtEsc(locName(r.resultLoc)) + '）' : ''}${mc ? '・メルカリ ' + rtEsc((MC_STEPS.find(s => s[0] === mc.status) || [])[1] || '') : ''}</span></div>` : ''}
         ${rtLossLine(r)}
         <div class="rt-row" style="justify-content:flex-end">
-          ${!rtIsClaim(r) && r.arrivedDate && (!r.result || r.result === 'maker') ? `<button class="az-btn small primary" onclick="rtOpenResult('${r.id}')">${r.result === 'maker' || r.inspectedDate ? '行き先を決める' : '検品して行き先を決める'}</button>` : ''}
-          ${!rtIsClaim(r) && r.arrivedDate && r.result && r.result !== 'maker' ? `<button class="az-btn small" onclick="rtOpenResult('${r.id}')">検品・写真を直す</button>` : ''}
+          ${!rtIsClaim(r) && rtArrived(r) && (!r.result || r.result === 'maker') ? `<button class="az-btn small primary" onclick="rtOpenResult('${r.id}')">${r.result === 'maker' || r.inspectedDate ? '行き先を決める' : '検品して行き先を決める'}</button>` : ''}
+          ${!rtIsClaim(r) && rtArrived(r) && r.result && r.result !== 'maker' ? `<button class="az-btn small" onclick="rtOpenResult('${r.id}')">検品・写真を直す</button>` : ''}
           ${r.status !== 'done' && (r.kind === 'return' || r.refund || r.refundPending) && !r.refundDate ? `<button class="az-btn small" onclick="rtOpenRefund('${r.id}')">返金を記録</button>` : ''}
-          ${!rtIsClaim(r) && !r.arrivedDate && !r.result && !r.noReturn && (['received', 'waiting'].includes(r.status) || r.status === 'done') ? `<button class="az-btn small" onclick="rtOpenNoReturn('${r.id}')">${r.status === 'done' ? '返送なしで終了したことにする' : '返送されずに終了'}</button>` : ''}
+          ${!rtIsClaim(r) && !rtArrived(r) && !r.result && !r.noReturn && (['received', 'waiting'].includes(r.status) || r.status === 'done') ? `<button class="az-btn small" onclick="rtOpenNoReturn('${r.id}')">${r.status === 'done' ? '返送なしで終了したことにする' : '返送されずに終了'}</button>` : ''}
           ${mc ? `<button class="az-btn small" onclick="rtSetView('mercari')">メルカリを見る</button>` : ''}
           ${r.result && r.status !== 'done' && !(mc && ['sold', 'shipped'].includes(mc.status)) ? `<button class="az-btn small" onclick="rtUndoResult('${r.id}')">行き先を取り消す</button>` : ''}
         </div>
@@ -27259,19 +27266,19 @@ function rtStockHtml(stock) {
   const keys = ['all', 'none', ...RT_COND_ORDER].filter(k => k === 'all' || cnt(k));
   const label = k => k === 'all' ? 'すべて' : k === 'none' ? '未検品' : RT_COND[k];
   const list = stock.filter(r => f === 'all' || (f === 'none' ? !r.condRank : r.condRank === f))
-    .sort((a, b) => String(a.arrivedDate || '').localeCompare(String(b.arrivedDate || '')));
+    .sort((a, b) => String(rtArrBase(a)).localeCompare(String(rtArrBase(b))));
   const costSum = stock.reduce((s, r) => s + (Number(r.cost) || 0) * (Number(r.qty) || 1), 0);
-  const old90 = stock.filter(r => rtDays(r.arrivedDate) >= 90).length, old30 = stock.filter(r => rtDays(r.arrivedDate) >= 30).length - old90;
+  const old90 = stock.filter(r => rtDays(rtArrBase(r)) >= 90).length, old30 = stock.filter(r => rtDays(rtArrBase(r)) >= 30).length - old90;
   return `<div class="az-card"><div class="az-h"><span>返品在庫（到着して、まだ行き先が決まっていない・メルカリで売れていない商品）</span></div>
     <div class="az-sub" style="margin-bottom:8px">返品された商品は、行き先が決まるまで通常の在庫には数えていません。「新品として再販」にすると在庫に戻ります。到着が古い順に並んでいます。</div>
     ${stock.length ? `<div class="rt-row" style="margin:0 0 10px;gap:14px;font-size:12.5px">
       <span>止まっている仕入額 <b>${rtYen(costSum)}</b></span>
       ${old90 ? `<span class="rt-age r">90日以上 ${old90}件</span>` : ''}${old30 ? `<span class="rt-age y">30日以上 ${old30}件</span>` : ''}</div>
       <div class="rt-pseg">${keys.map(k => `<button class="${f === k ? 'on' : ''}" onclick="rtSetCondFilter('${k}')">${label(k)} ${cnt(k)}</button>`).join('')}</div>` : ''}
-    ${list.length ? list.map(r => { const mc = r.mercariId && RT.mercari[r.mercariId]; const days = rtDays(r.arrivedDate);
+    ${list.length ? list.map(r => { const mc = r.mercariId && RT.mercari[r.mercariId]; const days = rtDays(rtArrBase(r));
       return `<div class="rt-item ${days >= 90 ? 'old90' : days >= 30 ? 'old30' : ''}">
         <div class="t">${r.caution ? '<span class="az-tag" style="background:#a3261a;color:#fff">⚠️ 要注意</span> ' : ''}${rtEsc(r.model || r.title)} ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''} ${rtCondTag(r.condRank)} ${rtAgeTag(days)} ${rtModelTag(r)}</div>
-        <div class="s">到着 ${rtMd(r.arrivedDate)}（${days}日前）・お客様の理由：${rtEsc(r.reason || '')}${r.reasonDetail ? '（' + rtEsc(r.reasonDetail) + '）' : ''}${r.cost ? '・仕入 ' + rtYen(r.cost) : ''}</div>
+        <div class="s">${rtArrText(r)}・お客様の理由：${rtEsc(r.reason || '')}${r.reasonDetail ? '（' + rtEsc(r.reasonDetail) + '）' : ''}${r.cost ? '・仕入 ' + rtYen(r.cost) : ''}</div>
         ${rtCondChecksHtml(r)}
         ${r.condRank ? '' : '<div class="s" style="color:#8a5a00;margin-top:6px">まだ検品していません。「検品する」から状態を記録してください。</div>'}
         ${rtSuggestHtml(r)}
@@ -27359,6 +27366,7 @@ function rtOpenForm(id) {
       <div class="rt-f"><label>受付日</label><input type="date" id="rt-received" value="${rtEsc(r.receivedDate || '')}"></div>
       <div class="rt-f"><label>到着日（届いたら）</label><input type="date" id="rt-arrived" value="${rtEsc(r.arrivedDate || '')}"></div>
     </div>
+    <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:-2px 0 10px;cursor:pointer"><input type="checkbox" id="rt-arr-unknown" ${r.arrivedUnknown && !r.arrivedDate ? 'checked' : ''} style="margin-top:3px"> <span><b>到着日不明（手元にあり）</b><br><span class="az-sub">届いているが到着日がわからないとき。返品在庫に入ります（経過日数は受付日から数えます）</span></span></label>
     <div class="rt-f"><label>商品の返送</label><select id="rt-noret">
       <option value="" ${!r.noReturn ? 'selected' : ''}>返送あり・返送待ち</option>
       <option value="norefund" ${r.noReturn === 'norefund' ? 'selected' : ''}>返送されずに終了（返金なし）</option>
@@ -27425,12 +27433,15 @@ async function rtSave() {
     if (!d.caution.ruleId) delete d.caution.ruleId;
   } else delete d.caution;
   // 商品の返送：返送されずに終了なら完了にする（届いている返品・行き先が決まっている返品には付けない）
-  const nr = v('rt-noret');
+  // 到着日不明（手元にあり）：到着日が入っていればそちらを優先。手元にあるので「返送されずに終了」は外す
+  const unk = document.getElementById('rt-arr-unknown').checked && !d.arrivedDate && d.kind !== 'claim';
+  if (unk) d.arrivedUnknown = true; else delete d.arrivedUnknown;
+  const nr = unk ? '' : v('rt-noret');
   if (nr && (d.arrivedDate || d.result)) { showToast('到着済み・行き先が決まっている返品は「返送されずに終了」にできません'); return; }
   if (nr) { d.noReturn = nr; if (d.status !== 'done') { d.status = 'done'; d.doneAt = todayStr(); } if (nr === 'norefund') d.refundPending = false; }
-  else if (d.noReturn) { delete d.noReturn; if (d.status === 'done' && !d.arrivedDate) { d.status = 'waiting'; delete d.doneAt; } }
+  else if (d.noReturn) { delete d.noReturn; if (d.status === 'done' && !rtArrived(d)) { d.status = 'waiting'; delete d.doneAt; } }
   // 到着日を入れたら状態も「到着・検品」まで進める（クレームのみは対象外）
-  if (d.kind !== 'claim' && d.arrivedDate && ['received', 'waiting'].includes(d.status)) d.status = 'arrived';
+  if (d.kind !== 'claim' && rtArrived(d) && ['received', 'waiting'].includes(d.status)) d.status = 'arrived';
   if (d.kind === 'claim' && !['received', 'handling', 'done'].includes(d.status)) d.status = 'handling';
   if (d.kind !== 'claim' && d.status === 'handling') d.status = 'received';
   const id = e.id || rtNewId();
@@ -27446,7 +27457,7 @@ async function rtDelete(id) {
 }
 async function rtSetStatus(id, st) {
   const r = RT.returns[id]; if (!r || r.status === st) return;
-  if (st === 'arrived' && !r.arrivedDate) r.arrivedDate = todayStr();
+  if (st === 'arrived' && !rtArrived(r)) r.arrivedDate = todayStr();
   if (st === 'done') {
     const w = rtWarnings({ ...r, status: 'x' }).filter(x => !x.startsWith('返送待ち'));
     if (w.length && !(await showConfirm(`まだ「${w.join('」「')}」になっています。完了にしますか？`))) return;
@@ -27656,7 +27667,7 @@ async function rtSaveResult() {
   if (res === 'hold') {
     if (note) r.memo = (r.memo ? r.memo + '\n' : '') + '検品：' + note;
     r.inspectedDate = r.inspectedDate || todayStr();
-    if (!r.arrivedDate) r.arrivedDate = todayStr();
+    if (!rtArrived(r)) r.arrivedDate = todayStr();
     if (['received', 'waiting'].includes(r.status)) r.status = 'arrived';
     r.updatedAt = Date.now(); r.updatedBy = rtMe();
     try { await rtPut('returns/' + id, r); rtCloseModal(); rtRender(); rtRenderBanner(); showToast('検品を記録しました。行き先はあとで決められます'); } catch (e) { showToast('保存に失敗しました'); }
@@ -27687,7 +27698,7 @@ async function rtSaveResult() {
     if (res === 'other') r.resultOther = otherText.trim(); else delete r.resultOther;
     r.inspectedDate = r.inspectedDate || todayStr();
     r.result = res; r.resultDate = todayStr(); if (note) r.memo = (r.memo ? r.memo + '\n' : '') + '検品：' + note;
-    if (!r.arrivedDate) r.arrivedDate = todayStr();
+    if (!rtArrived(r)) r.arrivedDate = todayStr();
     if (['received', 'waiting'].includes(r.status)) r.status = 'arrived';
     r.updatedAt = Date.now(); r.updatedBy = rtMe();
     await rtPut('returns/' + id, r);
