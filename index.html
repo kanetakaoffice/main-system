@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-12b">
+<meta name="app-build" content="2026-11-12c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -26734,6 +26734,14 @@ async function ercCommit() {
   .rt-item .rt-body { display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,42%); gap:18px; align-items:start; }
   .rt-item .rt-body .rt-steps { margin-top:0; }
 }
+/* 返品カードの開閉 */
+.rt-sumrow { display:flex; gap:10px; align-items:flex-start; cursor:pointer; margin:-12px; padding:12px; border-radius:10px; }
+.rt-sumrow:hover { background:var(--surface); }
+.rt-sumrow:focus-visible { outline:2px solid #3a3a3a; outline-offset:-2px; }
+.rt-fold.open .rt-sumrow { margin-bottom:-12px; }
+.rt-chev { flex:none; font-size:12px; color:var(--text-muted); padding-top:2px; }
+.rt-st { display:inline-block; font-size:10.5px; font-weight:700; padding:2px 6px; border-radius:4px; background:#3a3a3a; color:#fff; }
+.rt-st.done { background:#e8f5e9; color:#2e7d32; }
 /* 検品（商品の状態）・要注意・対応ルール */
 .rt-cond { display:inline-block; font-size:11px; font-weight:800; padding:2px 8px; border-radius:999px; border:1px solid transparent; }
 .rt-cond.unopened { background:#e8f5e9; color:#1b5e20; border-color:#b5dcb8; }
@@ -27216,18 +27224,33 @@ function rtReturnCard(r) {
     `<div class="rt-money"><span>返金</span><span>${r.refundPending ? '<span class="az-tag">代表に確認中</span> ' : ''}${r.refund ? rtYen(r.refund) + (r.refundBaseRate ? `（${r.refundBaseRate === 1 ? '全額' : '50%'}${r.shipBack ? ' − 着払い送料 ' + rtYen(r.shipBack) : ''}）` : r.price ? `（販売額の${Math.round(r.refund / r.price * 100)}%）` : '') : '金額未定'}${r.refundDate ? (r.refundFromReport ? '・Amazonで返金済み' : '・' + rtMd(r.refundDate) + ' 返金済み') : ''}</span></div>`;
   const cv = r.caution;
   const rule = cv && cv.ruleId && (RT.rules || {})[cv.ruleId];
-  return `<div class="rt-item ${warns.length || cv ? 'warn' : ''}">
-    <div class="rt-body">
+  const isOpen = RT.openCards && RT.openCards.has(r.id);
+  // 閉じているとき：1〜2行の要約だけ。タップで開く
+  const stLabel = (steps.find(s => s[0] === r.status) || [])[1] || '';
+  const refundShort = r.refundPending ? '返金額を確認中' : r.refundDate ? '返金 ' + rtYen(r.refund) : r.refund ? '返金 ' + rtYen(r.refund) + '（未返金）' : (r.kind === 'return' && !r.noReturn ? '返金 金額未定' : '');
+  const head = `<div class="rt-sumrow" role="button" tabindex="0" aria-expanded="${isOpen ? 'true' : 'false'}" onclick="rtToggleCard('${r.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();rtToggleCard('${r.id}')}">
+      <div style="min-width:0;flex:1">
+        <div class="t">${cv ? '<span class="az-tag" style="background:#a3261a;color:#fff">⚠️ 要注意</span> ' : ''}${rtEsc(r.model || (r.title || '').slice(0, 40) || '（商品不明）')}
+          <span class="az-tag gray">${rtEsc(RT_KIND[r.kind] || '')}</span> <span class="rt-st ${r.status === 'done' ? 'done' : ''}">${rtEsc(stLabel)}</span>
+          ${!rtIsClaim(r) && rtArrived(r) ? rtCondTag(r.condRank) : ''}
+          ${r.noReturn ? '<span class="az-tag" style="background:#eef2ff;color:#4338ca">返送なしで終了</span>' : ''}</div>
+        <div class="s">受付 ${rtMd(r.receivedDate)}${r.arrivedDate ? '・到着 ' + rtMd(r.arrivedDate) : r.arrivedUnknown ? '・到着日不明' : ''}・${rtEsc(r.reason || '')}${refundShort ? '・' + refundShort : ''}${r.result ? '・行き先：' + rtEsc(rtResultText(r)) : ''}</div>
+        ${warns.length && !isOpen ? `<div style="margin-top:4px">${warns.map(w => `<span class="az-tag">${rtEsc(w)}</span>`).join(' ')}</div>` : ''}
+      </div>
+      <span class="rt-chev" aria-hidden="true">${isOpen ? '▲' : '▼'}</span>
+    </div>`;
+  if (!isOpen) return `<div class="rt-item rt-fold ${warns.length || cv ? 'warn' : ''}" id="rtc-${r.id}">${head}</div>`;
+  return `<div class="rt-item rt-fold open ${warns.length || cv ? 'warn' : ''}" id="rtc-${r.id}">${head}
+    <div class="rt-body" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
       <div style="min-width:0">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
-          <div class="t">${cv ? '<span class="az-tag" style="background:#a3261a;color:#fff">⚠️ 要注意</span> ' : ''}${rtEsc(r.model || (r.title || '').slice(0, 40) || '（商品不明）')} <span class="az-tag gray">${rtEsc(RT_KIND[r.kind] || '')}</span> ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''}
-            ${!rtIsClaim(r) && rtArrived(r) ? rtCondTag(r.condRank) : ''} ${rtModelTag(r)}
+          <div>${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''} ${rtModelTag(r)}
             ${r.amzStatus ? `<span class="az-tag gray">Amazon：${rtEsc(RT_AMZ_STATUS[r.amzStatus] || r.amzStatus)}</span>` : ''}
             ${RT_CUSTOMER_REASONS.includes(r.reasonCode) ? '<span class="az-tag" style="background:#fff7e6;color:#a16207">お客様都合</span>' : ''}
             ${r.atoz ? '<span class="az-tag">A-to-z保証</span>' : ''}
             ${r.status === 'done' && r.bulkDone ? '<span class="az-tag gray">まとめて完了</span>' : ''}
             ${r.noReturn ? `<span class="az-tag" style="background:#eef2ff;color:#4338ca">返送なしで終了${r.noReturn === 'refunded' ? '（返金あり）' : '（返金なし）'}</span>` : ''}</div>
-          <button class="az-btn small" onclick="rtOpenForm('${r.id}')">編集</button>
+          <button class="az-btn small" style="flex:none" onclick="rtOpenForm('${r.id}')">編集</button>
         </div>
         <div class="s">${rtEsc(r.reason || '')}${r.reasonDetail ? '：' + rtEsc(r.reasonDetail) : ''}</div>
         <div class="s">${r.orderId ? `注文 <a href="${rtScUrl(r.orderId)}" target="_blank" rel="noopener" title="Seller Centralでお客様の情報を確認">${rtEsc(r.orderId)} ↗</a>・` : ''}受付 ${rtMd(r.receivedDate)}${r.arrivedDate ? '・到着 ' + rtMd(r.arrivedDate) : r.arrivedUnknown ? '・<b>到着日不明（手元にあり）</b>' : ''}</div>
@@ -27258,6 +27281,14 @@ function rtReturnCard(r) {
   </div>`;
 }
 
+// カードの開閉（要望：「全部の詳細が出ていてスクロールが長いので、タップしたら開く形にしたい」）。
+// 開いているカードは画面を描き直しても開いたまま（RT.openCards）。そのカードだけ差し替えるのでスクロール位置は動かない
+function rtToggleCard(id) {
+  RT.openCards = RT.openCards || new Set();
+  RT.openCards.has(id) ? RT.openCards.delete(id) : RT.openCards.add(id);
+  const el = document.getElementById('rtc-' + id), r = RT.returns[id];
+  if (el && r) el.outerHTML = rtReturnCard({ id, ...r }); else rtRender();
+}
 // 返品在庫：状態ごとに絞り込み、到着が古い順（放置しているものが上）に並べる
 function rtSetCondFilter(v) { RT.condFilter = v; rtRender(); }
 function rtStockHtml(stock) {
