@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-12d">
+<meta name="app-build" content="2026-11-12e">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -27313,20 +27313,44 @@ function rtStockHtml(stock) {
       <span>止まっている仕入額 <b>${rtYen(costSum)}</b></span>
       ${old90 ? `<span class="rt-age r">90日以上 ${old90}件</span>` : ''}${old30 ? `<span class="rt-age y">30日以上 ${old30}件</span>` : ''}</div>
       <div class="rt-pseg">${keys.map(k => `<button class="${f === k ? 'on' : ''}" onclick="rtSetCondFilter('${k}')">${label(k)} ${cnt(k)}</button>`).join('')}</div>` : ''}
-    ${list.length ? list.map(r => { const mc = r.mercariId && RT.mercari[r.mercariId]; const days = rtDays(rtArrBase(r));
-      return `<div class="rt-item ${days >= 90 ? 'old90' : days >= 30 ? 'old30' : ''}">
-        <div class="t">${r.caution ? '<span class="az-tag" style="background:#a3261a;color:#fff">⚠️ 要注意</span> ' : ''}${rtEsc(r.model || r.title)} ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''} ${rtCondTag(r.condRank)} ${rtAgeTag(days)} ${rtModelTag(r)}</div>
-        <div class="s">${rtArrText(r)}・お客様の理由：${rtEsc(r.reason || '')}${r.reasonDetail ? '（' + rtEsc(r.reasonDetail) + '）' : ''}${r.cost ? '・仕入 ' + rtYen(r.cost) : ''}</div>
-        ${rtCondChecksHtml(r)}
-        ${r.condRank ? '' : '<div class="s" style="color:#8a5a00;margin-top:6px">まだ検品していません。「検品する」から状態を記録してください。</div>'}
-        ${rtSuggestHtml(r)}
-        <div class="rt-row" style="justify-content:space-between">
-          <span>${mc ? `<span class="az-tag ok">メルカリ ${rtEsc((MC_STEPS.find(s => s[0] === mc.status) || [])[1])}${mc.listPrice ? ' ' + rtYen(mc.listPrice) : ''}</span>` : (r.result === 'maker' ? '<span class="az-tag" style="background:#eef2ff;color:#4338ca">メーカーに相談中</span>' : '<span class="az-tag">行き先が未定</span>')}</span>
-          <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-            ${r.photoCount ? `<button class="az-btn small" onclick="rtShowPhotos('${r.id}')">📷 ${r.photoCount}枚</button>` : ''}
-            ${mc ? `<button class="az-btn small" onclick="rtOpenResult('${r.id}')">検品・写真を直す</button><button class="az-btn small" onclick="rtSetView('mercari')">メルカリを見る</button>`
-              : `<button class="az-btn small primary" onclick="rtOpenResult('${r.id}')">${r.condRank ? '行き先を決める' : '検品する'}</button>`}</span></div></div>`; }).join('')
+    ${list.length ? list.map(rtStockCard).join('')
       : `<div class="az-empty">${stock.length ? 'この状態の商品はありません' : '返品在庫はありません'}</div>`}</div>`;
+}
+
+// 返品在庫のカード：閉じているときは型番・状態・経過日数・行き先と1行の要約だけ。タップで詳細と操作ボタンを開く
+function rtStockCard(r) {
+  const mc = r.mercariId && RT.mercari[r.mercariId]; const days = rtDays(rtArrBase(r));
+  const isOpen = RT.openCards && RT.openCards.has('s:' + r.id);
+  const dest = mc ? `<span class="az-tag ok">メルカリ ${rtEsc((MC_STEPS.find(s => s[0] === mc.status) || [])[1])}${mc.listPrice ? ' ' + rtYen(mc.listPrice) : ''}</span>` : (r.result === 'maker' ? '<span class="az-tag" style="background:#eef2ff;color:#4338ca">メーカーに相談中</span>' : '<span class="az-tag">行き先が未定</span>');
+  const arr = r.arrivedDate ? '到着 ' + rtMd(r.arrivedDate) : r.arrivedUnknown ? '到着日不明' : '';
+  const head = `<div class="rt-sumrow" role="button" tabindex="0" aria-expanded="${isOpen ? 'true' : 'false'}" onclick="rtToggleStock('${r.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();rtToggleStock('${r.id}')}">
+      <div class="rt-sumline">
+        <div class="t">${r.caution ? '<span class="az-tag" style="background:#a3261a;color:#fff">⚠️ 要注意</span> ' : ''}${rtEsc(r.model || r.title)} ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''} ${rtCondTag(r.condRank)} ${rtAgeTag(days)}</div>
+        <div class="s rt-sumdet">${arr}・${rtEsc(r.reason || '')}${r.cost ? '・仕入 ' + rtYen(r.cost) : ''}</div>
+        <div class="rt-sumwarn">${dest}${r.photoCount ? ' <span class="az-tag gray">📷 ' + r.photoCount + '枚</span>' : ''}</div>
+      </div>
+      <span class="rt-chev" aria-hidden="true">${isOpen ? '▲' : '▼'}</span>
+    </div>`;
+  const cls = `rt-item rt-fold ${isOpen ? 'open' : ''} ${days >= 90 ? 'old90' : days >= 30 ? 'old30' : ''}`;
+  if (!isOpen) return `<div class="${cls}" id="rts-${r.id}">${head}</div>`;
+  return `<div class="${cls}" id="rts-${r.id}">${head}
+    <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
+      ${rtModelTag(r) ? `<div style="margin-bottom:4px">${rtModelTag(r)}</div>` : ''}
+      <div class="s">${rtArrText(r)}・お客様の理由：${rtEsc(r.reason || '')}${r.reasonDetail ? '（' + rtEsc(r.reasonDetail) + '）' : ''}${r.cost ? '・仕入 ' + rtYen(r.cost) : ''}</div>
+      ${rtCondChecksHtml(r)}
+      ${r.condRank ? '' : '<div class="s" style="color:#8a5a00;margin-top:6px">まだ検品していません。「検品する」から状態を記録してください。</div>'}
+      ${rtSuggestHtml(r)}
+      <div class="rt-row" style="justify-content:flex-end">
+        ${r.photoCount ? `<button class="az-btn small" onclick="rtShowPhotos('${r.id}')">📷 写真 ${r.photoCount}枚</button>` : ''}
+        ${mc ? `<button class="az-btn small" onclick="rtOpenResult('${r.id}')">検品・写真を直す</button><button class="az-btn small" onclick="rtSetView('mercari')">メルカリを見る</button>`
+          : `<button class="az-btn small primary" onclick="rtOpenResult('${r.id}')">${r.condRank ? '行き先を決める' : '検品する'}</button>`}</div>
+    </div></div>`;
+}
+function rtToggleStock(id) {
+  RT.openCards = RT.openCards || new Set();
+  const k = 's:' + id; RT.openCards.has(k) ? RT.openCards.delete(k) : RT.openCards.add(k);
+  const el = document.getElementById('rts-' + id), r = RT.returns[id];
+  if (el && r) el.outerHTML = rtStockCard({ id, ...r }); else rtRender();
 }
 
 function rtMercariHtml(all) {
