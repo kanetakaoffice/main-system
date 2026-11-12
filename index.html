@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-12c">
+<meta name="app-build" content="2026-11-12d">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -26739,6 +26739,13 @@ async function ercCommit() {
 .rt-sumrow:hover { background:var(--surface); }
 .rt-sumrow:focus-visible { outline:2px solid #3a3a3a; outline-offset:-2px; }
 .rt-fold.open .rt-sumrow { margin-bottom:-12px; }
+.rt-sumline { min-width:0; flex:1; display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; }
+.rt-sumline .t { flex:none; max-width:100%; }
+.rt-sumline .rt-sumdet { margin-top:0; flex:1 1 260px; min-width:0; }
+.rt-sumline .rt-sumwarn { flex-basis:100%; }
+@media (min-width:1100px) { .rt-sumline .rt-sumwarn { flex-basis:auto; } }
+.rt-fold:not(.open) { padding-top:9px; padding-bottom:9px; }
+.rt-fold:not(.open) .rt-sumrow { margin:-9px -12px; padding:9px 12px; }
 .rt-chev { flex:none; font-size:12px; color:var(--text-muted); padding-top:2px; }
 .rt-st { display:inline-block; font-size:10.5px; font-weight:700; padding:2px 6px; border-radius:4px; background:#3a3a3a; color:#fff; }
 .rt-st.done { background:#e8f5e9; color:#2e7d32; }
@@ -27229,13 +27236,13 @@ function rtReturnCard(r) {
   const stLabel = (steps.find(s => s[0] === r.status) || [])[1] || '';
   const refundShort = r.refundPending ? '返金額を確認中' : r.refundDate ? '返金 ' + rtYen(r.refund) : r.refund ? '返金 ' + rtYen(r.refund) + '（未返金）' : (r.kind === 'return' && !r.noReturn ? '返金 金額未定' : '');
   const head = `<div class="rt-sumrow" role="button" tabindex="0" aria-expanded="${isOpen ? 'true' : 'false'}" onclick="rtToggleCard('${r.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();rtToggleCard('${r.id}')}">
-      <div style="min-width:0;flex:1">
+      <div class="rt-sumline">
         <div class="t">${cv ? '<span class="az-tag" style="background:#a3261a;color:#fff">⚠️ 要注意</span> ' : ''}${rtEsc(r.model || (r.title || '').slice(0, 40) || '（商品不明）')}
           <span class="az-tag gray">${rtEsc(RT_KIND[r.kind] || '')}</span> <span class="rt-st ${r.status === 'done' ? 'done' : ''}">${rtEsc(stLabel)}</span>
           ${!rtIsClaim(r) && rtArrived(r) ? rtCondTag(r.condRank) : ''}
           ${r.noReturn ? '<span class="az-tag" style="background:#eef2ff;color:#4338ca">返送なしで終了</span>' : ''}</div>
-        <div class="s">受付 ${rtMd(r.receivedDate)}${r.arrivedDate ? '・到着 ' + rtMd(r.arrivedDate) : r.arrivedUnknown ? '・到着日不明' : ''}・${rtEsc(r.reason || '')}${refundShort ? '・' + refundShort : ''}${r.result ? '・行き先：' + rtEsc(rtResultText(r)) : ''}</div>
-        ${warns.length && !isOpen ? `<div style="margin-top:4px">${warns.map(w => `<span class="az-tag">${rtEsc(w)}</span>`).join(' ')}</div>` : ''}
+        <div class="s rt-sumdet">受付 ${rtMd(r.receivedDate)}${r.arrivedDate ? '・到着 ' + rtMd(r.arrivedDate) : r.arrivedUnknown ? '・到着日不明' : ''}・${rtEsc(r.reason || '')}${refundShort ? '・' + refundShort : ''}${r.result ? '・行き先：' + rtEsc(rtResultText(r)) : ''}</div>
+        ${warns.length && !isOpen ? `<div class="rt-sumwarn">${warns.map(w => `<span class="az-tag">${rtEsc(w)}</span>`).join(' ')}</div>` : ''}
       </div>
       <span class="rt-chev" aria-hidden="true">${isOpen ? '▲' : '▼'}</span>
     </div>`;
