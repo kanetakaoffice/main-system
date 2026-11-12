@@ -26663,7 +26663,9 @@ async function ercCommit() {
 }
 </script>
 <!-- ============================================================
-     返品・クレーム／返品在庫／メルカリ（出荷管理の「↩️ 返品・メルカリ」タブ）
+     返品／返品在庫／メルカリ／対応ルール（出荷管理の「↩️ 返品・メルカリ」タブ）
+     2026-11 追加：検品（r.cond・r.condRank・r.photoCount＋/returnPhotos/{id}）、状態ごとの絞り込み、放置アラート、
+       要注意マーク（r.caution）、対応ルール（/returnRules/{id}）、損失額、型番ごとの返品回数、メルカリの出品文づくり
      要望：「Amazonの返品やクレームのリストを作りたい。返品在庫の把握ができていない。どのお客様の
            どの商品が何が原因で返品・クレームになったのか、返金にあたってどの商品が返送されているかも
            管理できていない。Amazonで再販できない返品はメルカリで販売しているので、その在庫や売上も
@@ -26732,6 +26734,37 @@ async function ercCommit() {
   .rt-item .rt-body { display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,42%); gap:18px; align-items:start; }
   .rt-item .rt-body .rt-steps { margin-top:0; }
 }
+/* 検品（商品の状態）・要注意・対応ルール */
+.rt-cond { display:inline-block; font-size:11px; font-weight:800; padding:2px 8px; border-radius:999px; border:1px solid transparent; }
+.rt-cond.unopened { background:#e8f5e9; color:#1b5e20; border-color:#b5dcb8; }
+.rt-cond.opened { background:#e3f2fd; color:#0d47a1; border-color:#b3d4f5; }
+.rt-cond.used { background:#f3e5f5; color:#6a1b9a; border-color:#dcc0e3; }
+.rt-cond.scratched { background:#fff3e0; color:#8a4b00; border-color:#f3d09a; }
+.rt-cond.missing { background:#fff8e1; color:#7a5a00; border-color:#ecd98a; }
+.rt-cond.defect { background:#fdecea; color:#a3261a; border-color:#f2b8b0; }
+.rt-cond.none { background:var(--surface); color:var(--text-muted); border-color:var(--border); }
+.rt-checks { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:4px 12px; font-size:12px; color:var(--text-sub); margin-top:6px; padding:8px 10px; background:var(--surface); border-radius:8px; }
+.rt-checks b { color:var(--text); }
+.rt-checks .ng { color:#a3261a; }
+.rt-suggest { font-size:12px; margin-top:6px; color:#1f5f5b; font-weight:700; }
+.rt-age { font-size:11px; font-weight:800; padding:2px 7px; border-radius:4px; }
+.rt-age.y { background:#fff7e6; color:#8a5a00; }
+.rt-age.r { background:#fdecea; color:#a3261a; }
+.rt-item.old30 { border-left:4px solid #f5c35c; }
+.rt-item.old90 { border-left:4px solid #e57373; }
+.rt-photos { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+.rt-photos img { width:72px; height:72px; object-fit:cover; border-radius:6px; border:1px solid var(--border); cursor:pointer; }
+.rt-photos .x { position:relative; }
+.rt-photos .x button { position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:50%; border:none; background:#3a3a3a; color:#fff; font-size:12px; cursor:pointer; line-height:22px; padding:0; }
+.rt-caution { margin-top:8px; padding:8px 10px; background:#fdecea; border:1px solid #f2b8b0; border-radius:8px; font-size:12px; color:#7a1f14; line-height:1.6; }
+.rt-caution b { color:#a3261a; }
+.rt-chk-sec { border:1px solid var(--border); border-radius:10px; padding:10px; margin-bottom:10px; }
+.rt-chk-sec .h { font-size:12.5px; font-weight:800; margin-bottom:6px; }
+.rt-rule { border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px; background:var(--white); }
+.rt-rule .t { font-weight:800; font-size:14px; }
+.rt-rule .k { font-size:11px; font-weight:800; color:var(--text-muted); margin-top:8px; }
+.rt-rule .v { font-size:13px; white-space:pre-wrap; line-height:1.7; }
+.rt-rule .v.warn { color:#a3261a; }
 #rt-inv-banner .rt-bn { display:flex; align-items:center; justify-content:space-between; gap:8px; background:#fff7e6; border:1px solid #f5d48c; color:#8a5a00; border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px; font-weight:700; cursor:pointer; }
 </style>
 
@@ -26866,6 +26899,124 @@ const rtResultText = r => r.result === 'other' && r.resultOther ? 'その他：'
 const MC_STEPS = [['stock', '出品前'], ['listed', '出品中'], ['sold', '売れた'], ['shipped', '発送済み']];
 const MC_FEE_RATE = 0.10; // メルカリの販売手数料（売値の10%）
 
+// ============================================================
+// 検品（返品された商品の状態）
+// 要望：「返品在庫で商品の状態が正確に分からない。状態ごとに確認できるようにしたい」への対応。
+// 到着したら6項目をチェックし、その結果から状態ランクを自動で決める（手で変えることもできる）。
+// お客様が言った「理由」とは別に、こちらで確認した状態を r.cond / r.condRank に残す。
+// 写真は /returnPhotos/{返品ID} に縮小して保存（一覧の読み込みを重くしないため返品データとは分ける）。
+// ============================================================
+const RT_CHECKS = [
+  ['open', '開封', [['no', '未開封'], ['yes', '開封済み']]],
+  ['use', '使用の形跡', [['no', 'なし'], ['yes', 'あり']]],
+  ['box', '外箱', [['ok', 'きれい'], ['bad', '傷み・汚れ'], ['none', '外箱なし']]],
+  ['parts', '付属品', [['ok', 'そろっている'], ['missing', '足りない']]],
+  ['work', '動作確認', [['ok', '正常'], ['ng', '不良'], ['na', '未確認']]],
+  ['body', '本体の外観', [['ok', 'きれい'], ['minor', '小傷'], ['bad', '目立つ傷・汚れ']]]
+];
+const RT_CHECK_NG = { box: ['bad', 'none'], parts: ['missing'], work: ['ng'], body: ['bad'], use: ['yes'] };
+const RT_COND = { unopened: '未開封', opened: '開封のみ・未使用', used: '使用感あり', scratched: '外観に傷あり', missing: '付属品が足りない', defect: '動作不良' };
+const RT_COND_ORDER = ['unopened', 'opened', 'used', 'scratched', 'missing', 'defect'];
+// 状態ごとのおすすめの行き先（[行き先のキー, 説明]）
+const RT_COND_SUGGEST = {
+  unopened: ['resell', '新品として再販'],
+  opened: ['mercari', 'メルカリ（またはAmazonの中古出品）'],
+  used: ['mercari', 'メルカリ（使用感ありと明記）'],
+  scratched: ['mercari', 'メルカリ（傷ありと明記・写真を多めに）'],
+  missing: ['mercari', 'メルカリ（足りない付属品を明記）'],
+  defect: ['maker', 'メーカーに相談（新品交換・修理）。だめならジャンク品としてメルカリ']
+};
+const RT_PHOTO_MAX = 6;
+function rtCondAuto(c) {
+  if (!c) return '';
+  if (c.work === 'ng') return 'defect';
+  if (c.parts === 'missing') return 'missing';
+  if (c.body === 'bad') return 'scratched';
+  if (c.use === 'yes' || c.body === 'minor') return 'used';
+  if (c.open === 'yes') return 'opened';
+  if (c.open === 'no') return 'unopened';
+  return '';
+}
+function rtCondTag(rank) { return rank ? `<span class="rt-cond ${rank}">${RT_COND[rank]}</span>` : '<span class="rt-cond none">未検品</span>'; }
+function rtCondChecksHtml(r) {
+  const c = r.cond; if (!c) return '';
+  const items = RT_CHECKS.filter(([k]) => c[k]).map(([k, l, opts]) => {
+    const t = (opts.find(o => o[0] === c[k]) || [])[1] || ''; const ng = (RT_CHECK_NG[k] || []).includes(c[k]);
+    return `<span>${l}：<b class="${ng ? 'ng' : ''}">${rtEsc(t)}</b></span>`;
+  });
+  if (c.partsNote) items.push(`<span>足りない付属品：<b class="ng">${rtEsc(c.partsNote)}</b></span>`);
+  if (c.note) items.push(`<span style="grid-column:1/-1">メモ：${rtEsc(c.note)}</span>`);
+  return items.length ? `<div class="rt-checks">${items.join('')}</div>` : '';
+}
+function rtSuggestHtml(r) {
+  const s = RT_COND_SUGGEST[r.condRank]; if (!s || r.result && r.result !== 'maker') return '';
+  return `<div class="rt-suggest">👉 おすすめの行き先：${rtEsc(s[1])}</div>`;
+}
+
+// ── 放置アラート：到着から30日以上は黄、90日以上は赤 ──
+function rtAgeTag(days) {
+  if (days >= 90) return `<span class="rt-age r">${days}日放置</span>`;
+  if (days >= 30) return `<span class="rt-age y">${days}日経過</span>`;
+  return '';
+}
+
+// ── 型番ごとの返品回数（同じ型番の返品が2件以上あればカードに出す） ──
+function rtModelKey(r) { return normalizeModelStr(r.model || '') || ''; }
+function rtModelCounts() {
+  const g = {}; Object.values(RT.returns).forEach(r => { if (r.kind === 'claim') return; const k = rtModelKey(r); if (k) g[k] = (g[k] || 0) + 1; });
+  return g;
+}
+function rtModelTag(r) {
+  const n = (RT.modelCounts || {})[rtModelKey(r)] || 0;
+  return n >= 2 ? `<span class="az-tag" style="background:#fff7e6;color:#8a5a00" title="同じ型番の返品（全期間）">この型番の返品 ${n}件</span>` : '';
+}
+
+// ── 損失額：仕入値 −（返金せずに残った売上＋商品から回収できた額）。Amazonの手数料・送料は含めない ──
+// 確定するもの：在庫に戻した／メルカリで売れた／返送されずに返金した／廃棄。それ以外は「未確定」（null）。
+function rtLoss(r) {
+  if (r.kind !== 'return') return null;
+  const qty = Number(r.qty) || 1, cost = (Number(r.cost) || 0) * qty;
+  if (!cost) return null;
+  let keep;
+  if (r.refundDate) keep = Math.max(0, (Number(r.price) || 0) - (Number(r.refund) || 0));
+  else if (r.noReturn === 'norefund') return null; // お客様が返送も返金もなし＝通常の販売と同じ
+  else return null;
+  let item = null;
+  if (r.noReturn === 'refunded') item = 0;
+  else if (r.result === 'resell') item = cost;
+  else if (r.result === 'dispose') item = 0;
+  else if (r.result === 'mercari') { const m = RT.mercari[r.mercariId]; if (m && ['sold', 'shipped'].includes(m.status)) item = mcNet(m); }
+  if (item == null) return null;
+  return { cost, keep, item, loss: cost - keep - item };
+}
+function rtLossLine(r) {
+  const x = rtLoss(r); if (!x) return '';
+  const l = x.loss;
+  return `<div class="rt-money" title="仕入 ${rtYen(x.cost)} −（返金せずに残った売上 ${rtYen(x.keep)}＋商品の回収 ${rtYen(x.item)}）"><span>返品による損失</span><span class="${l > 0 ? 'rt-minus' : 'rt-plus'}">${l > 0 ? '−' + rtYen(l) : '損失なし' + (l < 0 ? '（+' + rtYen(-l) + '）' : '')}</span></div>`;
+}
+
+// ============================================================
+// 要注意マーク・対応ルール
+// 要望：「Amazonマーケットプレイスや電話で揉めた人にマークを付けて、今後の対応の仕方や注意として分かるようにしたい」への対応。
+// Amazonの規約でお客様の名前・住所・電話番号は保存できないため、人ではなく「注文」に印を付ける
+// （r.caution = {via, note, ruleId, at, by}）。お客様の情報は注文番号からセラーセントラルで確認する。
+// 似たケースの対応の仕方は「対応ルール」（/returnRules/{id}）にまとめ、要注意の返品から選んで結びつける。
+// ============================================================
+const RT_CAUTION_VIA = ['Amazonのメッセージ', '電話', 'A-to-z保証の申請', '評価・レビュー', 'その他'];
+const RT_RULE_SAMPLES = [
+  { title: '使用済みなのに「初期不良」と言われたとき', situation: '届いた商品に使用の形跡があるのに、理由が「初期不良・動かない」になっている。',
+    steps: '1. 到着したらすぐに写真を撮って検品を記録する（傷・汚れ・付属品・動作）\n2. 動作確認で問題がなければ、検品結果をAmazonのメッセージで丁寧に伝える\n3. 使用・破損による価値の低下があれば、返金額の減額を代表に相談する', caution: '感情的なやりとりはしない。事実（写真・検品結果）だけを伝える。' },
+  { title: '電話で強く返金を求められたとき', situation: 'お客様から直接電話があり、すぐに返金するよう強く求められた。',
+    steps: '1. その場で約束はせず「確認して折り返します」と伝える\n2. 注文番号を聞き、セラーセントラルで注文を確認する\n3. 内容を要注意メモに残し、代表に相談してから返答する', caution: '電話の内容は必ずメモに残す。やりとりはできるだけAmazonのメッセージに移す。' },
+  { title: 'A-to-z保証を申請されたとき', situation: 'お客様がAmazonにA-to-z保証を申請した。',
+    steps: '1. セラーセントラルで申請内容と回答期限を確認する\n2. 出荷日・追跡番号・検品の写真をそろえる\n3. 期限内にAmazonへ回答する', caution: '回答期限を過ぎると自動で当社負担になることがあるので、最優先で対応する。' }
+];
+
+// ============================================================
+// メルカリの出品文づくり：検品の結果から説明文のひな形を作る
+// ============================================================
+const MC_COND_LABEL = { unopened: '新品、未使用', opened: '未使用に近い', used: '目立った傷や汚れなし', scratched: 'やや傷や汚れあり', missing: '目立った傷や汚れなし', defect: '全体的に状態が悪い' };
+
 function rtEsc(s) { return escapeHtmlMain(s == null ? '' : String(s)); }
 function rtYen(n) { return (n < 0 ? '−' : '') + '¥' + Math.abs(Math.round(Number(n) || 0)).toLocaleString('ja-JP'); }
 function rtMe() { return typeof currentSessionEmail === 'function' ? currentSessionEmail() : ''; }
@@ -26877,11 +27028,12 @@ async function rtDel(path) { const r = await fetch(authedUrl('/' + path + '.json
 function rtNewId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
 async function rtLoad() {
-  const [r, m] = await Promise.all([
+  const [r, m, ru] = await Promise.all([
     fetch(authedUrl('/returns.json')).then(x => x.json()).catch(() => null),
-    fetch(authedUrl('/mercari.json')).then(x => x.json()).catch(() => null)
+    fetch(authedUrl('/mercari.json')).then(x => x.json()).catch(() => null),
+    fetch(authedUrl('/returnRules.json')).then(x => x.json()).catch(() => null)
   ]);
-  RT.returns = r || {}; RT.mercari = m || {}; RT.loaded = true;
+  RT.returns = r || {}; RT.mercari = m || {}; RT.rules = ru || {}; RT.loaded = true;
   if (!products || !products.length) await loadInventory();
   if (typeof azLoad === 'function' && !AZ.loaded) { try { await azLoad(); } catch (e) {} }
 }
@@ -26924,20 +27076,22 @@ function rtRender() {
   const ym = todayStr().slice(0, 7);
   const mcMonth = mcAll.filter(m => ['sold', 'shipped'].includes(m.status) && (m.soldDate || '').startsWith(ym));
   const warnCount = open.filter(r => rtWarnings(r).length).length;
+  RT.modelCounts = rtModelCounts();
   const seg = (v, l) => `<button class="${RT.view === v ? 'on' : ''}" onclick="rtSetView('${v}')">${l}</button>`;
   let body = '';
   if (RT.view === 'returns') body = rtReturnsHtml(all);
   else if (RT.view === 'stock') body = rtStockHtml(stock);
+  else if (RT.view === 'rules') body = rtRulesHtml();
   else body = rtMercariHtml(mcAll);
   root.innerHTML = `
     <div class="rt-sum">
-      <div><div class="k">対応中の返品・クレーム</div><div class="v">${open.length}<span style="font-size:12px">件</span></div></div>
+      <div><div class="k">対応中の返品</div><div class="v">${open.length}<span style="font-size:12px">件</span></div></div>
       <div><div class="k">要確認</div><div class="v ${warnCount ? 'red' : ''}">${warnCount}<span style="font-size:12px">件</span></div></div>
       <div><div class="k">返品在庫</div><div class="v">${stock.reduce((s, r) => s + (Number(r.qty) || 1), 0)}<span style="font-size:12px">個</span></div></div>
       <div><div class="k">メルカリ出品中</div><div class="v">${mcAll.filter(m => m.status === 'listed').length}<span style="font-size:12px">件</span></div></div>
       <div><div class="k">今月のメルカリ売上</div><div class="v">${rtYen(mcMonth.reduce((s, m) => s + (Number(m.soldPrice) || 0), 0))}</div></div>
     </div>
-    <div class="rt-seg">${seg('returns', '↩️ 返品・クレーム')}${seg('stock', `📦 返品在庫${stock.length ? '（' + stock.length + '）' : ''}`)}${seg('mercari', '🛍 メルカリ')}</div>
+    <div class="rt-seg" style="flex-wrap:wrap">${seg('returns', '↩️ 返品')}${seg('stock', `📦 返品在庫${stock.length ? '（' + stock.length + '）' : ''}`)}${seg('mercari', '🛍 メルカリ')}${seg('rules', '📘 対応ルール')}</div>
     ${body}`;
 }
 
@@ -26959,7 +27113,11 @@ function rtTrendHtml(all) {
   const shipSum = list.reduce((s, r) => s + (Number(r.shipBack) || 0), 0);
   const nReturn = list.filter(r => r.kind !== 'claim').length, nClaim = list.length - nReturn;
   const bars = (key, title) => {
-    const g = {}; list.forEach(r => { const k = r[key] || '不明'; g[k] = (g[k] || 0) + 1; });
+    const g = {};
+    list.forEach(r => {
+      if (key === 'condRank') { if (!r.condRank) return; const k = RT_COND[r.condRank]; g[k] = (g[k] || 0) + 1; return; }
+      const k = r[key] || '不明'; g[k] = (g[k] || 0) + 1;
+    });
     const rows = Object.entries(g).sort((a, b) => b[1] - a[1]).slice(0, 6);
     if (!rows.length) return '';
     const max = rows[0][1];
@@ -26973,14 +27131,19 @@ function rtTrendHtml(all) {
       <div class="rt-money"><span>返金の合計（返金済み）</span><b>${rtYen(refundSum)}</b></div>
       ${list.filter(r => r.noReturn).length ? `<div class="rt-money"><span>返送されずに終了</span><span>${list.filter(r => r.noReturn).length}件</span></div>` : ''}
       ${shipSum ? `<div class="rt-money"><span>着払いの送料（差し引いた分）</span><span>${rtYen(shipSum)}</span></div>` : ''}
-      ${bars('reason', '理由')}${bars('supplier', '仕入先')}${bars('model', '型番')}`
-    : '<div class="az-empty">この期間の返品・クレームはありません</div>'}
-    <div class="az-sub" style="margin-top:8px">受付日で数えています</div>
+      ${(() => { const ls = list.map(rtLoss).filter(Boolean); const sum = ls.reduce((s, x) => s + x.loss, 0);
+        const pend = list.filter(r => r.kind === 'return' && r.cost && !rtLoss(r) && r.noReturn !== 'norefund').length;
+        return `<div class="rt-money"><span>返品による損失（確定 ${ls.length}件）</span><b class="${sum > 0 ? 'rt-minus' : 'rt-plus'}">${sum > 0 ? '−' + rtYen(sum) : sum < 0 ? '損失なし（+' + rtYen(-sum) + '）' : '¥0'}</b></div>
+          ${pend ? `<div class="rt-money"><span>損失が未確定（行き先・返金が決まっていない）</span><span>${pend}件</span></div>` : ''}`; })()}
+      ${list.filter(r => r.caution).length ? `<div class="rt-money"><span>⚠️ 要注意の注文</span><span>${list.filter(r => r.caution).length}件</span></div>` : ''}
+      ${bars('reason', '理由')}${bars('condRank', '検品した状態')}${bars('supplier', '仕入先')}${bars('model', '型番')}`
+    : '<div class="az-empty">この期間の返品はありません</div>'}
+    <div class="az-sub" style="margin-top:8px">受付日で数えています。損失＝仕入値 −（返金せずに残った売上＋商品から回収できた額）で、Amazonの手数料・送料は含みません</div>
   </div>`;
 }
 // 並び順：受付日が新しい順（初期）／古い順／要確認が多い順。絞り込み：すべて／要確認だけ／状態ごと
 const RT_SORTS = [['new', '受付日が新しい順'], ['old', '受付日が古い順'], ['warn', '要確認が多い順']];
-const RT_FILTERS = [['all', 'すべて'], ['warn', '要確認'], ['received', '受付'], ['waiting', '返送待ち'], ['arrived', '到着・検品'], ['handling', 'クレーム対応中']];
+const RT_FILTERS = [['all', 'すべて'], ['warn', '要確認'], ['caution', '⚠️ 要注意'], ['received', '受付'], ['waiting', '返送待ち'], ['arrived', '到着・検品'], ['handling', 'クレーム対応中']];
 function rtSetSort(v) { RT.sort = v; try { localStorage.setItem('rt_sort', v); } catch (e) {} rtRender(); }
 function rtSetFilter(v) { RT.filter = v; rtRender(); }
 function rtSortList(list) {
@@ -27010,8 +27173,10 @@ async function rtBulkDone() {
 function rtReturnsHtml(all) {
   const openAll = all.filter(r => r.status !== 'done');
   const f = RT.filter || 'all';
-  const cnt = k => k === 'all' ? openAll.length : k === 'warn' ? openAll.filter(r => rtWarnings(r).length).length : openAll.filter(r => r.status === k).length;
-  const open = rtSortList(openAll.filter(r => f === 'all' || (f === 'warn' ? rtWarnings(r).length : r.status === f)));
+  // 要注意は完了したものも含めて表示する（今後の対応の参考にするため）
+  const cnt = k => k === 'all' ? openAll.length : k === 'warn' ? openAll.filter(r => rtWarnings(r).length).length : k === 'caution' ? all.filter(r => r.caution).length : openAll.filter(r => r.status === k).length;
+  const open = f === 'caution' ? rtSortList(all.filter(r => r.caution))
+    : rtSortList(openAll.filter(r => f === 'all' || (f === 'warn' ? rtWarnings(r).length : r.status === f)));
   const tools = `<div class="rt-row" style="margin:0 0 10px;justify-content:space-between">
       <div class="rt-pseg" style="margin:0">${RT_FILTERS.filter(([k]) => k === 'all' || cnt(k)).map(([k, l]) => `<button class="${f === k ? 'on' : ''}" onclick="rtSetFilter('${k}')">${l} ${cnt(k)}</button>`).join('')}</div>
       <select class="az-loc" onchange="rtSetSort(this.value)">${RT_SORTS.map(([k, l]) => `<option value="${k}" ${RT.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
@@ -27019,15 +27184,15 @@ function rtReturnsHtml(all) {
   return `<div class="rt-cols">
     <div style="min-width:0">
       <div class="az-card">
-        <div class="az-h"><span>返品・クレーム</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+        <div class="az-h"><span>返品</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           <button class="az-btn" onclick="rtPickReport()">📥 返品レポートを読み込む</button><button class="az-btn primary" onclick="rtOpenForm()">＋ 登録</button></span></div>
         <input type="file" id="rt-report-file" accept=".txt,.tsv,.csv,text/plain,text/tab-separated-values" style="display:none" onchange="rtOnReport(this)">
         ${rtBulkTargets().length ? `<div class="rt-row" style="margin:0 0 10px;padding:8px 10px;background:#fff7e6;border:1px solid #f5d48c;border-radius:8px;justify-content:space-between">
           <span style="font-size:12.5px;color:#8a5a00">返金済みで、受付から${RT_BULK_DAYS}日以上たった返品が <b>${rtBulkTargets().length}件</b> あります。もう終わっている場合はまとめて完了にできます。</span>
           <button class="az-btn small" onclick="rtBulkDone()">まとめて完了にする</button></div>` : ''}
         ${tools}
-        ${open.length ? open.map(rtReturnCard).join('') : `<div class="az-empty">${f === 'all' ? '対応中の返品・クレームはありません' : 'この条件の返品・クレームはありません'}</div>`}
-        ${done.length ? `<button class="az-btn small" style="width:100%;margin-top:4px" onclick="RT.showDone=!RT.showDone;rtRender()">${RT.showDone ? '▲ 完了したものを閉じる' : `▼ 完了したもの（${done.length}件）`}</button>${RT.showDone ? '<div style="margin-top:10px">' + done.map(rtReturnCard).join('') + '</div>' : ''}` : ''}
+        ${open.length ? open.map(rtReturnCard).join('') : `<div class="az-empty">${f === 'all' ? '対応中の返品はありません' : 'この条件の返品はありません'}</div>`}
+        ${done.length && f !== 'caution' ? `<button class="az-btn small" style="width:100%;margin-top:4px" onclick="RT.showDone=!RT.showDone;rtRender()">${RT.showDone ? '▲ 完了したものを閉じる' : `▼ 完了したもの（${done.length}件）`}</button>${RT.showDone ? '<div style="margin-top:10px">' + done.map(rtReturnCard).join('') + '</div>' : ''}` : ''}
       </div>
     </div>
     <div class="rt-side">${rtTrendHtml(all)}</div>
@@ -27042,11 +27207,14 @@ function rtReturnCard(r) {
   const mc = r.mercariId && RT.mercari[r.mercariId];
   const refundLine = rtIsClaim(r) && !r.refund && !r.refundDate && !r.refundPending ? '' :
     `<div class="rt-money"><span>返金</span><span>${r.refundPending ? '<span class="az-tag">代表に確認中</span> ' : ''}${r.refund ? rtYen(r.refund) + (r.refundBaseRate ? `（${r.refundBaseRate === 1 ? '全額' : '50%'}${r.shipBack ? ' − 着払い送料 ' + rtYen(r.shipBack) : ''}）` : r.price ? `（販売額の${Math.round(r.refund / r.price * 100)}%）` : '') : '金額未定'}${r.refundDate ? (r.refundFromReport ? '・Amazonで返金済み' : '・' + rtMd(r.refundDate) + ' 返金済み') : ''}</span></div>`;
-  return `<div class="rt-item ${warns.length ? 'warn' : ''}">
+  const cv = r.caution;
+  const rule = cv && cv.ruleId && (RT.rules || {})[cv.ruleId];
+  return `<div class="rt-item ${warns.length || cv ? 'warn' : ''}">
     <div class="rt-body">
       <div style="min-width:0">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
-          <div class="t">${rtEsc(r.model || (r.title || '').slice(0, 40) || '（商品不明）')} <span class="az-tag gray">${rtEsc(RT_KIND[r.kind] || '')}</span> ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''}
+          <div class="t">${cv ? '<span class="az-tag" style="background:#a3261a;color:#fff">⚠️ 要注意</span> ' : ''}${rtEsc(r.model || (r.title || '').slice(0, 40) || '（商品不明）')} <span class="az-tag gray">${rtEsc(RT_KIND[r.kind] || '')}</span> ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''}
+            ${!rtIsClaim(r) && r.arrivedDate ? rtCondTag(r.condRank) : ''} ${rtModelTag(r)}
             ${r.amzStatus ? `<span class="az-tag gray">Amazon：${rtEsc(RT_AMZ_STATUS[r.amzStatus] || r.amzStatus)}</span>` : ''}
             ${RT_CUSTOMER_REASONS.includes(r.reasonCode) ? '<span class="az-tag" style="background:#fff7e6;color:#a16207">お客様都合</span>' : ''}
             ${r.atoz ? '<span class="az-tag">A-to-z保証</span>' : ''}
@@ -27059,14 +27227,20 @@ function rtReturnCard(r) {
         ${r.labelPayer || r.tracking ? `<div class="s">${r.labelPayer ? '返送料：' + (r.labelPayer === 'Customer' ? 'お客様負担（元払い）' : r.labelPayer === 'Seller' ? '当社負担' : rtEsc(r.labelPayer)) : ''}${r.tracking ? '・追跡 ' + rtEsc(r.carrier || '') + ' ' + rtEsc(r.tracking) : ''}</div>` : ''}
         <div class="s">${r.sku ? 'SKU ' + rtEsc(r.sku) + '・' : ''}${r.supplier ? '仕入先 ' + rtEsc(r.supplier) + '・' : ''}${r.cost ? '仕入 ' + rtYen(r.cost) + '・' : ''}${r.price ? '販売 ' + rtYen(r.price) : ''}</div>
         ${warns.length ? `<div style="margin-top:6px">${warns.map(w => `<span class="az-tag">${rtEsc(w)}</span>`).join(' ')}</div>` : ''}
+        ${rtCondChecksHtml(r)}
+        ${r.photoCount ? `<div class="rt-row" style="margin-top:6px"><button class="az-btn small" onclick="rtShowPhotos('${r.id}')">📷 写真 ${r.photoCount}枚</button></div>` : ''}
         ${r.memo ? `<div class="s" style="white-space:pre-wrap;margin-top:6px">📝 ${rtEsc(r.memo)}</div>` : ''}
+        ${cv ? `<div class="rt-caution"><b>⚠️ 要注意</b>（${rtEsc(cv.via || '')}${cv.at ? '・' + rtMd(cv.at) + ' 記録' : ''}）<div style="white-space:pre-wrap">${rtEsc(cv.note || '')}</div>
+          ${rule ? `<div style="margin-top:4px">📘 対応ルール：<a href="javascript:void(0)" onclick="rtOpenRule('${cv.ruleId}')">${rtEsc(rule.title)}</a></div>` : ''}</div>` : ''}
       </div>
       <div>
         <div class="rt-steps">${stepBtns}</div>
         ${refundLine}
         ${r.result ? `<div class="rt-money"><span>行き先</span><span>${rtEsc(rtResultText(r))}${r.result === 'resell' && r.resultLoc ? '（' + rtEsc(locName(r.resultLoc)) + '）' : ''}${mc ? '・メルカリ ' + rtEsc((MC_STEPS.find(s => s[0] === mc.status) || [])[1] || '') : ''}</span></div>` : ''}
+        ${rtLossLine(r)}
         <div class="rt-row" style="justify-content:flex-end">
           ${!rtIsClaim(r) && r.arrivedDate && (!r.result || r.result === 'maker') ? `<button class="az-btn small primary" onclick="rtOpenResult('${r.id}')">${r.result === 'maker' || r.inspectedDate ? '行き先を決める' : '検品して行き先を決める'}</button>` : ''}
+          ${!rtIsClaim(r) && r.arrivedDate && r.result && r.result !== 'maker' ? `<button class="az-btn small" onclick="rtOpenResult('${r.id}')">検品・写真を直す</button>` : ''}
           ${r.status !== 'done' && (r.kind === 'return' || r.refund || r.refundPending) && !r.refundDate ? `<button class="az-btn small" onclick="rtOpenRefund('${r.id}')">返金を記録</button>` : ''}
           ${!rtIsClaim(r) && !r.arrivedDate && !r.result && !r.noReturn && (['received', 'waiting'].includes(r.status) || r.status === 'done') ? `<button class="az-btn small" onclick="rtOpenNoReturn('${r.id}')">${r.status === 'done' ? '返送なしで終了したことにする' : '返送されずに終了'}</button>` : ''}
           ${mc ? `<button class="az-btn small" onclick="rtSetView('mercari')">メルカリを見る</button>` : ''}
@@ -27077,15 +27251,37 @@ function rtReturnCard(r) {
   </div>`;
 }
 
+// 返品在庫：状態ごとに絞り込み、到着が古い順（放置しているものが上）に並べる
+function rtSetCondFilter(v) { RT.condFilter = v; rtRender(); }
 function rtStockHtml(stock) {
+  const f = RT.condFilter || 'all';
+  const cnt = k => k === 'all' ? stock.length : k === 'none' ? stock.filter(r => !r.condRank).length : stock.filter(r => r.condRank === k).length;
+  const keys = ['all', 'none', ...RT_COND_ORDER].filter(k => k === 'all' || cnt(k));
+  const label = k => k === 'all' ? 'すべて' : k === 'none' ? '未検品' : RT_COND[k];
+  const list = stock.filter(r => f === 'all' || (f === 'none' ? !r.condRank : r.condRank === f))
+    .sort((a, b) => String(a.arrivedDate || '').localeCompare(String(b.arrivedDate || '')));
+  const costSum = stock.reduce((s, r) => s + (Number(r.cost) || 0) * (Number(r.qty) || 1), 0);
+  const old90 = stock.filter(r => rtDays(r.arrivedDate) >= 90).length, old30 = stock.filter(r => rtDays(r.arrivedDate) >= 30).length - old90;
   return `<div class="az-card"><div class="az-h"><span>返品在庫（到着して、まだ行き先が決まっていない・メルカリで売れていない商品）</span></div>
-    <div class="az-sub" style="margin-bottom:8px">返品された商品は、行き先が決まるまで通常の在庫には数えていません。「新品として再販」にすると在庫に戻ります。</div>
-    ${stock.length ? stock.map(r => { const mc = r.mercariId && RT.mercari[r.mercariId];
-      return `<div class="rt-item"><div class="t">${rtEsc(r.model || r.title)} ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''}</div>
-        <div class="s">到着 ${rtMd(r.arrivedDate)}（${rtDays(r.arrivedDate)}日前）・${rtEsc(r.reason || '')}${r.cost ? '・仕入 ' + rtYen(r.cost) : ''}</div>
-        <div class="rt-row" style="justify-content:space-between">${mc ? `<span class="az-tag ok">メルカリ ${rtEsc((MC_STEPS.find(s => s[0] === mc.status) || [])[1])}${mc.listPrice ? ' ' + rtYen(mc.listPrice) : ''}</span>` : (r.result === 'maker' ? '<span class="az-tag" style="background:#eef2ff;color:#4338ca">メーカーに相談中</span>' : '<span class="az-tag">行き先が未定</span>')}
-          ${mc ? `<button class="az-btn small" onclick="rtSetView('mercari')">メルカリを見る</button>` : `<button class="az-btn small primary" onclick="rtOpenResult('${r.id}')">行き先を決める</button>`}</div></div>`; }).join('')
-      : '<div class="az-empty">返品在庫はありません</div>'}</div>`;
+    <div class="az-sub" style="margin-bottom:8px">返品された商品は、行き先が決まるまで通常の在庫には数えていません。「新品として再販」にすると在庫に戻ります。到着が古い順に並んでいます。</div>
+    ${stock.length ? `<div class="rt-row" style="margin:0 0 10px;gap:14px;font-size:12.5px">
+      <span>止まっている仕入額 <b>${rtYen(costSum)}</b></span>
+      ${old90 ? `<span class="rt-age r">90日以上 ${old90}件</span>` : ''}${old30 ? `<span class="rt-age y">30日以上 ${old30}件</span>` : ''}</div>
+      <div class="rt-pseg">${keys.map(k => `<button class="${f === k ? 'on' : ''}" onclick="rtSetCondFilter('${k}')">${label(k)} ${cnt(k)}</button>`).join('')}</div>` : ''}
+    ${list.length ? list.map(r => { const mc = r.mercariId && RT.mercari[r.mercariId]; const days = rtDays(r.arrivedDate);
+      return `<div class="rt-item ${days >= 90 ? 'old90' : days >= 30 ? 'old30' : ''}">
+        <div class="t">${r.caution ? '<span class="az-tag" style="background:#a3261a;color:#fff">⚠️ 要注意</span> ' : ''}${rtEsc(r.model || r.title)} ${r.qty > 1 ? `<span class="az-tag gray">${r.qty}個</span>` : ''} ${rtCondTag(r.condRank)} ${rtAgeTag(days)} ${rtModelTag(r)}</div>
+        <div class="s">到着 ${rtMd(r.arrivedDate)}（${days}日前）・お客様の理由：${rtEsc(r.reason || '')}${r.reasonDetail ? '（' + rtEsc(r.reasonDetail) + '）' : ''}${r.cost ? '・仕入 ' + rtYen(r.cost) : ''}</div>
+        ${rtCondChecksHtml(r)}
+        ${r.condRank ? '' : '<div class="s" style="color:#8a5a00;margin-top:6px">まだ検品していません。「検品する」から状態を記録してください。</div>'}
+        ${rtSuggestHtml(r)}
+        <div class="rt-row" style="justify-content:space-between">
+          <span>${mc ? `<span class="az-tag ok">メルカリ ${rtEsc((MC_STEPS.find(s => s[0] === mc.status) || [])[1])}${mc.listPrice ? ' ' + rtYen(mc.listPrice) : ''}</span>` : (r.result === 'maker' ? '<span class="az-tag" style="background:#eef2ff;color:#4338ca">メーカーに相談中</span>' : '<span class="az-tag">行き先が未定</span>')}</span>
+          <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+            ${r.photoCount ? `<button class="az-btn small" onclick="rtShowPhotos('${r.id}')">📷 ${r.photoCount}枚</button>` : ''}
+            ${mc ? `<button class="az-btn small" onclick="rtOpenResult('${r.id}')">検品・写真を直す</button><button class="az-btn small" onclick="rtSetView('mercari')">メルカリを見る</button>`
+              : `<button class="az-btn small primary" onclick="rtOpenResult('${r.id}')">${r.condRank ? '行き先を決める' : '検品する'}</button>`}</span></div></div>`; }).join('')
+      : `<div class="az-empty">${stock.length ? 'この状態の商品はありません' : '返品在庫はありません'}</div>`}</div>`;
 }
 
 function rtMercariHtml(all) {
@@ -27097,7 +27293,7 @@ function rtMercariHtml(all) {
   const mRows = Object.entries(months).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 6);
   return `<div class="az-card">
       <div class="az-h"><span>メルカリ</span><button class="az-btn primary" onclick="mcOpenForm()">＋ 直接登録</button></div>
-      <div class="az-sub" style="margin-bottom:8px">返品から来た商品は「返品・クレーム」で行き先を「メルカリで販売」にすると、ここに自動で入ります。売れたら売値がEC売上（販路：メルカリ）に記録されます。</div>
+      <div class="az-sub" style="margin-bottom:8px">返品から来た商品は「返品」で行き先を「メルカリで販売」にすると、ここに自動で入ります。売れたら売値がEC売上（販路：メルカリ）に記録されます。</div>
       ${active.length ? active.map(mcCard).join('') : '<div class="az-empty">出品前・出品中・発送待ちの商品はありません</div>'}
       ${shipped.length ? `<button class="az-btn small" style="width:100%;margin-top:4px" onclick="RT.showMcDone=!RT.showMcDone;rtRender()">${RT.showMcDone ? '▲ 閉じる' : `▼ 発送済み（${shipped.length}件）`}</button>${RT.showMcDone ? '<div style="margin-top:10px">' + shipped.map(mcCard).join('') + '</div>' : ''}` : ''}
     </div>
@@ -27114,7 +27310,8 @@ function mcCard(m) {
   return `<div class="rt-item">
     <div style="display:flex;justify-content:space-between;gap:8px"><div style="min-width:0"><div class="t">${rtEsc(m.model || m.title)}</div>
       <div class="s">${ret ? '↩️ 返品から（' + rtEsc(ret.reason || '') + '）・' : ''}${m.cost ? '仕入 ' + rtYen(m.cost) : ''}${m.listedDate ? '・出品 ' + rtMd(m.listedDate) : ''}${m.soldDate ? '・売れた ' + rtMd(m.soldDate) : ''}</div></div>
-      <button class="az-btn small" onclick="mcOpenForm('${m.id}')">編集</button></div>
+      <span style="display:flex;gap:6px;flex:none">${sold ? '' : `<button class="az-btn small" onclick="mcOpenText('${m.id}')">📝 出品文を作る</button>`}<button class="az-btn small" onclick="mcOpenForm('${m.id}')">編集</button></span></div>
+    ${ret && ret.condRank ? `<div style="margin-top:6px">${rtCondTag(ret.condRank)}</div>` : ''}
     <div class="rt-steps">${MC_STEPS.map(([k, l], i) => `<button class="${i < ci ? 'past' : i === ci ? 'cur' : ''}" onclick="mcStep('${m.id}','${k}')">${l}</button>`).join('')}</div>
     ${m.listPrice && !sold ? `<div class="rt-money"><span>出品価格</span><span>${rtYen(m.listPrice)}</span></div>` : ''}
     ${sold ? `<div class="rt-money"><span>売値</span><span>${rtYen(m.soldPrice)}</span></div>
@@ -27144,7 +27341,9 @@ function rtOpenForm(id) {
   const r = id ? RT.returns[id] : { kind: 'return', status: 'received', receivedDate: todayStr(), qty: 1 };
   RT.edit = { id: id || null, data: { ...r } };
   const opt = (obj, v) => Object.entries(obj).map(([k, l]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${l}</option>`).join('');
-  rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:10px">${id ? '返品・クレームを編集' : '返品・クレームを登録'}</div>
+  const cv = r.caution || {};
+  const rules = Object.entries(RT.rules || {}).sort((a, b) => String(a[1].title || '').localeCompare(String(b[1].title || ''), 'ja'));
+  rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:10px">${id ? '返品を編集' : '返品を登録'}</div>
     <div class="rt-f"><label>Amazonの注文ID</label>
       <div style="display:flex;gap:6px"><input type="text" id="rt-order" value="${rtEsc(r.orderId || '')}" placeholder="例：249-1234567-1234567" oninput="rtFindOrder()"></div>
       <div id="rt-order-hits"></div></div>
@@ -27165,6 +27364,15 @@ function rtOpenForm(id) {
       <option value="norefund" ${r.noReturn === 'norefund' ? 'selected' : ''}>返送されずに終了（返金なし）</option>
       <option value="refunded" ${r.noReturn === 'refunded' ? 'selected' : ''}>返送されずに終了（返金あり）</option></select></div>
     <div class="rt-f"><label>メモ</label><textarea id="rt-memo" rows="2">${rtEsc(r.memo || '')}</textarea></div>
+    <div class="rt-chk-sec" style="border-color:${r.caution ? '#f2b8b0' : 'var(--border)'}">
+      <label style="display:flex;gap:8px;align-items:center;font-size:13.5px;font-weight:800;cursor:pointer"><input type="checkbox" id="rt-caution" ${r.caution ? 'checked' : ''} onchange="document.getElementById('rt-caution-box').style.display=this.checked?'block':'none'"> ⚠️ 要注意の注文にする（揉めた・対応に注意が必要）</label>
+      <div id="rt-caution-box" style="display:${r.caution ? 'block' : 'none'};margin-top:8px">
+        <div class="rt-f"><label>どこで</label><select id="rt-caution-via">${RT_CAUTION_VIA.map(x => `<option ${x === cv.via ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+        <div class="rt-f"><label>経緯・今後の注意</label><textarea id="rt-caution-note" rows="3" placeholder="例：検品で使用の形跡があったが、初期不良として全額返金を強く求められた。電話で2回連絡あり。">${rtEsc(cv.note || '')}</textarea></div>
+        <div class="rt-f"><label>関係する対応ルール</label><select id="rt-caution-rule"><option value="">（選ばない）</option>${rules.map(([k, x]) => `<option value="${k}" ${k === cv.ruleId ? 'selected' : ''}>${rtEsc(x.title)}</option>`).join('')}</select></div>
+        <div class="az-sub">お客様の名前・電話番号・住所は書かないでください（Amazonの規約で保存できません）。必要なときは注文番号からセラーセントラルで確認します。</div>
+      </div>
+    </div>
     <div style="display:flex;gap:8px;margin-top:8px">${id ? `<button class="az-btn" style="color:#c0392b" onclick="rtDelete('${id}')">削除</button>` : ''}
       <button class="az-btn" style="flex:1" onclick="rtCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="rtSave()">保存</button></div>`);
 }
@@ -27174,8 +27382,10 @@ function rtFindOrder() {
   const box = document.getElementById('rt-order-hits');
   if (q.length < 5) { box.innerHTML = ''; return; }
   const hits = Object.entries(AZ.orders || {}).filter(([, o]) => String(o.orderId || '').includes(q)).slice(0, 8);
-  box.innerHTML = hits.length ? hits.map(([k, o]) => `<div class="rt-pick" onclick="rtPickOrder('${k}')"><b>${rtEsc(azModelOf(o) || '（型番不明）')}</b> ×${o.qty}<div class="az-sub">${rtEsc(o.orderId)}・${rtEsc((o.title || '').slice(0, 40))}</div></div>`).join('')
-    : '<div class="az-sub" style="margin-top:4px">取り込み済みの注文に見つかりません（90日より前の注文は残っていません）。下で商品を選んでください。</div>';
+  // 同じ注文に要注意の記録があれば知らせる
+  const cau = Object.entries(RT.returns).filter(([k, r]) => r.caution && r.orderId === q && k !== (RT.edit && RT.edit.id));
+  box.innerHTML = cau.map(([, r]) => `<div class="rt-caution"><b>⚠️ この注文は要注意です</b>（${rtEsc(r.caution.via || '')}）<div style="white-space:pre-wrap">${rtEsc(r.caution.note || '')}</div></div>`).join('') + (hits.length ? hits.map(([k, o]) => `<div class="rt-pick" onclick="rtPickOrder('${k}')"><b>${rtEsc(azModelOf(o) || '（型番不明）')}</b> ×${o.qty}<div class="az-sub">${rtEsc(o.orderId)}・${rtEsc((o.title || '').slice(0, 40))}</div></div>`).join('')
+    : '<div class="az-sub" style="margin-top:4px">取り込み済みの注文に見つかりません（90日より前の注文は残っていません）。下で商品を選んでください。</div>');
 }
 function rtPickOrder(k) {
   const o = AZ.orders[k]; if (!o) return;
@@ -27207,6 +27417,13 @@ async function rtSave() {
     reasonDetail: v('rt-detail').trim(), receivedDate: v('rt-received') || todayStr(), arrivedDate: v('rt-arrived') || '', memo: v('rt-memo').trim(),
     updatedAt: Date.now(), updatedBy: rtMe() });
   if (!d.model && !d.title) { showToast('注文IDから選ぶか、在庫から商品を選んでください'); return; }
+  // 要注意マーク
+  if (document.getElementById('rt-caution').checked) {
+    const note = v('rt-caution-note').trim();
+    if (!note) { showToast('要注意の経緯・今後の注意を入力してください'); return; }
+    d.caution = { via: v('rt-caution-via'), note, ruleId: v('rt-caution-rule') || '', at: (d.caution && d.caution.at) || todayStr(), by: (d.caution && d.caution.by) || rtMe() };
+    if (!d.caution.ruleId) delete d.caution.ruleId;
+  } else delete d.caution;
   // 商品の返送：返送されずに終了なら完了にする（届いている返品・行き先が決まっている返品には付けない）
   const nr = v('rt-noret');
   if (nr && (d.arrivedDate || d.result)) { showToast('到着済み・行き先が決まっている返品は「返送されずに終了」にできません'); return; }
@@ -27224,8 +27441,8 @@ async function rtSave() {
 async function rtDelete(id) {
   const r = RT.returns[id]; if (!r) return;
   if (r.restockMoveKey || r.mercariId) { showToast('在庫に戻した・メルカリに出した返品は削除できません。先に行き先を取り消してください'); return; }
-  if (!(await showConfirm('この返品・クレームを削除しますか？'))) return;
-  try { await rtDel('returns/' + id); delete RT.returns[id]; rtCloseModal(); rtRender(); rtRenderBanner(); showToast('削除しました'); } catch (e) { showToast('削除に失敗しました'); }
+  if (!(await showConfirm('この返品を削除しますか？'))) return;
+  try { await rtDel('returns/' + id); if (r.photoCount) await rtDel('returnPhotos/' + id).catch(() => {}); delete RT.returns[id]; rtCloseModal(); rtRender(); rtRenderBanner(); showToast('削除しました'); } catch (e) { showToast('削除に失敗しました'); }
 }
 async function rtSetStatus(id, st) {
   const r = RT.returns[id]; if (!r || r.status === st) return;
@@ -27320,19 +27537,98 @@ async function rtSaveRefund() {
 }
 
 // ── 検品して行き先を決める ──
+// 行き先が決まっている（メーカー相談中以外）ときは「検品・写真を直す」だけの画面になる
 function rtOpenResult(id) {
   const r = RT.returns[id]; if (!r) return;
-  RT.edit = { id };
+  const inspectOnly = !!(r.result && r.result !== 'maker');
+  RT.edit = { id, inspectOnly, photos: null, photosDirty: false };
   const p = r.productKey && (products || []).find(x => x._key === r.productKey);
-  const choices = [...RT_RESULT_CHOICES.filter(k => !(r.result === 'maker' && k === 'maker')).map(k => [k, RT_RESULT[k]]), ['hold', 'まだ決めない（検品メモだけ残す）']];
-  rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:4px">${r.result === 'maker' || r.inspectedDate ? '行き先を決める' : '検品して行き先を決める'}</div>
-    <div class="az-sub" style="margin-bottom:10px">${rtEsc(r.model || r.title)}（${r.qty || 1}個）${r.result === 'maker' ? '・今：メーカーに相談中' : ''}</div>
-    ${choices.map(([k, l]) => `<label class="rt-pick" style="display:flex;gap:8px;align-items:center"><input type="radio" name="rt-res" value="${k}" ${k === 'hold' ? 'checked' : ''} onchange="rtResultChange(this.value)"> ${l}</label>`).join('')}
+  const c = r.cond || {};
+  const choices = [...RT_RESULT_CHOICES.filter(k => !(r.result === 'maker' && k === 'maker')).map(k => [k, RT_RESULT[k]]), ['hold', 'まだ決めない（検品だけ記録する）']];
+  const checks = RT_CHECKS.map(([k, l, opts]) => `<div class="rt-f" style="margin-bottom:6px"><label>${l}</label><select id="rt-c-${k}" onchange="rtCondPreview()"><option value="">（未チェック）</option>${opts.map(([v, t]) => `<option value="${v}" ${c[k] === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`).join('');
+  rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:4px">${inspectOnly ? '検品・写真を直す' : r.result === 'maker' || r.inspectedDate ? '行き先を決める' : '検品して行き先を決める'}</div>
+    <div class="az-sub" style="margin-bottom:10px">${rtEsc(r.model || r.title)}（${r.qty || 1}個）・お客様の理由：${rtEsc(r.reason || '')}${r.result === 'maker' ? '・今：メーカーに相談中' : ''}</div>
+    <div class="rt-chk-sec"><div class="h">① 商品の状態をチェック</div>
+      <div class="rt-g2">${checks}</div>
+      <div class="rt-f" id="rt-c-parts-box" style="display:${c.parts === 'missing' ? 'block' : 'none'};margin-bottom:6px"><label>足りない付属品</label><input type="text" id="rt-c-partsNote" value="${rtEsc(c.partsNote || '')}" placeholder="例：リモコン・取扱説明書"></div>
+      <div class="rt-f" style="margin-bottom:6px"><label>状態のメモ（傷の場所など）</label><input type="text" id="rt-c-note" value="${rtEsc(c.note || '')}" placeholder="例：右側面に1cmほどの擦り傷"></div>
+      <div class="rt-f" style="margin-bottom:4px"><label>状態ランク</label><select id="rt-c-rank" onchange="rtCondPreview()"><option value="">自動（チェックから判定）</option>${RT_COND_ORDER.map(k => `<option value="${k}" ${r.condManual && r.condRank === k ? 'selected' : ''}>${RT_COND[k]}</option>`).join('')}</select></div>
+      <div id="rt-c-preview" style="font-size:12.5px;margin-top:6px"></div></div>
+    <div class="rt-chk-sec"><div class="h">② 写真（最大${RT_PHOTO_MAX}枚）</div>
+      <div class="az-sub" style="margin-bottom:6px">傷・付属品・動作の様子を撮っておくと、返金の減額やAmazonへの補償申請のときの証拠になります。</div>
+      <div id="rt-photo-list" class="rt-photos">${r.photoCount ? '<span class="az-sub">読み込み中…</span>' : ''}</div>
+      <label class="az-btn small" style="display:inline-block;margin-top:8px;cursor:pointer">📷 写真を追加<input type="file" accept="image/*" multiple style="display:none" onchange="rtAddPhotos(this)"></label></div>
+    ${inspectOnly ? '' : `<div class="rt-chk-sec"><div class="h">③ 行き先</div>
+    ${choices.map(([k, l]) => `<label class="rt-pick" style="display:flex;gap:8px;align-items:center"><input type="radio" name="rt-res" value="${k}" ${k === 'hold' ? 'checked' : ''} onchange="rtResultChange(this.value)"> ${l}<span id="rt-sug-${k}"></span></label>`).join('')}
     <div id="rt-res-other" style="display:none;margin-top:8px" class="rt-f"><label>その他の内容</label><input type="text" id="rt-res-other-text" placeholder="例：社内で使用・部品取り など"></div>
     <div id="rt-res-loc" style="display:none;margin-top:8px" class="rt-f"><label>戻す事務所</label>
       ${p ? `<select id="rt-loc">${stockLocations.map(l => `<option value="${rtEsc(l.id)}">${rtEsc(l.name)}</option>`).join('')}</select>` : '<div class="az-tag">在庫の商品が選ばれていません。先に「編集」で商品を選んでください</div>'}</div>
-    <div class="rt-f" style="margin-top:8px"><label>検品メモ（状態・付属品など）</label><textarea id="rt-res-note" rows="2"></textarea></div>
-    <div style="display:flex;gap:8px"><button class="az-btn" style="flex:1" onclick="rtCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="rtSaveResult()">決定</button></div>`);
+    <div class="rt-f" style="margin-top:8px"><label>メモ（任意）</label><textarea id="rt-res-note" rows="2"></textarea></div></div>`}
+    <div style="display:flex;gap:8px"><button class="az-btn" style="flex:1" onclick="rtCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="rtSaveResult()">${inspectOnly ? '保存' : '決定'}</button></div>`);
+  rtCondPreview();
+  rtLoadPhotos(id);
+}
+function rtCondRead() {
+  const c = {}; RT_CHECKS.forEach(([k]) => { const v = (document.getElementById('rt-c-' + k) || {}).value; if (v) c[k] = v; });
+  const pn = (document.getElementById('rt-c-partsNote') || {}).value || ''; if (c.parts === 'missing' && pn.trim()) c.partsNote = pn.trim();
+  const nt = (document.getElementById('rt-c-note') || {}).value || ''; if (nt.trim()) c.note = nt.trim();
+  const manual = (document.getElementById('rt-c-rank') || {}).value || '';
+  return { cond: c, rank: manual || rtCondAuto(c), manual: !!manual };
+}
+function rtCondPreview() {
+  const x = rtCondRead();
+  const pb = document.getElementById('rt-c-parts-box'); if (pb) pb.style.display = x.cond.parts === 'missing' ? 'block' : 'none';
+  const el = document.getElementById('rt-c-preview'); if (!el) return;
+  const s = RT_COND_SUGGEST[x.rank];
+  el.innerHTML = x.rank ? `状態：${rtCondTag(x.rank)}${x.manual ? '（手で選択）' : '（自動判定）'}${s ? `<div class="rt-suggest">👉 おすすめの行き先：${rtEsc(s[1])}</div>` : ''}` : '<span class="az-sub">チェックすると状態ランクが自動で決まります</span>';
+  RT_RESULT_CHOICES.forEach(k => { const b = document.getElementById('rt-sug-' + k); if (b) b.innerHTML = s && s[0] === k ? ' <span class="az-tag ok">おすすめ</span>' : ''; });
+}
+// ── 写真 ──
+async function rtLoadPhotos(id) {
+  const r = RT.returns[id];
+  let list = [];
+  if (r && r.photoCount) { try { list = (await fetch(authedUrl('/returnPhotos/' + id + '.json')).then(x => x.json())) || []; } catch (e) { list = []; } }
+  if (!RT.edit || RT.edit.id !== id) return;
+  const loaded = Array.isArray(list) ? list.filter(Boolean) : Object.values(list || {});
+  // 読み込み中に追加した写真があれば後ろにつなげる
+  RT.edit.photos = RT.edit.photosDirty ? loaded.concat(RT.edit.photos || []).slice(0, RT_PHOTO_MAX) : loaded;
+  rtDrawPhotos();
+}
+function rtDrawPhotos() {
+  const el = document.getElementById('rt-photo-list'); if (!el || !RT.edit) return;
+  const ps = RT.edit.photos || [];
+  el.innerHTML = ps.length ? ps.map((u, i) => `<span class="x"><img src="${u}" alt="返品商品の写真${i + 1}" onclick="rtZoomPhoto(${i})"><button type="button" aria-label="写真を削除" onclick="rtRemovePhoto(${i})">×</button></span>`).join('') : '<span class="az-sub">写真はまだありません</span>';
+}
+async function rtAddPhotos(input) {
+  const files = Array.from(input.files || []); input.value = '';
+  if (!RT.edit) return;
+  RT.edit.photos = RT.edit.photos || [];
+  for (const f of files) {
+    if (RT.edit.photos.length >= RT_PHOTO_MAX) { showToast(`写真は${RT_PHOTO_MAX}枚までです`); break; }
+    try { RT.edit.photos.push(await compressImageFile(f, 1024, 0.65)); RT.edit.photosDirty = true; } catch (e) { showToast('写真を読み込めませんでした'); }
+  }
+  rtDrawPhotos();
+}
+function rtRemovePhoto(i) { if (!RT.edit || !RT.edit.photos) return; RT.edit.photos.splice(i, 1); RT.edit.photosDirty = true; rtDrawPhotos(); }
+function rtZoomPhoto(i) { const u = RT.edit && RT.edit.photos && RT.edit.photos[i]; if (u) { const w = window.open(); if (w) w.document.write(`<img src="${u}" style="max-width:100%">`); } }
+async function rtSavePhotos(id, r) {
+  if (!RT.edit || !RT.edit.photosDirty) return;
+  const ps = RT.edit.photos || [];
+  if (ps.length) await rtPut('returnPhotos/' + id, ps); else await rtDel('returnPhotos/' + id).catch(() => {});
+  if (ps.length) r.photoCount = ps.length; else delete r.photoCount;
+}
+// カードから写真を見る
+async function rtShowPhotos(id) {
+  const r = RT.returns[id]; if (!r) return;
+  RT.edit = { id, photos: null };
+  rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:4px">写真</div><div class="az-sub" style="margin-bottom:8px">${rtEsc(r.model || r.title)}</div>
+    <div id="rt-photo-view" class="rt-photos"><span class="az-sub">読み込み中…</span></div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="az-btn" style="flex:1" onclick="rtCloseModal()">閉じる</button></div>`);
+  let list = [];
+  try { list = (await fetch(authedUrl('/returnPhotos/' + id + '.json')).then(x => x.json())) || []; } catch (e) {}
+  RT.edit.photos = Array.isArray(list) ? list.filter(Boolean) : Object.values(list || {});
+  const el = document.getElementById('rt-photo-view');
+  if (el) el.innerHTML = RT.edit.photos.length ? RT.edit.photos.map((u, i) => `<img src="${u}" alt="返品商品の写真${i + 1}" style="width:140px;height:140px" onclick="rtZoomPhoto(${i})">`).join('') : '<span class="az-sub">写真はありません</span>';
 }
 function rtResultChange(v) {
   document.getElementById('rt-res-loc').style.display = v === 'resell' ? 'block' : 'none';
@@ -27340,6 +27636,17 @@ function rtResultChange(v) {
 }
 async function rtSaveResult() {
   const id = RT.edit && RT.edit.id, r = RT.returns[id]; if (!r) return;
+  // 検品（状態・写真）を記録
+  const cx = rtCondRead();
+  if (Object.keys(cx.cond).length) { r.cond = cx.cond; r.inspectedDate = r.inspectedDate || todayStr(); } else delete r.cond;
+  if (cx.rank) r.condRank = cx.rank; else delete r.condRank;
+  if (cx.manual) r.condManual = true; else delete r.condManual;
+  try { await rtSavePhotos(id, r); } catch (e) { showToast('写真の保存に失敗しました'); return; }
+  if (RT.edit.inspectOnly) {
+    r.updatedAt = Date.now(); r.updatedBy = rtMe();
+    try { await rtPut('returns/' + id, r); rtCloseModal(); rtRender(); showToast('検品を保存しました'); } catch (e) { showToast('保存に失敗しました'); }
+    return;
+  }
   const res = (document.querySelector('input[name="rt-res"]:checked') || {}).value;
   const note = document.getElementById('rt-res-note').value.trim();
   if (!res) return;
@@ -27501,6 +27808,108 @@ async function mcDelete(id) {
     if (r) { delete r.mercariId; delete r.result; delete r.resultDate; await rtPut('returns/' + m.fromReturn, r); }
     rtCloseModal(); rtRender(); rtRenderBanner(); showToast('削除しました');
   } catch (e) { showToast('削除に失敗しました'); }
+}
+
+// ── メルカリの出品文を作る（検品の結果から） ──
+function mcBuildText(m) {
+  const r = m.fromReturn && RT.returns[m.fromReturn];
+  const c = (r && r.cond) || {}, rank = r && r.condRank;
+  const name = m.title || m.model || '';
+  const opt = (k) => { const def = RT_CHECKS.find(x => x[0] === k); return def && c[k] ? (def[2].find(o => o[0] === c[k]) || [])[1] : ''; };
+  let mcCond = MC_COND_LABEL[rank] || '';
+  if (rank === 'scratched' && c.body === 'bad') mcCond = '傷や汚れあり';
+  const lines = [];
+  lines.push(`${name}${m.model && !name.includes(m.model) ? '（' + m.model + '）' : ''}をご覧いただきありがとうございます。`, '');
+  lines.push('【商品】' + name);
+  if (m.model) lines.push('【型番】' + m.model);
+  if (rank) {
+    const st = { unopened: '未開封の新品です。', opened: '開封のみで、使用していません。', used: '使用感があります。', scratched: '本体に傷・汚れがあります。', missing: '付属品が一部足りません。', defect: '動作に不具合があるため、ジャンク品として出品します。' }[rank];
+    lines.push('【状態】' + st + (c.note ? '（' + c.note + '）' : ''));
+  }
+  if (c.open === 'yes' || c.open === 'no') lines.push('【開封】' + opt('open'));
+  if (c.box) lines.push('【外箱】' + opt('box'));
+  if (c.parts) lines.push('【付属品】' + (c.parts === 'ok' ? 'そろっています' : '一部足りません' + (c.partsNote ? '（' + c.partsNote + '）' : '')));
+  if (c.work) lines.push('【動作確認】' + (c.work === 'ok' ? '通電・動作を確認済みです' : c.work === 'ng' ? '不具合があります（ジャンク品扱い）' : '未確認です'));
+  if (c.body) lines.push('【本体の外観】' + opt('body'));
+  if (r) lines.push('', '※一度お客様のもとへお届けした後、返品された商品です。');
+  lines.push('', '写真もあわせてご確認ください。', 'ご不明な点はお気軽にコメントでお問い合わせください。');
+  return { title: (m.model ? m.model + ' ' : '') + (m.title && m.title !== m.model ? m.title : ''), mcCond, body: lines.join('\n') };
+}
+function mcOpenText(id) {
+  const m = RT.mercari[id]; if (!m) return;
+  const t = mcBuildText(m);
+  const r = m.fromReturn && RT.returns[m.fromReturn];
+  rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:4px">メルカリの出品文</div>
+    <div class="az-sub" style="margin-bottom:10px">検品の結果からひな形を作りました。自由に直してからコピーしてください。${r && !r.condRank ? '<br><b style="color:#a3261a">まだ検品していないため、状態が入っていません。</b>' : ''}</div>
+    <div class="rt-f"><label>商品名（40文字まで）</label><input type="text" id="mc-t-title" value="${rtEsc(t.title.trim().slice(0, 40))}"></div>
+    ${t.mcCond ? `<div class="rt-f"><label>メルカリの「商品の状態」の目安</label><div style="font-size:14px;font-weight:700">${rtEsc(t.mcCond)}</div></div>` : ''}
+    <div class="rt-f"><label>商品の説明</label><textarea id="mc-t-body" rows="12">${rtEsc(t.body)}</textarea></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="az-btn" style="flex:1" onclick="rtCloseModal()">閉じる</button>
+      <button class="az-btn" style="flex:1" onclick="mcCopy('mc-t-title')">商品名をコピー</button>
+      <button class="az-btn primary" style="flex:1" onclick="mcCopy('mc-t-body')">説明をコピー</button></div>`);
+}
+async function mcCopy(elId) {
+  const el = document.getElementById(elId); if (!el) return;
+  try { await navigator.clipboard.writeText(el.value); showToast('コピーしました'); }
+  catch (e) { el.select(); try { document.execCommand('copy'); showToast('コピーしました'); } catch (e2) { showToast('コピーできませんでした。手で選択してコピーしてください'); } }
+}
+
+// ── 対応ルール ──
+function rtRulesHtml() {
+  const rules = Object.entries(RT.rules || {}).map(([id, x]) => ({ id, ...x })).sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'ja'));
+  const used = {}; Object.values(RT.returns).forEach(r => { if (r.caution && r.caution.ruleId) used[r.caution.ruleId] = (used[r.caution.ruleId] || 0) + 1; });
+  return `<div class="az-card">
+    <div class="az-h"><span>対応ルール（こういうときはどうするか）</span><button class="az-btn primary" onclick="rtOpenRule()">＋ ルールを追加</button></div>
+    <div class="az-sub" style="margin-bottom:10px">揉めたときの対応の仕方・注意点をまとめておく場所です。返品の「⚠️ 要注意」から関係するルールを選ぶと、カードからすぐ開けます。</div>
+    ${rules.length ? rules.map(x => `<div class="rt-rule">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div class="t">${rtEsc(x.title)}</div>
+        <span style="display:flex;gap:6px;flex:none">${used[x.id] ? `<button class="az-btn small" onclick="RT.filter='caution';rtSetView('returns')">要注意 ${used[x.id]}件</button>` : ''}<button class="az-btn small" onclick="rtEditRule('${x.id}')">編集</button></span></div>
+      ${x.situation ? `<div class="k">こんなとき</div><div class="v">${rtEsc(x.situation)}</div>` : ''}
+      ${x.steps ? `<div class="k">対応の仕方</div><div class="v">${rtEsc(x.steps)}</div>` : ''}
+      ${x.caution ? `<div class="k">注意</div><div class="v warn">${rtEsc(x.caution)}</div>` : ''}
+      <div class="az-sub" style="margin-top:6px">${x.updatedAt ? '更新 ' + rtMd(ymdKey(new Date(x.updatedAt))) : ''}</div></div>`).join('')
+    : `<div class="az-empty">まだルールがありません</div><button class="az-btn" style="width:100%" onclick="rtAddSampleRules()">例を3つ入れる（あとで自由に直せます）</button>`}
+  </div>`;
+}
+// カードのリンクから開く：内容を表示（編集ボタン付き）
+function rtOpenRule(id) {
+  if (!id) return rtEditRule();
+  const x = (RT.rules || {})[id]; if (!x) { showToast('このルールは削除されています'); return; }
+  rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:8px">📘 ${rtEsc(x.title)}</div>
+    <div class="rt-rule" style="border:none;padding:0">
+      ${x.situation ? `<div class="k">こんなとき</div><div class="v">${rtEsc(x.situation)}</div>` : ''}
+      ${x.steps ? `<div class="k">対応の仕方</div><div class="v">${rtEsc(x.steps)}</div>` : ''}
+      ${x.caution ? `<div class="k">注意</div><div class="v warn">${rtEsc(x.caution)}</div>` : ''}</div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="az-btn" style="flex:1" onclick="rtCloseModal()">閉じる</button><button class="az-btn" style="flex:1" onclick="rtEditRule('${id}')">編集</button></div>`);
+}
+function rtEditRule(id) {
+  const x = id ? (RT.rules || {})[id] || {} : {};
+  RT.edit = { ruleId: id || null };
+  rtOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:10px">${id ? 'ルールを編集' : 'ルールを追加'}</div>
+    <div class="rt-f"><label>タイトル</label><input type="text" id="rr-title" value="${rtEsc(x.title || '')}" placeholder="例：電話で強く返金を求められたとき"></div>
+    <div class="rt-f"><label>こんなとき</label><textarea id="rr-sit" rows="2">${rtEsc(x.situation || '')}</textarea></div>
+    <div class="rt-f"><label>対応の仕方</label><textarea id="rr-steps" rows="5" placeholder="1. …&#10;2. …">${rtEsc(x.steps || '')}</textarea></div>
+    <div class="rt-f"><label>注意</label><textarea id="rr-caution" rows="2">${rtEsc(x.caution || '')}</textarea></div>
+    <div style="display:flex;gap:8px">${id ? `<button class="az-btn" style="color:#c0392b" onclick="rtDeleteRule('${id}')">削除</button>` : ''}
+      <button class="az-btn" style="flex:1" onclick="rtCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="rtSaveRule()">保存</button></div>`);
+}
+async function rtSaveRule() {
+  const v = id => document.getElementById(id).value.trim();
+  const x = { title: v('rr-title'), situation: v('rr-sit'), steps: v('rr-steps'), caution: v('rr-caution'), updatedAt: Date.now(), updatedBy: rtMe() };
+  if (!x.title) { showToast('タイトルを入力してください'); return; }
+  const id = (RT.edit && RT.edit.ruleId) || rtNewId();
+  try { await rtPut('returnRules/' + id, x); RT.rules = RT.rules || {}; RT.rules[id] = x; rtCloseModal(); rtRender(); showToast('保存しました'); }
+  catch (e) { showToast('保存に失敗しました'); }
+}
+async function rtDeleteRule(id) {
+  if (!(await showConfirm('このルールを削除しますか？\n（要注意の返品に結びついている場合、結びつきだけ外れます）'))) return;
+  try { await rtDel('returnRules/' + id); delete RT.rules[id]; rtCloseModal(); rtRender(); showToast('削除しました'); } catch (e) { showToast('削除に失敗しました'); }
+}
+async function rtAddSampleRules() {
+  try {
+    for (const s of RT_RULE_SAMPLES) { const id = rtNewId(); const x = { ...s, updatedAt: Date.now(), updatedBy: rtMe() }; await rtPut('returnRules/' + id, x); RT.rules[id] = x; }
+    rtRender(); showToast('例を入れました。内容は自由に直してください');
+  } catch (e) { showToast('保存に失敗しました'); }
 }
 </script>
 
