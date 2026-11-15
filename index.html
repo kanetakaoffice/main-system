@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-12f">
+<meta name="app-build" content="2026-11-15a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -20780,7 +20780,8 @@ function tkItemHtml(t, compact) {
         ${c.done && c.doneBy ? `<span class="by">${tkEsc(tkName(c.doneBy))}</span>` : ''}
       </div>`).join('')}</div>` : '';
   let who = '';
-  if (done && t.doneBy) who = `<div class="tk-who done">✅ ${tkEsc(tkName(t.doneBy))}さんが ${tkStamp(t.doneAt)} に完了</div>`;
+  if (done && t.doneBy && t.skipped) who = `<div class="tk-who">🚫 ${tkEsc(tkName(t.doneBy))}さんが ${tkStamp(t.doneAt)} に「今回はなし」にしました</div>`;
+  else if (done && t.doneBy) who = `<div class="tk-who done">✅ ${tkEsc(tkName(t.doneBy))}さんが ${tkStamp(t.doneAt)} に完了</div>`;
   else if (doing && t.doingBy) who = `<div class="tk-who">▶ ${tkEsc(tkName(t.doingBy))}さんが作業中（${tkStamp(t.doingAt)}〜）</div>`;
   const startBtn = done ? '' : doing
     ? `<button class="tk-start stop" onclick="tkToggleDoing('${t.id}')">作業中断</button>`
@@ -20793,7 +20794,7 @@ function tkItemHtml(t, compact) {
       ${clHtml}
       <div class="tk-detail-foot">
         <span>作成：${tkEsc(tkName(t.createdBy))}（${tkStamp(t.createdAt)}）</span>
-        <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${od ? `<button class="tk-edit-btn tk-soft-btn" onclick="tkSetDueType('${t.id}','soft')">🔵 いつでもOKにする</button>` : ''}${lateDays ? `<button class="tk-edit-btn" onclick="tkSetDueType('${t.id}','hard')">🔴 締切に戻す</button>` : ''}${startBtn}<button class="tk-edit-btn" onclick="tkOpenTaskModal('${t.id}')">✏️ 編集</button></span>
+        <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${od ? `<button class="tk-edit-btn tk-soft-btn" onclick="tkSetDueType('${t.id}','soft')">🔵 いつでもOKにする</button>` : ''}${lateDays ? `<button class="tk-edit-btn" onclick="tkSetDueType('${t.id}','hard')">🔴 締切に戻す</button>` : ''}${startBtn}${done ? '' : `<button class="tk-edit-btn" onclick="tkSkipTask('${t.id}')" title="取引がなかった週など、作業が発生しなかったとき">🚫 今回はなし</button>`}<button class="tk-edit-btn" onclick="tkOpenTaskModal('${t.id}')">✏️ 編集</button></span>
       </div>
     </div>` : '';
   // 閉じているときは1行だけ：タイトル＋小さな印／右側に担当者と期限
@@ -20811,7 +20812,7 @@ function tkItemHtml(t, compact) {
     ? (!t.assignee ? '<span class="tk-r-who none">未定</span>'
       : `<span class="tk-r-who ${t.assignee === me ? 'me' : ''}">${tkEsc(tkName(t.assignee))}${helpers.length ? ' 他' + helpers.length : ''}</span>`)
     : (iAmHelper ? '<span class="tk-r-who">👥協力</span>' : '');
-  const dueShort = done && t.doneAt ? `✅ ${tkStamp(t.doneAt)}`
+  const dueShort = done && t.skipped ? `🚫 今回はなし` : done && t.doneAt ? `✅ ${tkStamp(t.doneAt)}`
     : leftover ? `${tkShortDate(t.due)}分・未完了`
     : lateDays ? `目安${tkShortDate(t.due)}・${lateDays}日経過`
     : (od ? '⚠️ ' : '') + (soft ? '目安 ' : '') + tkDueLabel(t).replace(/まで$/, '');
@@ -20819,7 +20820,7 @@ function tkItemHtml(t, compact) {
     <button class="tk-check ${done ? 'on' : ''}" onclick="tkToggleDone('${t.id}')" aria-label="完了">✓</button>
     <div class="tk-body" onclick="tkToggleExpand('${t.id}')">
       <div class="tk-line">
-        <span class="tk-title">${doing ? '<span class="tk-doing-mark">▶</span>' : ''}${tkEsc(t.title)}</span>
+        <span class="tk-title" ${done && t.skipped ? 'style="text-decoration:none;color:var(--text-muted)"' : ''}>${doing ? '<span class="tk-doing-mark">▶</span>' : ''}${tkEsc(t.title)}</span>
         ${icons}
         <span class="tk-r">${whoShort}<span class="tk-r-due ${od ? 'od' : leftover ? 'left' : soft ? 'soft' : ''}">${tkEsc(dueShort)}</span><span class="tk-caret">${open ? '▲' : '▼'}</span></span>
       </div>
@@ -21050,8 +21051,8 @@ async function tkToggleDone(id, opts) {
   const me = tkMe();
   const prev = { ...t };
   if (t.status === 'done') {
-    const patch = { status: 'todo', doneBy: null, doneAt: null, updatedAt: Date.now(), updatedBy: me };
-    Object.assign(t, patch); delete t.doneBy; delete t.doneAt;
+    const patch = { status: 'todo', doneBy: null, doneAt: null, skipped: null, updatedAt: Date.now(), updatedBy: me };
+    Object.assign(t, patch); delete t.doneBy; delete t.doneAt; delete t.skipped;
     tkRefreshAll();
     const ok = await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; });
     if (ok) await tkUndoThenTasks(id, t);
@@ -21061,8 +21062,9 @@ async function tkToggleDone(id, opts) {
     const ok = await showConfirm(`${tkName(t.doingBy)}さんが作業中のタスクです。完了にしてよろしいですか？`);
     if (!ok) return;
   }
+  const skip = !!opts?.skip; // 「今回はなし」：完了扱いで閉じるが、次のタスク（then）は作らない
   const remain = tkChecklist(t).filter(c => !c.done).length;
-  if (remain && !opts?.skipChecklistConfirm) {
+  if (remain && !opts?.skipChecklistConfirm && !skip) {
     const ok = await showConfirm(`チェックリストにまだ終わっていない項目が${remain}件あります。タスクを完了にしてよろしいですか？`);
     if (!ok) return;
   }
@@ -21077,6 +21079,7 @@ async function tkToggleDone(id, opts) {
     }
   } catch (e) {}
   const patch = { status: 'done', doneBy: me, doneAt: Date.now(), updatedAt: Date.now(), updatedBy: me };
+  if (skip) patch.skipped = true;
   Object.assign(t, patch);
   // 繰り返しタスクは、完了したら次回分を自動で作る
   let nextRec = null, nextId = null;
@@ -21102,12 +21105,23 @@ async function tkToggleDone(id, opts) {
     TK.tasks[nextId] = nextRec;
   }
   tkRefreshAll();
-  const thenCount = tkThen(t).length && !t.thenIds ? tkThen(t).length : 0;
-  showToast((nextRec ? `完了しました。次回（${tkShortDate(nextRec.due)}）の分を作成しました` : '完了しました') +
+  const thenCount = !skip && tkThen(t).length && !t.thenIds ? tkThen(t).length : 0;
+  showToast((skip ? '「今回はなし」にしました' + (nextRec ? `。次回（${tkShortDate(nextRec.due)}）の分を作成しました` : '')
+    : nextRec ? `完了しました。次回（${tkShortDate(nextRec.due)}）の分を作成しました` : '完了しました') +
     (thenCount ? `。次の「${tkThen(t).map(x => x.title).join('、')}」をタスクに追加しました` : ''));
   const ok = await tkSave('tasks/' + id, 'PATCH', patch, () => { TK.tasks[id] = prev; if (nextId) delete TK.tasks[nextId]; });
   if (ok && nextRec) await tkSave('tasks/' + nextId, 'PUT', nextRec, () => { delete TK.tasks[nextId]; });
   if (ok && thenCount) await tkCreateThenTasks(id, t, me);
+}
+// 「今回はなし」：毎週の商談のように、週によって取引がなく作業自体が発生しないとき用。
+// 期限切れ（Overdue）に残さず完了扱いで閉じる。完了と区別するため skipped:true を付け、
+// 「完了後に作る次のタスク」（チャーター手配・請求書など）は作らない。完了を取り消せば元に戻る。
+async function tkSkipTask(id) {
+  const t = TK.tasks[id]; if (!t) return;
+  const next = tkThen(t).length ? `\n次のタスク（${tkThenSummary(t)}）は作りません。` : '';
+  const ok = await showConfirm(`「${t.title}」を「今回はなし」にしますか？${next}`);
+  if (!ok) return;
+  await tkToggleDone(id, { skip: true });
 }
 // チェックリストの1項目を付けたり外したりする（その項目だけを書き換えるので、同時に別の人が
 // ほかの項目をチェックしても上書きし合わない）
