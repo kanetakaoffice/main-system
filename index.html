@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-15b">
+<meta name="app-build" content="2026-11-15c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -13057,6 +13057,8 @@ window._initApp = async function() {
     setInterval(pollConsignRequestsForNotify, 30000);
     pollBizEntriesForNotify();
     setInterval(pollBizEntriesForNotify, 30000);
+    // 共有在庫：アサヒデンキが共有ページで「売れた」を報告したら取り込む
+    if (typeof ssPoll === 'function') { ssPoll(); setInterval(ssPoll, 30000); }
   }
   // ログイン直後、静的に表示されているホーム画面の中身を描画しておく（管理者は経営サマリー、
   // 一般ユーザーは倉庫作業向けの簡易版HOMEをそれぞれ表示）
@@ -19600,6 +19602,12 @@ async function submitBatchSettle() {
 }
 
 (async () => {
+  // アサヒデンキ用の共有ページ（?share=…）。処理は後ろの<script>にあるので、読み込みを待ってから開く
+  const sharePid = new URLSearchParams(location.search).get('share');
+  if (sharePid) {
+    if (document.readyState === 'loading') await new Promise(r => document.addEventListener('DOMContentLoaded', r, { once: true }));
+    if (typeof ssInitPortal === 'function') { await ssInitPortal(sharePid); return; }
+  }
   const isPortal = await tryInitPortalMode();
   if (!isPortal) checkAuth();
 })();
@@ -24216,7 +24224,7 @@ async function azCommit() {
     if (failed) parts.push(`${failed}件は要確認`);
     if (salesMsg) parts.push(salesMsg);
     // 共有在庫（アサヒデンキ）にAmazonの注文を反映
-    try { if (typeof ssSyncAmazon === 'function') { const m = await ssSyncAmazon(); if (m) parts.push(m); } } catch (e) { console.error('shared stock sync error', e); }
+    try { if (typeof ssSyncAmazon === 'function') { const m = await ssSyncAmazon(true); if (m) parts.push(m); } } catch (e) { console.error('shared stock sync error', e); }
     showToast(parts.join('・'));
   } catch (e) {
     console.error('amazon import error', e);
@@ -26825,6 +26833,14 @@ async function ercCommit() {
 .ss-btns { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; margin-top:8px; }
 </style>
 
+<!-- アサヒデンキ用の共有ページ（?share=… で開いたときだけ表示。ログイン不要・匿名認証・暗証番号） -->
+<div id="ss-portal" style="display:none;position:fixed;inset:0;z-index:560;background:var(--bg,#f6f5f2);overflow-y:auto;padding:max(20px,env(safe-area-inset-top)) 16px max(40px,env(safe-area-inset-bottom))">
+  <div style="max-width:760px;margin:0 auto">
+    <div style="margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);font-weight:700">株式会社KANETAKA</div>
+      <div style="font-size:19px;font-weight:800">共有在庫のご確認ページ</div></div>
+    <div id="ss-portal-body"><div class="az-empty">読み込み中…</div></div>
+  </div>
+</div>
 <div id="ss-modal" class="az-modal" onclick="if(event.target===this)ssCloseModal()">
   <div class="az-modal-box" style="max-width:520px" id="ss-modal-box"></div>
 </div>
@@ -26861,21 +26877,27 @@ const ssMd = s => { if (!s) return ''; const p = String(s).split('-'); return (+
 const ssNewId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 function ssOpenModal(html) { document.getElementById('ss-modal-box').innerHTML = html; document.getElementById('ss-modal').style.display = 'flex'; }
 function ssCloseModal() { document.getElementById('ss-modal').style.display = 'none'; }
-async function ssPut(path, data) { const r = await fetch(authedUrl('/' + path + '.json'), { method: 'PUT', body: JSON.stringify(data) }); if (!r.ok) throw new Error('save'); }
-async function ssPatch(path, data) { const r = await fetch(authedUrl('/' + path + '.json'), { method: 'PATCH', body: JSON.stringify(data) }); if (!r.ok) throw new Error('save'); }
-async function ssDel(path) { await fetch(authedUrl('/' + path + '.json'), { method: 'DELETE' }); }
+// 共有在庫を書き換えたら SS.dirty を立て、次の描画のときに共有ページ（アサヒデンキ用）へ公開し直す
+async function ssPut(path, data) { const r = await fetch(authedUrl('/' + path + '.json'), { method: 'PUT', body: JSON.stringify(data) }); if (!r.ok) throw new Error('save'); SS.dirty = true; }
+async function ssPatch(path, data) { const r = await fetch(authedUrl('/' + path + '.json'), { method: 'PATCH', body: JSON.stringify(data) }); if (!r.ok) throw new Error('save'); SS.dirty = true; }
+async function ssDel(path) { await fetch(authedUrl('/' + path + '.json'), { method: 'DELETE' }); SS.dirty = true; }
 
 async function ssLoad() {
-  const [a, b] = await Promise.all([
+  const [a, b, m] = await Promise.all([
     fetch(authedUrl('/sharedStock.json')).then(r => r.json()).catch(() => null),
-    fetch(authedUrl('/sharedStockLog.json')).then(r => r.json()).catch(() => null)
+    fetch(authedUrl('/sharedStockLog.json')).then(r => r.json()).catch(() => null),
+    fetch(authedUrl('/sharedStockMeta.json')).then(r => r.json()).catch(() => null)
   ]);
-  SS.items = a || {}; SS.logs = b || {}; SS.loaded = true;
+  SS.items = a || {}; SS.logs = b || {}; SS.meta = m || {}; SS.loaded = true;
+  // 共有ページからの「売れた」報告があれば取り込む
+  await ssProcessRequests();
 }
 function ssSkus(it) { const v = it && it.skus; return v ? (Array.isArray(v) ? v : Object.values(v)).map(s => String(s).trim()).filter(Boolean) : []; }
 function ssProduct(it) { return it && it.productKey ? (products || []).find(p => p._key === it.productKey) || null : null; }
 function ssLogsOf(id) { return Object.entries(SS.logs).filter(([, l]) => l && l.itemId === id).map(([k, l]) => ({ id: k, ...l })).sort((a, b) => (b.at || 0) - (a.at || 0)); }
 const SS_TYPE = { add: '登録・追加', partner: SS_PARTNER + 'で売れた', amazon: 'Amazonで売れた', adjust: '数を直した' };
+const ssStamp = ms => { const d = new Date(ms); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const ssAmazonAt = () => Math.max(Number((typeof AZ !== 'undefined' && AZ.meta && AZ.meta.lastImportAt) || 0), Number((SS.meta && SS.meta.amazonSyncedAt) || 0)) || 0;
 
 // ── 画面 ──
 async function ssRender(reload) {
@@ -26896,6 +26918,9 @@ async function ssRender(reload) {
   // やること：同じ商品はまとめて「今の残り」に直せばよいので、商品ごとに1行
   const byItem = list => [...new Set(list.map(l => l.itemId))].map(id => ({ it: { id, ...SS.items[id] }, logs: list.filter(l => l.itemId === id) }));
   const todoA = byItem(needAmazon), todoP = byItem(needPartner);
+  if (SS.dirty) ssPublish();
+  const pm = SS.meta || {};
+  const amzAt = ssAmazonAt();
   root.innerHTML = `
     <div class="ss-sum">
       <div><div class="k">共有中の商品</div><div class="v">${active.length}<span style="font-size:12px">商品・${total}個</span></div></div>
@@ -26903,11 +26928,20 @@ async function ssRender(reload) {
       <div><div class="k">売り越し</div><div class="v" style="color:${over ? '#a3261a' : 'inherit'}">${over}<span style="font-size:12px">商品</span></div></div>
       <div><div class="k">請求待ち（${SS_PARTNER}）</div><div class="v">${ssYen(unbilled.reduce((s, l) => s + (Number(l.price) || 0) * Math.abs(Number(l.qty) || 0), 0))}</div></div>
     </div>
+    <div class="az-card" style="margin-bottom:12px">
+      <div class="az-h"><span>🔗 ${SS_PARTNER}用の共有ページ</span>
+        <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${pm.portalId
+          ? `<button class="az-btn small" onclick="ssCopyPortal()">リンクと暗証番号をコピー</button><button class="az-btn small" onclick="window.open(ssPortalUrl(),'_blank')">開いてみる</button><button class="az-btn small" onclick="ssMakePortal(true)">作り直す</button>`
+          : `<button class="az-btn primary" onclick="ssMakePortal(false)">共有ページを作る</button>`}</span></div>
+      <div class="az-sub">${pm.portalId
+        ? `${SS_PARTNER}はこのページで在庫数・増減の履歴をいつでも確認でき、売れたときは自分で報告できます（報告は自動でここに反映され、Amazonの在庫を直すお知らせが出ます）。暗証番号：<b>${ssEsc(pm.pin || '')}</b>　最終公開：${pm.publishedAt ? ssStamp(pm.publishedAt) : '—'}　Amazonの注文の反映：${amzAt ? ssStamp(amzAt) : '—'}`
+        : `${SS_PARTNER}が自分で在庫数を確認し、売れたときに報告できるページを作ります（ログイン不要・暗証番号付き）。`}</div>
+    </div>
     ${todoA.length || todoP.length ? `<div class="ss-todo">
       ${todoA.length ? `<h4>🛒 Amazonの在庫を直してください（${SS_PARTNER}で売れた分）</h4>
         ${todoA.map(({ it, logs }) => `<div class="ss-todo-row"><span><b>${ssEsc(it.model || it.title)}</b>：Amazonの在庫を <b>${Math.max(0, Number(it.qty) || 0)}個</b> に${ssSkus(it).length ? `<span class="az-sub">（SKU：${ssEsc(ssSkus(it).join('・'))}）</span>` : ''}</span>
           <button class="az-btn small primary" onclick="ssDoneTodo('needAmazon','${it.id}')">直した</button></div>`).join('')}` : ''}
-      ${todoP.length ? `<h4 style="margin-top:${todoA.length ? 12 : 0}px">📨 ${SS_PARTNER}へ在庫数を連絡してください（Amazonで売れた分）</h4>
+      ${todoP.length ? `<h4 style="margin-top:${todoA.length ? 12 : 0}px">📨 ${SS_PARTNER}へ在庫数を連絡してください（Amazonで売れた分）${pm.portalId ? '<span class="az-sub" style="font-weight:400">　共有ページには反映済みです。残りが少ないものは念のため連絡を</span>' : ''}</h4>
         ${todoP.map(({ it }) => `<div class="ss-todo-row"><span><b>${ssEsc(it.model || it.title)}</b>：残り <b>${Math.max(0, Number(it.qty) || 0)}個</b>${Number(it.qty) <= 0 ? '（販売終了）' : ''}</span></div>`).join('')}
         <div class="ss-btns"><button class="az-btn small" onclick="ssCopyText('partner')">連絡文をコピー</button><button class="az-btn small primary" onclick="ssDoneTodo('needPartner')">連絡した</button></div>` : ''}
     </div>` : ''}
@@ -26947,7 +26981,7 @@ function ssItemCard(x) {
     ${isOpen ? `<div style="margin-top:8px">
       ${x.note ? `<div class="s" style="font-size:12px;white-space:pre-wrap">📝 ${ssEsc(x.note)}</div>` : ''}
       ${p ? `<div class="s" style="font-size:12px;color:var(--text-muted)">アプリの在庫：${ssEsc(typeof locBreakdownText === 'function' ? locBreakdownText(p) : (p.stock || 0) + '個')}</div>` : ''}
-      <div style="margin-top:6px">${logs.length ? logs.map(l => `<div class="ss-log"><span>${ssMd(l.date)}　${ssEsc(SS_TYPE[l.type] || '')}${l.orderId ? `<span class="m">（${ssEsc(l.orderId)}）</span>` : ''}${l.cancelled ? '<span class="m">（キャンセルで戻した）</span>' : ''}</span><span>${(Number(l.qty) || 0) > 0 ? '+' : ''}${l.qty}　→ 残り${l.qtyAfter != null ? l.qtyAfter : ''}</span></div>`).join('') : '<div class="az-sub">履歴はまだありません</div>'}</div>
+      <div style="margin-top:6px">${logs.length ? logs.map(l => `<div class="ss-log"><span>${ssMd(l.date)}　${ssEsc(SS_TYPE[l.type] || '')}${l.via === 'portal' ? '（共有ページで報告）' : ''}${l.orderId ? `<span class="m">（${ssEsc(l.orderId)}）</span>` : ''}${l.cancelled ? '<span class="m">（キャンセルで戻した）</span>' : ''}</span><span>${(Number(l.qty) || 0) > 0 ? '+' : ''}${l.qty}　→ 残り${l.qtyAfter != null ? l.qtyAfter : ''}</span></div>`).join('') : '<div class="az-sub">履歴はまだありません</div>'}</div>
       <div class="ss-btns">
         ${x.status === 'ended' ? `<button class="az-btn small" onclick="ssSetEnded('${x.id}',false)">共有を再開</button>`
           : `<button class="az-btn small primary" onclick="ssOpenSold('${x.id}')">${SS_PARTNER}で売れた</button>
@@ -26975,10 +27009,10 @@ function ssOpenForm(id) {
     <div class="rt-f"><label>商品名</label><input type="text" id="ss-title" value="${ssEsc(x.title || (p && p.name) || '')}"></div>
     <div class="rt-g2">
       ${id ? '' : `<div class="rt-f"><label>共有する個数</label><input type="number" id="ss-qty" min="0" inputmode="numeric" value="${Number(x.qty) || 1}"></div>`}
-      <div class="rt-f"><label>${SS_PARTNER}の買取価格（1個・税込）</label><input type="number" id="ss-price" min="0" inputmode="numeric" value="${x.price || ''}"></div>
+      <div class="rt-f"><label>${SS_PARTNER}の買取価格（1個・税込・任意）</label><input type="number" id="ss-price" min="0" inputmode="numeric" value="${x.price || ''}"></div>
     </div>
     <div class="rt-f"><label>AmazonのSKU（複数あれば改行で区切る）</label><textarea id="ss-skus" rows="2" placeholder="例：261102-45000hak">${ssEsc(ssSkus(x).join('\n'))}</textarea>
-      <div class="az-sub">このSKUのAmazon注文が入ると、共有在庫から減ります。空欄にすると、上で選んだ在庫の商品のAmazon注文で減ります。</div></div>
+      <div class="az-sub">Amazonの注文が入ったときに、どの商品を減らすか見分けるために使います。上で在庫の商品を選んでいれば空欄でもかまいません（その商品のAmazon注文すべてで減ります）。同じ型番をAmazonだけで売る分もある場合は、SKUを入れてください。</div></div>
     <div class="rt-f"><label>メモ</label><textarea id="ss-note" rows="2">${ssEsc(x.note || '')}</textarea></div>
     <div style="display:flex;gap:8px;margin-top:8px">${id ? `<button class="az-btn" style="color:#c0392b" onclick="ssDelete('${id}')">削除</button>` : ''}
       <button class="az-btn" style="flex:1" onclick="ssCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="ssSave()">保存</button></div>`);
@@ -27056,7 +27090,7 @@ function ssOpenSold(id) {
       <div class="rt-f"><label>個数</label><input type="number" id="ss-sold-qty" min="1" value="1" inputmode="numeric"></div>
       <div class="rt-f"><label>売れた日</label><input type="date" id="ss-sold-date" value="${todayStr()}"></div>
     </div>
-    <div class="rt-f"><label>${SS_PARTNER}の注文番号（任意）</label><input type="text" id="ss-sold-order"></div>
+    <div class="rt-f"><label>${SS_PARTNER}側の注文番号（任意・請求や問い合わせのときの照合用）</label><input type="text" id="ss-sold-order"></div>
     <div class="rt-f"><label>買取価格（1個）</label><input type="number" id="ss-sold-price" value="${x.price || ''}" inputmode="numeric"></div>
     ${p ? `<div class="rt-f"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ss-sold-inv" checked> アプリの在庫からも減らす（出荷元）</label>
       <select id="ss-sold-loc">${stockLocations.map(l => `<option value="${ssEsc(l.id)}" ${l.id === getHomeLoc(p) ? 'selected' : ''}>${ssEsc(l.name)}</option>`).join('')}</select></div>` : ''}
@@ -27157,9 +27191,10 @@ async function ssCopyText(kind) {
 // ── Amazonの注文を共有在庫に反映する ──
 // 全注文レポートの取り込み（azCommit）の最後と、「Amazonの注文を反映」ボタンから呼ぶ。
 // 未出荷・出荷済みの注文は数え、キャンセルになった注文は戻す。共有を始めた日より前の注文は数えない。
-async function ssSyncAmazon() {
+async function ssSyncAmazon(fromImport) {
   if (typeof AZ === 'undefined') return '';
   await ssLoad();
+  if (fromImport && SS.meta && SS.meta.portalId) { SS.meta.amazonSyncedAt = Date.now(); await ssPatch('sharedStockMeta', { amazonSyncedAt: SS.meta.amazonSyncedAt }).catch(() => {}); }
   const items = Object.entries(SS.items).filter(([, x]) => x && x.status !== 'ended');
   if (!items.length) return '';
   let used = 0, back = 0;
@@ -27189,7 +27224,7 @@ async function ssSyncAmazon() {
     used++;
   }
   if (document.getElementById('ss-root') && document.getElementById('wh-body-share') && document.getElementById('wh-body-share').style.display !== 'none') ssRender();
-  else ssUpdateBadge(Object.values(SS.logs).filter(l => l && !l.cancelled && (l.needAmazon || l.needPartner)).length);
+  else { ssUpdateBadge(Object.values(SS.logs).filter(l => l && !l.cancelled && (l.needAmazon || l.needPartner)).length); if (SS.dirty) await ssPublish(); }
   const msg = [];
   if (used) msg.push(`共有在庫を${used}件減らしました（${SS_PARTNER}へ連絡してください）`);
   if (back) msg.push(`共有在庫を${back}件戻しました`);
@@ -27202,6 +27237,224 @@ async function ssSyncAmazonNow() {
     ssRender();
     showToast(m || '新しく反映するAmazonの注文はありませんでした');
   } catch (e) { console.error(e); showToast('反映できませんでした'); }
+}
+
+// ============================================================
+// 共有ページ（アサヒデンキ用）
+// 要望：「アサヒデンキへは共有ページで自分たちで確認してもらいたい。こちらが連絡を忘れていたり、
+//   連絡が遅かったから売り越したなど、後から言われたくない」への対応。
+// ・店舗側：/sharedPortal/{portalId} に、在庫数・増減の履歴・最終更新日時・Amazonの注文を最後に
+//   反映した日時のスナップショットを公開する（共有在庫を書き換えるたびに自動で公開し直す）
+// ・アサヒデンキ側：?share={portalId} のリンクを開くと（ログイン不要・匿名認証・暗証番号）、
+//   スナップショットだけを読んで表示する。「売れた」の報告は /sharedRequests/{portalId} に
+//   新しい記録を追加するだけ（読み取り・書き換え・削除はできない。Firebaseのルールで制限）
+// ・店舗側は30秒ごとに報告を確認し、共有在庫を減らして「Amazonの在庫を直してください」を出す。
+//   報告は記録（sharedStockLog の rq_{報告ID}）に、報告した日時ごと残す
+// ============================================================
+function ssRandId(n) { const a = new Uint8Array(n); crypto.getRandomValues(a); return Array.from(a, b => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join(''); }
+function ssPortalUrl() { return location.origin + location.pathname + '?share=' + encodeURIComponent((SS.meta && SS.meta.portalId) || ''); }
+async function ssMakePortal(remake) {
+  if (remake && !(await showConfirm('共有ページのリンクと暗証番号を作り直しますか？\n今のリンクは使えなくなるので、新しいリンクを' + SS_PARTNER + 'に送り直してください'))) return;
+  const old = SS.meta && SS.meta.portalId;
+  const meta = { ...(SS.meta || {}), portalId: ssRandId(24), pin: String(Math.floor(1000 + Math.random() * 9000)) };
+  try {
+    await ssPut('sharedStockMeta', meta); SS.meta = meta;
+    if (old) await fetch(authedUrl('/sharedPortal/' + old + '.json'), { method: 'DELETE' }).catch(() => {});
+    await ssPublish();
+    ssRender(); showToast('共有ページを作りました。「リンクと暗証番号をコピー」から' + SS_PARTNER + 'へ送ってください');
+  } catch (e) { showToast('作れませんでした'); }
+}
+async function ssCopyPortal() {
+  const text = `${SS_PARTNER} ご担当者様\n\n共有在庫の確認ページをご用意しました。\n在庫数と増減の履歴はこちらからいつでもご確認いただけます。\n商品が売れた際は、このページの「売れたので報告する」からご報告ください。\n\n${ssPortalUrl()}\n暗証番号：${SS.meta.pin}\n\n株式会社KANETAKA`;
+  try { await navigator.clipboard.writeText(text); showToast('コピーしました。メールやLINEに貼り付けてください'); }
+  catch (e) { ssOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:8px">コピーする文章</div><textarea rows="12" style="width:100%" onfocus="this.select()">${ssEsc(text)}</textarea><div style="display:flex;gap:8px;margin-top:8px"><button class="az-btn" style="flex:1" onclick="ssCloseModal()">閉じる</button></div>`); }
+}
+// 共有ページ用のスナップショットを公開する（仕入値・SKU・Amazonの注文番号などは載せない）
+async function ssPublish() {
+  SS.dirty = false;
+  const pid = SS.meta && SS.meta.portalId; if (!pid) return;
+  const items = Object.entries(SS.items).filter(([, x]) => x).map(([id, x]) => ({ id, model: x.model || '', title: x.title || '', qty: Number(x.qty) || 0, price: Number(x.price) || 0, status: x.status || 'active' }))
+    .sort((a, b) => (a.status === 'ended') - (b.status === 'ended') || String(a.model).localeCompare(String(b.model)));
+  const lbl = l => l.cancelled ? 'Amazonの注文がキャンセル（戻し）' : l.type === 'amazon' ? 'KANETAKA（Amazon）で販売' : l.type === 'partner' ? SS_PARTNER + 'で販売' + (l.via === 'portal' ? '（ご報告）' : '') : l.type === 'add' ? '在庫を追加' : '数を修正';
+  const history = Object.entries(SS.logs).filter(([, l]) => l && SS.items[l.itemId]).sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).slice(0, 80)
+    .map(([, l]) => ({ at: l.reqAt || l.at || 0, model: (SS.items[l.itemId] || {}).model || '', label: lbl(l), qty: l.cancelled ? Math.abs(Number(l.qty) || 0) : Number(l.qty) || 0, qtyAfter: l.qtyAfter != null ? l.qtyAfter : null, orderId: l.type === 'partner' ? (l.orderId || '') : '' }));
+  const processed = Object.values(SS.logs).filter(l => l && l.reqKey).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 100).map(l => l.reqKey);
+  const publishedAt = Date.now();
+  const snap = { partner: SS_PARTNER, pin: SS.meta.pin || '', publishedAt, amazonSyncedAt: ssAmazonAt() || null, items, history, processed };
+  try {
+    await fetch(authedUrl('/sharedPortal/' + pid + '.json'), { method: 'PUT', body: JSON.stringify(snap) });
+    SS.meta.publishedAt = publishedAt;
+    fetch(authedUrl('/sharedStockMeta/publishedAt.json'), { method: 'PUT', body: JSON.stringify(publishedAt) }).catch(() => {});
+  } catch (e) { console.error('shared portal publish failed', e); SS.dirty = true; }
+}
+// 共有ページからの「売れた」報告を取り込む（同じ報告を2台の端末が同時に取り込まないよう、記録の場所を先に押さえてから減らす）
+async function ssProcessRequests() {
+  const pid = SS.meta && SS.meta.portalId; if (!pid) return 0;
+  const reqs = await fetch(authedUrl('/sharedRequests/' + pid + '.json')).then(r => r.json()).catch(() => null);
+  if (!reqs) return 0;
+  let n = 0;
+  for (const [key, rq] of Object.entries(reqs)) {
+    if (!rq) continue;
+    const logId = 'rq_' + key;
+    const delReq = () => fetch(authedUrl('/sharedRequests/' + pid + '/' + key + '.json'), { method: 'DELETE' }).catch(() => {});
+    if (SS.logs[logId]) { await delReq(); continue; }
+    // 先に押さえる（ETagで、まだ誰も書いていないときだけ書く）
+    try {
+      const g = await fetch(authedUrl('/sharedStockLog/' + logId + '.json'), { headers: { 'X-Firebase-ETag': 'true' } });
+      const etag = g.headers.get('ETag'); const cur = await g.json();
+      if (cur) { SS.logs[logId] = cur; await delReq(); continue; }
+      if (etag) {
+        const c = await fetch(authedUrl('/sharedStockLog/' + logId + '.json'), { method: 'PUT', headers: { 'if-match': etag }, body: JSON.stringify({ itemId: rq.itemId || '', claim: true, at: Date.now() }) });
+        if (c.status === 412) continue; // ほかの端末が取り込み中
+      }
+    } catch (e) {}
+    const it = SS.items[rq.itemId];
+    const q = Math.max(1, Math.min(99, parseInt(rq.qty, 10) || 1));
+    if (!it) { await ssPut('sharedStockLog/' + logId, { itemId: rq.itemId || '', type: 'partner', via: 'portal', qty: 0, date: todayStr(), note: '商品が見つからない報告', reqKey: key, reqAt: Number(rq.at) || Date.now(), by: 'portal', at: Date.now() }); await delReq(); continue; }
+    const after = await ssChangeQty(rq.itemId, -q);
+    const date = rq.at ? ymdKey(new Date(Number(rq.at))) : todayStr();
+    const log = { itemId: rq.itemId, type: 'partner', via: 'portal', qty: -q, date, orderId: String(rq.orderId || '').slice(0, 60), price: Number(it.price) || 0,
+      qtyAfter: after, needAmazon: true, invoiced: false, reqKey: key, reqAt: Number(rq.at) || Date.now() };
+    // アプリの在庫（定位置の事務所）からも減らす
+    const p = ssProduct(it);
+    if (p) {
+      try {
+        const loc = getHomeLoc(p), before = Number(p.stock) || 0, st = locStateAfterDelta(p, loc, -q);
+        await saveProductLocState(p, st.stock, st.locQty);
+        const r = await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({ productKey: p._key, productName: p.name || '', jan: p.jan || '', type: 'out', qty: q, date, channel: SS_PARTNER, loc,
+          memo: SS_PARTNER + 'で販売（共有ページで報告）' + (log.orderId ? ' ' + log.orderId : ''), stockBefore: before, stockAfter: st.stock, createdAt: Date.now() }) });
+        const j = await r.json().catch(() => null); if (j && j.name) log.moveKey = j.name;
+      } catch (e) {}
+    }
+    await ssPut('sharedStockLog/' + logId, { ...log, by: 'portal', at: Date.now() }); SS.logs[logId] = { ...log, by: 'portal', at: Date.now() };
+    await delReq();
+    n++;
+  }
+  return n;
+}
+// 30秒ごと（管理者の端末）：共有ページからの報告があれば取り込んで知らせる
+async function ssPoll() {
+  try {
+    if (!SS.meta) SS.meta = await fetch(authedUrl('/sharedStockMeta.json')).then(r => r.json()).catch(() => null) || {};
+    const pid = SS.meta.portalId; if (!pid) return;
+    const has = await fetch(authedUrl('/sharedRequests/' + pid + '.json?shallow=true')).then(r => r.json()).catch(() => null);
+    if (!has) return;
+    await ssLoad(); // この中で取り込む
+    const box = document.getElementById('wh-body-share');
+    if (box && box.style.display !== 'none') ssRender();
+    else { ssUpdateBadge(Object.values(SS.logs).filter(l => l && !l.cancelled && (l.needAmazon || l.needPartner)).length); if (SS.dirty) await ssPublish(); }
+    showToast(`${SS_PARTNER}から「売れた」の報告がありました。卸売管理 →「共有在庫」でAmazonの在庫を直してください`);
+  } catch (e) { console.error('shared poll', e); }
+}
+
+// ── ここから下は、アサヒデンキが開く共有ページ側 ──
+const SP = { pid: '', data: null, timer: null };
+function spPendKey() { return 'kanetaka_share_pending_' + SP.pid; }
+function spPending() { try { return JSON.parse(localStorage.getItem(spPendKey()) || '[]'); } catch (e) { return []; } }
+function spSetPending(list) { try { localStorage.setItem(spPendKey(), JSON.stringify(list)); } catch (e) {} }
+async function ssInitPortal(pid) {
+  SP.pid = pid;
+  const ls = document.getElementById('login-screen'); if (ls) ls.style.display = 'none';
+  const sc = document.getElementById('ss-portal'); if (sc) sc.style.display = 'block';
+  try {
+    const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${AUTH_API_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ returnSecureToken: true }) });
+    const d = await r.json();
+    if (!d.idToken) throw new Error('auth');
+    window._idToken = d.idToken;
+    await spLoad(true);
+  } catch (e) { spShow('<div class="az-empty">ページを開けませんでした。リンクが正しいか、KANETAKAへお問い合わせください。</div>'); }
+}
+function spShow(html) { const b = document.getElementById('ss-portal-body'); if (b) b.innerHTML = html; }
+async function spLoad(first) {
+  const data = await fetch(authedUrl('/sharedPortal/' + SP.pid + '.json')).then(r => r.json()).catch(() => null);
+  if (!data) { spShow('<div class="az-empty">このページは現在ご利用いただけません。新しいリンクをKANETAKAへご確認ください。</div>'); return; }
+  SP.data = data;
+  // 店舗側で取り込み済みになった報告は、この端末の「反映待ち」から外す
+  const done = new Set(data.processed || []);
+  spSetPending(spPending().filter(p => !done.has(p.key) && Date.now() - (p.at || 0) < 7 * 86400000));
+  let ok = false; try { ok = sessionStorage.getItem('kanetaka_share_pin_' + SP.pid) === '1'; } catch (e) {}
+  if (data.pin && !ok) { spPinGate(); return; }
+  spRender();
+  if (first && !SP.timer) SP.timer = setInterval(() => { if (SP.data && document.visibilityState === 'visible') spLoad(false); }, 60000);
+}
+function spPinGate() {
+  spShow(`<div class="az-card" style="max-width:360px;margin:30px auto;text-align:center">
+    <div style="font-weight:800;margin-bottom:6px">暗証番号を入力してください</div>
+    <div class="az-sub" style="margin-bottom:12px">KANETAKAからお知らせした4桁の番号です</div>
+    <input type="password" inputmode="numeric" id="sp-pin" maxlength="8" style="width:100%;padding:12px;font-size:18px;text-align:center;border:1.5px solid var(--border);border-radius:10px;box-sizing:border-box" onkeydown="if(event.key==='Enter')spPinOk()">
+    <div id="sp-pin-err" style="color:#a3261a;font-size:12px;margin-top:8px"></div>
+    <button class="az-btn primary" style="width:100%;margin-top:12px" onclick="spPinOk()">表示する</button></div>`);
+  setTimeout(() => { const i = document.getElementById('sp-pin'); if (i) i.focus(); }, 50);
+}
+function spPinOk() {
+  const v = (document.getElementById('sp-pin').value || '').trim();
+  if (v !== String(SP.data.pin)) { document.getElementById('sp-pin-err').textContent = '暗証番号が違います'; return; }
+  try { sessionStorage.setItem('kanetaka_share_pin_' + SP.pid, '1'); } catch (e) {}
+  spRender();
+  if (!SP.timer) SP.timer = setInterval(() => { if (SP.data && document.visibilityState === 'visible') spLoad(false); }, 60000);
+}
+function spRender() {
+  const d = SP.data; if (!d) return;
+  const pend = spPending();
+  const pendQty = id => pend.filter(p => p.itemId === id).reduce((s, p) => s + (Number(p.qty) || 0), 0);
+  const items = (d.items || []);
+  const active = items.filter(x => x.status !== 'ended'), ended = items.filter(x => x.status === 'ended');
+  const row = x => {
+    const pq = pendQty(x.id), q = (Number(x.qty) || 0) - pq, show = Math.max(0, q);
+    const tag = x.status === 'ended' ? '<span class="az-tag gray">販売終了</span>' : show <= 0 ? '<span class="az-tag">在庫なし（販売を止めてください）</span>' : show === 1 ? '<span class="az-tag" style="background:#fff1d6;color:#7a4a00">残り1個・同時に売れる可能性があります</span>' : '';
+    return `<div class="ss-item ${x.status === 'ended' ? 'ended' : show <= 0 ? 'out' : show === 1 ? 'last1' : ''}">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+        <div style="min-width:0"><div style="font-weight:800">${ssEsc(x.model)} ${tag}</div>
+          <div style="font-size:12px;color:var(--text-muted)">${ssEsc(x.title)}${x.price ? '・買取価格 ' + ssYen(x.price) : ''}</div>
+          ${pq ? `<div style="font-size:12px;color:#1f5f5b;font-weight:700;margin-top:4px">ご報告済み ${pq}個（KANETAKAの反映待ち）</div>` : ''}</div>
+        <div class="ss-qty">${show}<small>個</small></div></div>
+      ${x.status !== 'ended' && show > 0 ? `<div class="ss-btns"><button class="az-btn small primary" onclick="spOpenReport('${x.id}')">売れたので報告する</button></div>` : ''}
+    </div>`;
+  };
+  spShow(`
+    <div class="ss-todo" style="background:#f4fbfa;border-color:#b9d9d6">
+      <div style="font-size:13px;line-height:1.7">
+        ・表示している在庫数は、下の「最終更新」の時点のものです。<br>
+        ・KANETAKAのAmazonで売れた分は、KANETAKAが注文を取り込んだ時点で反映されます（Amazonの注文の最終反映：<b>${d.amazonSyncedAt ? ssStamp(d.amazonSyncedAt) : '—'}</b>）。<br>
+        ・残り1個の商品は、同時に売れる可能性があります。<br>
+        ・商品が売れたら、このページの「売れたので報告する」からご報告ください。ご報告の日時は記録に残ります。</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <span style="font-size:12.5px">最終更新：<b>${d.publishedAt ? ssStamp(d.publishedAt) : '—'}</b></span>
+        <button class="az-btn small" onclick="spLoad(false)">🔄 最新にする</button></div>
+    </div>
+    <div class="az-card"><div class="az-h"><span>在庫一覧</span><span class="az-sub">${active.length}商品</span></div>
+      ${active.length ? active.map(row).join('') : '<div class="az-empty">現在、共有している商品はありません</div>'}
+      ${ended.length ? `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px">販売終了の商品（${ended.length}件）</summary>${ended.map(row).join('')}</details>` : ''}
+    </div>
+    <div class="az-card" style="margin-top:12px"><div class="az-h"><span>増減の履歴</span></div>
+      ${(d.history || []).length ? d.history.map(h => `<div class="ss-log"><span>${h.at ? ssStamp(h.at) : ''}　${ssEsc(h.model)}　${ssEsc(h.label)}${h.orderId ? `<span class="m">（注文 ${ssEsc(h.orderId)}）</span>` : ''}</span><span>${h.qty > 0 ? '+' : ''}${h.qty}${h.qtyAfter != null ? '　→ 残り' + h.qtyAfter : ''}</span></div>`).join('') : '<div class="az-sub">まだ履歴はありません</div>'}
+    </div>`);
+}
+function spOpenReport(id) {
+  const x = (SP.data.items || []).find(i => i.id === id); if (!x) return;
+  const max = Math.max(0, (Number(x.qty) || 0) - spPending().filter(p => p.itemId === id).reduce((s, p) => s + (Number(p.qty) || 0), 0));
+  ssOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:4px">売れたので報告する</div>
+    <div class="az-sub" style="margin-bottom:10px">${ssEsc(x.model)} ${ssEsc(x.title)}・表示中の在庫 ${max}個</div>
+    <div class="rt-f"><label>個数</label><input type="number" id="sp-qty" min="1" max="${max}" value="1" inputmode="numeric" style="width:100%;padding:9px;border:1.5px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
+    <div class="rt-f"><label>御社の注文番号（任意）</label><input type="text" id="sp-order" style="width:100%;padding:9px;border:1.5px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
+    <div class="az-sub" style="margin-bottom:10px">お客様のお名前・ご住所はここには入力しないでください。</div>
+    <div style="display:flex;gap:8px"><button class="az-btn" style="flex:1" onclick="ssCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" id="sp-send" onclick="spSendReport('${id}',${max})">報告する</button></div>`);
+}
+async function spSendReport(id, max) {
+  const q = parseInt(document.getElementById('sp-qty').value, 10) || 0;
+  if (q < 1) { showToast('個数を入力してください'); return; }
+  if (q > max && !(await showConfirm(`表示中の在庫（${max}個）より多い数です。このまま報告しますか？`))) return;
+  const btn = document.getElementById('sp-send'); if (btn) { btn.disabled = true; btn.textContent = '送信中…'; }
+  const x = (SP.data.items || []).find(i => i.id === id) || {};
+  const rec = { type: 'sold', itemId: id, model: x.model || '', qty: q, orderId: (document.getElementById('sp-order').value || '').trim().slice(0, 60), at: Date.now() };
+  try {
+    const r = await fetch(authedUrl('/sharedRequests/' + SP.pid + '.json'), { method: 'POST', body: JSON.stringify(rec) });
+    if (!r.ok) throw new Error('send');
+    const j = await r.json();
+    spSetPending([...spPending(), { key: j.name, itemId: id, qty: q, at: rec.at }]);
+    ssCloseModal(); spRender();
+    showToast('ご報告を受け付けました（' + ssStamp(rec.at) + '）');
+  } catch (e) { showToast('送信できませんでした。電波の良い場所でもう一度お試しください'); if (btn) { btn.disabled = false; btn.textContent = '報告する'; } }
 }
 </script>
 
