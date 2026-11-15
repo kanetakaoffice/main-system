@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-15a">
+<meta name="app-build" content="2026-11-15b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -2111,6 +2111,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   <div class="tab-switch" style="margin-bottom:12px">
     <button class="tab-switch-btn active" id="wh-tab-deliv" onclick="switchWhTab('deliv')">📝 納品書作成</button>
     <button class="tab-switch-btn" id="wh-tab-consign" onclick="switchWhTab('consign')">📦 委託リスト<span id="wh-consign-new-badge" class="wh-new-badge" style="display:none"></span></button>
+    <button class="tab-switch-btn" id="wh-tab-share" onclick="switchWhTab('share')">🤝 共有在庫<span id="wh-share-badge" class="wh-new-badge" style="display:none"></span></button>
   </div>
 
   <!-- 請求書（freee）作成済みへのまとめ：通常の納品書／精算分の納品書のどちらのタブで
@@ -2309,6 +2310,9 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <aside class="wh-deliv-side" id="wh-deliv-side"></aside>
     </div>
   </div>
+
+<!-- 共有在庫（アサヒデンキ）：Amazonとアサヒデンキのホームページで同じ在庫を売る商品の一覧 -->
+<div id="wh-body-share" style="display:none"><div id="ss-root"></div></div>
 
 <div id="wh-body-consign" style="display:none">
   <!-- 要望：「委託リストも納品書作成のように上に新規作成ボタンを作り、その下に取引先に
@@ -4613,13 +4617,14 @@ function updateConsignNewBadge() {
 }
 
 function switchWhTab(tab) {
-  ['deliv','consign'].forEach(t => {
+  ['deliv','consign','share'].forEach(t => {
     const body = document.getElementById('wh-body-' + t);
     const btn  = document.getElementById('wh-tab-' + t);
     if (body) body.style.display = t === tab ? 'block' : 'none';
     if (btn)  btn.classList.toggle('active', t === tab);
   });
   renderWhClientDatalist();
+  if (tab === 'share' && typeof ssRender === 'function') ssRender(true);
   if (tab === 'consign') {
     const dateEl = document.getElementById('wh-consign-date');
     if (dateEl && !dateEl.value) dateEl.value = todayStr();
@@ -24210,6 +24215,8 @@ async function azCommit() {
     if (restored) parts.push(`${restored}件戻しました`);
     if (failed) parts.push(`${failed}件は要確認`);
     if (salesMsg) parts.push(salesMsg);
+    // 共有在庫（アサヒデンキ）にAmazonの注文を反映
+    try { if (typeof ssSyncAmazon === 'function') { const m = await ssSyncAmazon(); if (m) parts.push(m); } } catch (e) { console.error('shared stock sync error', e); }
     showToast(parts.join('・'));
   } catch (e) {
     console.error('amazon import error', e);
@@ -26796,6 +26803,407 @@ async function ercCommit() {
 .rt-rule .v.warn { color:#a3261a; }
 #rt-inv-banner .rt-bn { display:flex; align-items:center; justify-content:space-between; gap:8px; background:#fff7e6; border:1px solid #f5d48c; color:#8a5a00; border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px; font-weight:700; cursor:pointer; }
 </style>
+
+<style>
+/* 共有在庫（アサヒデンキ） */
+.ss-sum { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; margin-bottom:12px; }
+.ss-sum > div { background:var(--white); border:1px solid var(--border); border-radius:12px; padding:10px 12px; }
+.ss-sum .k { font-size:11px; color:var(--text-muted); font-weight:700; }
+.ss-sum .v { font-size:20px; font-weight:800; }
+.ss-todo { border:1.5px solid #f5c35c; background:#fffaf0; border-radius:12px; padding:12px; margin-bottom:12px; }
+.ss-todo h4 { margin:0 0 8px; font-size:13.5px; }
+.ss-todo-row { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 0; border-top:1px dashed #f0dca8; font-size:13px; flex-wrap:wrap; }
+.ss-todo-row:first-of-type { border-top:none; }
+.ss-item { border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:8px; background:var(--white); }
+.ss-item.last1 { border-color:#f5c35c; background:#fffcf3; }
+.ss-item.out { border-color:#f2b8b0; background:#fff7f6; }
+.ss-item.ended { opacity:.65; }
+.ss-qty { font-size:22px; font-weight:800; line-height:1; text-align:right; }
+.ss-qty small { font-size:11px; font-weight:700; color:var(--text-muted); }
+.ss-log { font-size:12px; display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-top:1px solid var(--border); }
+.ss-log .m { color:var(--text-muted); }
+.ss-btns { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; margin-top:8px; }
+</style>
+
+<div id="ss-modal" class="az-modal" onclick="if(event.target===this)ssCloseModal()">
+  <div class="az-modal-box" style="max-width:520px" id="ss-modal-box"></div>
+</div>
+
+<script>
+// ============================================================
+// 共有在庫（アサヒデンキ）
+// 要望：アサヒデンキへは商品を送らずKANETAKAで保管し、アサヒデンキのホームページで売れたら
+//   KANETAKAが出荷して、そのときに買い取ってもらう形になる可能性がある。売れるまではKANETAKAも
+//   Amazonで出品しているので、在庫はAmazonとアサヒデンキで「共有」になる（代表の方針）。
+//   ・アサヒデンキへ提案している商品の在庫リスト（委託リストのようなもの）を作る
+//   ・Amazonで売れたら共有在庫から減らし、アサヒデンキへの連絡が必要なことを知らせる
+//   ・アサヒデンキで売れたら共有在庫から減らし、Amazonの在庫を直す作業を知らせる
+//   → 売り越し（同じ1個が両方で売れる）を防ぐ。
+// アサヒデンキにはまだ共有ページ（委託リストのリンク）を渡していないため、連絡は
+// 「連絡文をコピー」してメール・LINEで送る形にしている。
+// Amazonの注文は「全注文レポート」を取り込んだときに反映する（未出荷の注文の時点で減らす。
+// 売り越しを防ぐため、出荷を待たずに注文が入った時点で数える）。キャンセルになったら戻す。
+//
+// ■ データ
+//   /sharedStock/{id} … {partner, model, title, productKey, skus:[AmazonのSKU], qty(共有在庫の残り),
+//        price(売れたときの買取価格), status: active|ended, startDate(この日以降のAmazon注文を数える), note, createdAt, by}
+//   /sharedStockLog/{id} … {itemId, type: add|partner|amazon|adjust, qty(増減), date, orderId, qtyAfter,
+//        needAmazon(Amazonの在庫を直す必要あり), needPartner(アサヒデンキへの連絡が必要),
+//        invoiced(請求済み・アサヒデンキで売れた分), price, cancelled, moveKey, by, at}
+//   Amazon注文の記録は id を「az_注文商品ID」にして、何度取り込んでも二重に数えない。
+// ============================================================
+const SS = { items: {}, logs: {}, loaded: false, showEnded: false, open: new Set() };
+const SS_PARTNER = 'アサヒデンキ';
+const ssEsc = s => escapeHtmlMain(s == null ? '' : String(s));
+const ssYen = n => '¥' + (Math.round(Number(n) || 0)).toLocaleString();
+const ssMe = () => (typeof currentSessionEmail === 'function' ? currentSessionEmail() : '') || '';
+const ssMd = s => { if (!s) return ''; const p = String(s).split('-'); return (+p[1]) + '/' + (+p[2]); };
+const ssNewId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+function ssOpenModal(html) { document.getElementById('ss-modal-box').innerHTML = html; document.getElementById('ss-modal').style.display = 'flex'; }
+function ssCloseModal() { document.getElementById('ss-modal').style.display = 'none'; }
+async function ssPut(path, data) { const r = await fetch(authedUrl('/' + path + '.json'), { method: 'PUT', body: JSON.stringify(data) }); if (!r.ok) throw new Error('save'); }
+async function ssPatch(path, data) { const r = await fetch(authedUrl('/' + path + '.json'), { method: 'PATCH', body: JSON.stringify(data) }); if (!r.ok) throw new Error('save'); }
+async function ssDel(path) { await fetch(authedUrl('/' + path + '.json'), { method: 'DELETE' }); }
+
+async function ssLoad() {
+  const [a, b] = await Promise.all([
+    fetch(authedUrl('/sharedStock.json')).then(r => r.json()).catch(() => null),
+    fetch(authedUrl('/sharedStockLog.json')).then(r => r.json()).catch(() => null)
+  ]);
+  SS.items = a || {}; SS.logs = b || {}; SS.loaded = true;
+}
+function ssSkus(it) { const v = it && it.skus; return v ? (Array.isArray(v) ? v : Object.values(v)).map(s => String(s).trim()).filter(Boolean) : []; }
+function ssProduct(it) { return it && it.productKey ? (products || []).find(p => p._key === it.productKey) || null : null; }
+function ssLogsOf(id) { return Object.entries(SS.logs).filter(([, l]) => l && l.itemId === id).map(([k, l]) => ({ id: k, ...l })).sort((a, b) => (b.at || 0) - (a.at || 0)); }
+const SS_TYPE = { add: '登録・追加', partner: SS_PARTNER + 'で売れた', amazon: 'Amazonで売れた', adjust: '数を直した' };
+
+// ── 画面 ──
+async function ssRender(reload) {
+  const root = document.getElementById('ss-root'); if (!root) return;
+  if (!SS.loaded || reload) { root.innerHTML = '<div class="az-empty">読み込み中…</div>'; try { await ssLoad(); } catch (e) { root.innerHTML = '<div class="az-empty">読み込めませんでした</div>'; return; } }
+  const all = Object.entries(SS.items).map(([id, x]) => ({ id, ...x }));
+  const active = all.filter(x => x.status !== 'ended').sort((a, b) => (Number(a.qty) || 0) - (Number(b.qty) || 0) || String(a.model || '').localeCompare(String(b.model || '')));
+  const ended = all.filter(x => x.status === 'ended');
+  const allLogs = Object.entries(SS.logs).map(([id, l]) => ({ id, ...l })).filter(l => l && SS.items[l.itemId]);
+  const logs = allLogs.filter(l => !l.cancelled);
+  // キャンセルで戻した分も、アサヒデンキへの連絡は必要
+  const needAmazon = logs.filter(l => l.needAmazon), needPartner = allLogs.filter(l => l.needPartner);
+  const unbilled = logs.filter(l => l.type === 'partner' && !l.invoiced);
+  const total = active.reduce((s, x) => s + Math.max(0, Number(x.qty) || 0), 0);
+  const last1 = active.filter(x => Number(x.qty) === 1).length;
+  const over = active.filter(x => Number(x.qty) < 0).length;
+  ssUpdateBadge(needAmazon.length + needPartner.length);
+  // やること：同じ商品はまとめて「今の残り」に直せばよいので、商品ごとに1行
+  const byItem = list => [...new Set(list.map(l => l.itemId))].map(id => ({ it: { id, ...SS.items[id] }, logs: list.filter(l => l.itemId === id) }));
+  const todoA = byItem(needAmazon), todoP = byItem(needPartner);
+  root.innerHTML = `
+    <div class="ss-sum">
+      <div><div class="k">共有中の商品</div><div class="v">${active.length}<span style="font-size:12px">商品・${total}個</span></div></div>
+      <div><div class="k">残り1個（売り越しに注意）</div><div class="v" style="color:${last1 ? '#8a5a00' : 'inherit'}">${last1}<span style="font-size:12px">商品</span></div></div>
+      <div><div class="k">売り越し</div><div class="v" style="color:${over ? '#a3261a' : 'inherit'}">${over}<span style="font-size:12px">商品</span></div></div>
+      <div><div class="k">請求待ち（${SS_PARTNER}）</div><div class="v">${ssYen(unbilled.reduce((s, l) => s + (Number(l.price) || 0) * Math.abs(Number(l.qty) || 0), 0))}</div></div>
+    </div>
+    ${todoA.length || todoP.length ? `<div class="ss-todo">
+      ${todoA.length ? `<h4>🛒 Amazonの在庫を直してください（${SS_PARTNER}で売れた分）</h4>
+        ${todoA.map(({ it, logs }) => `<div class="ss-todo-row"><span><b>${ssEsc(it.model || it.title)}</b>：Amazonの在庫を <b>${Math.max(0, Number(it.qty) || 0)}個</b> に${ssSkus(it).length ? `<span class="az-sub">（SKU：${ssEsc(ssSkus(it).join('・'))}）</span>` : ''}</span>
+          <button class="az-btn small primary" onclick="ssDoneTodo('needAmazon','${it.id}')">直した</button></div>`).join('')}` : ''}
+      ${todoP.length ? `<h4 style="margin-top:${todoA.length ? 12 : 0}px">📨 ${SS_PARTNER}へ在庫数を連絡してください（Amazonで売れた分）</h4>
+        ${todoP.map(({ it }) => `<div class="ss-todo-row"><span><b>${ssEsc(it.model || it.title)}</b>：残り <b>${Math.max(0, Number(it.qty) || 0)}個</b>${Number(it.qty) <= 0 ? '（販売終了）' : ''}</span></div>`).join('')}
+        <div class="ss-btns"><button class="az-btn small" onclick="ssCopyText('partner')">連絡文をコピー</button><button class="az-btn small primary" onclick="ssDoneTodo('needPartner')">連絡した</button></div>` : ''}
+    </div>` : ''}
+    <div class="az-card">
+      <div class="az-h"><span>${SS_PARTNER}との共有在庫</span>
+        <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          <button class="az-btn small" onclick="ssSyncAmazonNow()">🔄 Amazonの注文を反映</button>
+          <button class="az-btn small" onclick="ssCopyText('list')">📋 在庫リストをコピー</button>
+          <button class="az-btn primary" onclick="ssOpenForm()">＋ 商品を追加</button></span></div>
+      <div class="az-sub" style="margin-bottom:10px">KANETAKAが保管し、Amazonと${SS_PARTNER}のホームページの両方で販売している商品です。どちらで売れても、ここの残りが減ります。Amazonの注文は「出荷管理 → Amazon」で全注文レポートを取り込んだときに反映されます（注文が入った時点で減らします）。</div>
+      ${active.length ? active.map(ssItemCard).join('') : '<div class="az-empty">まだ商品がありません。「＋ 商品を追加」から登録してください</div>'}
+      ${ended.length ? `<button class="az-btn small" style="width:100%;margin-top:4px" onclick="SS.showEnded=!SS.showEnded;ssRender()">${SS.showEnded ? '▲ 終了した商品を閉じる' : `▼ 終了した商品（${ended.length}件）`}</button>${SS.showEnded ? ended.map(ssItemCard).join('') : ''}` : ''}
+    </div>
+    ${unbilled.length ? `<div class="az-card" style="margin-top:12px">
+      <div class="az-h"><span>請求待ち（${SS_PARTNER}で売れた分）</span><button class="az-btn small primary" onclick="ssMarkInvoiced()">選んだものを請求済みにする</button></div>
+      <div class="az-sub" style="margin-bottom:6px">freee請求書で請求書を作ったら、ここで「請求済み」にしてください。</div>
+      ${unbilled.sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).map(l => { const it = SS.items[l.itemId] || {}; const q = Math.abs(Number(l.qty) || 0);
+        return `<label class="ss-log" style="cursor:pointer;align-items:center"><span style="display:flex;gap:8px;align-items:center"><input type="checkbox" class="ss-inv" value="${l.id}" checked> ${ssMd(l.date)}　${ssEsc(it.model || it.title)} × ${q}${l.orderId ? `<span class="m">（注文 ${ssEsc(l.orderId)}）</span>` : ''}</span><b>${ssYen((Number(l.price) || 0) * q)}</b></label>`; }).join('')}
+    </div>` : ''}`;
+}
+function ssItemCard(x) {
+  const q = Number(x.qty) || 0, p = ssProduct(x), skus = ssSkus(x);
+  const isOpen = SS.open.has(x.id);
+  const cls = x.status === 'ended' ? 'ended' : q < 0 ? 'out' : q === 0 ? 'out' : q === 1 ? 'last1' : '';
+  const warn = x.status === 'ended' ? '<span class="az-tag gray">終了</span>'
+    : q < 0 ? `<span class="az-tag">⚠️ 売り越し ${-q}個</span>` : q === 0 ? '<span class="az-tag">売り切れ</span>'
+    : q === 1 ? '<span class="az-tag" style="background:#fff1d6;color:#7a4a00">⚠️ 残り1個（同時に売れると売り越し）</span>' : '';
+  const logs = isOpen ? ssLogsOf(x.id).slice(0, 15) : [];
+  return `<div class="ss-item ${cls}">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;cursor:pointer" onclick="ssToggle('${x.id}')">
+      <div style="min-width:0">
+        <div class="t" style="font-weight:800">${ssEsc(x.model || '（型番なし）')} ${warn}</div>
+        <div class="s" style="font-size:12px;color:var(--text-muted)">${ssEsc(x.title || (p && p.name) || '')}${x.price ? '・買取価格 ' + ssYen(x.price) : ''}${skus.length ? '・SKU ' + ssEsc(skus.join('・')) : p ? '・在庫の商品と連動' : ''}</div>
+      </div>
+      <div class="ss-qty">${q}<small>個</small><div style="font-size:11px;color:var(--text-muted);font-weight:400;margin-top:4px">${isOpen ? '▲' : '▼'}</div></div>
+    </div>
+    ${isOpen ? `<div style="margin-top:8px">
+      ${x.note ? `<div class="s" style="font-size:12px;white-space:pre-wrap">📝 ${ssEsc(x.note)}</div>` : ''}
+      ${p ? `<div class="s" style="font-size:12px;color:var(--text-muted)">アプリの在庫：${ssEsc(typeof locBreakdownText === 'function' ? locBreakdownText(p) : (p.stock || 0) + '個')}</div>` : ''}
+      <div style="margin-top:6px">${logs.length ? logs.map(l => `<div class="ss-log"><span>${ssMd(l.date)}　${ssEsc(SS_TYPE[l.type] || '')}${l.orderId ? `<span class="m">（${ssEsc(l.orderId)}）</span>` : ''}${l.cancelled ? '<span class="m">（キャンセルで戻した）</span>' : ''}</span><span>${(Number(l.qty) || 0) > 0 ? '+' : ''}${l.qty}　→ 残り${l.qtyAfter != null ? l.qtyAfter : ''}</span></div>`).join('') : '<div class="az-sub">履歴はまだありません</div>'}</div>
+      <div class="ss-btns">
+        ${x.status === 'ended' ? `<button class="az-btn small" onclick="ssSetEnded('${x.id}',false)">共有を再開</button>`
+          : `<button class="az-btn small primary" onclick="ssOpenSold('${x.id}')">${SS_PARTNER}で売れた</button>
+             <button class="az-btn small" onclick="ssOpenAdjust('${x.id}')">数を直す・追加</button>
+             <button class="az-btn small" onclick="ssSetEnded('${x.id}',true)">共有を終了</button>`}
+        <button class="az-btn small" onclick="ssOpenForm('${x.id}')">編集</button>
+      </div></div>` : ''}
+  </div>`;
+}
+function ssToggle(id) { SS.open.has(id) ? SS.open.delete(id) : SS.open.add(id); ssRender(); }
+function ssUpdateBadge(n) {
+  const b = document.getElementById('wh-share-badge'); if (!b) return;
+  b.style.display = n ? 'inline-block' : 'none'; b.textContent = n || '';
+}
+
+// ── 商品の登録・編集 ──
+function ssOpenForm(id) {
+  const x = id ? SS.items[id] : { qty: 1, skus: [] };
+  SS.edit = { id: id || null, productKey: x.productKey || '' };
+  const p = ssProduct(x);
+  ssOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:10px">${id ? '共有在庫を編集' : '共有在庫に商品を追加'}</div>
+    <div class="rt-f"><label>型番（在庫の商品から探す）</label><input type="text" id="ss-model" value="${ssEsc(x.model || '')}" oninput="ssFindProduct()" placeholder="例：ECAM22020W" autocomplete="off"></div>
+    <div id="ss-prod-hits"></div>
+    <div id="ss-prod-sel" class="az-sub" style="margin:-4px 0 8px">${p ? '在庫の商品：' + ssEsc(p.name || p.model || '') : ''}</div>
+    <div class="rt-f"><label>商品名</label><input type="text" id="ss-title" value="${ssEsc(x.title || (p && p.name) || '')}"></div>
+    <div class="rt-g2">
+      ${id ? '' : `<div class="rt-f"><label>共有する個数</label><input type="number" id="ss-qty" min="0" inputmode="numeric" value="${Number(x.qty) || 1}"></div>`}
+      <div class="rt-f"><label>${SS_PARTNER}の買取価格（1個・税込）</label><input type="number" id="ss-price" min="0" inputmode="numeric" value="${x.price || ''}"></div>
+    </div>
+    <div class="rt-f"><label>AmazonのSKU（複数あれば改行で区切る）</label><textarea id="ss-skus" rows="2" placeholder="例：261102-45000hak">${ssEsc(ssSkus(x).join('\n'))}</textarea>
+      <div class="az-sub">このSKUのAmazon注文が入ると、共有在庫から減ります。空欄にすると、上で選んだ在庫の商品のAmazon注文で減ります。</div></div>
+    <div class="rt-f"><label>メモ</label><textarea id="ss-note" rows="2">${ssEsc(x.note || '')}</textarea></div>
+    <div style="display:flex;gap:8px;margin-top:8px">${id ? `<button class="az-btn" style="color:#c0392b" onclick="ssDelete('${id}')">削除</button>` : ''}
+      <button class="az-btn" style="flex:1" onclick="ssCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="ssSave()">保存</button></div>`);
+}
+function ssFindProduct() {
+  const q = normalizeModelStr(document.getElementById('ss-model').value || '');
+  const box = document.getElementById('ss-prod-hits');
+  if (!q || q.length < 2) { box.innerHTML = ''; return; }
+  const hits = (products || []).filter(p => normalizeModelStr(p.model || '').includes(q) || normalizeModelStr(p.name || '').includes(q)).slice(0, 6);
+  box.innerHTML = hits.map(p => `<div class="az-pick" onclick="ssPickProduct('${p._key}')"><b>${ssEsc(p.model || '')}</b> ${ssEsc(p.name || '')}<span class="az-sub">（在庫 ${Number(p.stock) || 0}）</span></div>`).join('');
+}
+function ssPickProduct(key) {
+  const p = (products || []).find(x => x._key === key); if (!p) return;
+  SS.edit.productKey = key;
+  document.getElementById('ss-model').value = p.model || '';
+  const t = document.getElementById('ss-title'); if (!t.value) t.value = p.name || '';
+  document.getElementById('ss-prod-hits').innerHTML = '';
+  document.getElementById('ss-prod-sel').textContent = '在庫の商品：' + (p.name || p.model || '');
+}
+async function ssSave() {
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const id = SS.edit.id || ssNewId();
+  const old = SS.items[id] || {};
+  const rec = { ...old, partner: SS_PARTNER, model: v('ss-model').trim(), title: v('ss-title').trim(), price: Number(v('ss-price')) || 0,
+    skus: v('ss-skus').split(/[\n,、]/).map(s => s.trim()).filter(Boolean), note: v('ss-note').trim(),
+    productKey: SS.edit.productKey || '', updatedAt: Date.now(), updatedBy: ssMe() };
+  if (!rec.model && !rec.title) { showToast('型番か商品名を入力してください'); return; }
+  if (!rec.skus.length && !rec.productKey) { showToast('AmazonのSKUを入力するか、在庫の商品を選んでください'); return; }
+  const isNew = !SS.edit.id;
+  if (isNew) { rec.qty = Math.max(0, parseInt(v('ss-qty'), 10) || 0); rec.status = 'active'; rec.startDate = todayStr(); rec.createdAt = Date.now(); rec.by = ssMe(); }
+  try {
+    await ssPut('sharedStock/' + id, rec); SS.items[id] = rec;
+    if (isNew) await ssAddLog({ itemId: id, type: 'add', qty: rec.qty, date: todayStr(), qtyAfter: rec.qty });
+    ssCloseModal(); ssRender(); showToast('保存しました');
+  } catch (e) { showToast('保存に失敗しました'); }
+}
+async function ssDelete(id) {
+  if (!(await showConfirm('この商品を共有在庫から削除しますか？（履歴も消えます）\n売れ終わった商品は「共有を終了」にすると履歴が残ります'))) return;
+  try {
+    await ssDel('sharedStock/' + id); delete SS.items[id];
+    const del = {}; Object.entries(SS.logs).forEach(([k, l]) => { if (l && l.itemId === id) { del[k] = null; delete SS.logs[k]; } });
+    if (Object.keys(del).length) await ssPatch('sharedStockLog', del);
+    ssCloseModal(); ssRender(); showToast('削除しました');
+  } catch (e) { showToast('削除に失敗しました'); }
+}
+async function ssSetEnded(id, end) {
+  const x = SS.items[id]; if (!x) return;
+  if (end && !(await showConfirm(`「${x.model || x.title}」の共有を終了しますか？\n${SS_PARTNER}へも販売終了を伝えてください`))) return;
+  try { await ssPatch('sharedStock/' + id, { status: end ? 'ended' : 'active', updatedAt: Date.now() }); x.status = end ? 'ended' : 'active'; ssRender(); }
+  catch (e) { showToast('保存に失敗しました'); }
+}
+async function ssAddLog(l, logId) {
+  const id = logId || ssNewId();
+  const rec = { ...l, by: ssMe(), at: Date.now() };
+  await ssPut('sharedStockLog/' + id, rec); SS.logs[id] = rec;
+  return id;
+}
+async function ssChangeQty(id, delta) {
+  // 最新の数を読み直してから増減する（別の端末で同時に変えたときに上書きしないように）
+  const cur = await fetch(authedUrl('/sharedStock/' + id + '/qty.json')).then(r => r.json()).catch(() => null);
+  const base = cur != null ? Number(cur) || 0 : Number(SS.items[id].qty) || 0;
+  const next = base + delta;
+  await ssPut('sharedStock/' + id + '/qty', next);
+  SS.items[id].qty = next;
+  return next;
+}
+
+// ── アサヒデンキで売れた ──
+function ssOpenSold(id) {
+  const x = SS.items[id]; if (!x) return;
+  const p = ssProduct(x);
+  ssOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:4px">${SS_PARTNER}で売れた</div>
+    <div class="az-sub" style="margin-bottom:10px">${ssEsc(x.model || x.title)}・今の残り ${Number(x.qty) || 0}個</div>
+    <div class="rt-g2">
+      <div class="rt-f"><label>個数</label><input type="number" id="ss-sold-qty" min="1" value="1" inputmode="numeric"></div>
+      <div class="rt-f"><label>売れた日</label><input type="date" id="ss-sold-date" value="${todayStr()}"></div>
+    </div>
+    <div class="rt-f"><label>${SS_PARTNER}の注文番号（任意）</label><input type="text" id="ss-sold-order"></div>
+    <div class="rt-f"><label>買取価格（1個）</label><input type="number" id="ss-sold-price" value="${x.price || ''}" inputmode="numeric"></div>
+    ${p ? `<div class="rt-f"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ss-sold-inv" checked> アプリの在庫からも減らす（出荷元）</label>
+      <select id="ss-sold-loc">${stockLocations.map(l => `<option value="${ssEsc(l.id)}" ${l.id === getHomeLoc(p) ? 'selected' : ''}>${ssEsc(l.name)}</option>`).join('')}</select></div>` : ''}
+    <div class="az-sub" style="margin-bottom:8px">保存すると共有在庫が減り、「Amazonの在庫を直してください」が表示されます。お客様の名前・住所はここには入力しないでください。</div>
+    <div style="display:flex;gap:8px"><button class="az-btn" style="flex:1" onclick="ssCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="ssSaveSold('${id}')">保存</button></div>`);
+}
+async function ssSaveSold(id) {
+  const x = SS.items[id]; if (!x) return;
+  const q = parseInt(document.getElementById('ss-sold-qty').value, 10) || 0;
+  if (q <= 0) { showToast('個数を入力してください'); return; }
+  const date = document.getElementById('ss-sold-date').value || todayStr();
+  const orderId = document.getElementById('ss-sold-order').value.trim();
+  const price = Number(document.getElementById('ss-sold-price').value) || 0;
+  const inv = document.getElementById('ss-sold-inv');
+  try {
+    const after = await ssChangeQty(id, -q);
+    const log = { itemId: id, type: 'partner', qty: -q, date, orderId, price, qtyAfter: after, needAmazon: true, invoiced: false };
+    // アプリの在庫（事務所ごとの数）からも減らす
+    const p = ssProduct(x);
+    if (p && inv && inv.checked) {
+      const loc = document.getElementById('ss-sold-loc').value;
+      const before = Number(p.stock) || 0, st = locStateAfterDelta(p, loc, -q);
+      await saveProductLocState(p, st.stock, st.locQty);
+      const r = await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
+        productKey: p._key, productName: p.name || '', jan: p.jan || '', type: 'out', qty: q, date, channel: SS_PARTNER, loc,
+        memo: SS_PARTNER + 'で販売' + (orderId ? ' ' + orderId : ''), stockBefore: before, stockAfter: st.stock, createdAt: Date.now() }) });
+      const j = await r.json().catch(() => null); if (j && j.name) log.moveKey = j.name;
+      if (typeof loadInventory === 'function') loadInventory();
+    }
+    await ssAddLog(log);
+    ssCloseModal(); SS.open.add(id); ssRender();
+    showToast(after < 0 ? `⚠️ 売り越しです（残り${after}個）。Amazonで売れた分と重なっていないか確認してください` : `記録しました。Amazonの在庫を${Math.max(0, after)}個に直してください`);
+  } catch (e) { showToast('保存に失敗しました'); }
+}
+
+// ── 数を直す・追加 ──
+function ssOpenAdjust(id) {
+  const x = SS.items[id]; if (!x) return;
+  ssOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:4px">数を直す・追加</div>
+    <div class="az-sub" style="margin-bottom:10px">${ssEsc(x.model || x.title)}・今の残り ${Number(x.qty) || 0}個</div>
+    <div class="rt-f"><label>正しい残りの数</label><input type="number" id="ss-adj-qty" value="${Number(x.qty) || 0}" inputmode="numeric"></div>
+    <label style="display:flex;gap:6px;align-items:center;font-size:13px;margin-bottom:6px"><input type="checkbox" id="ss-adj-amz"> Amazonの在庫も直す必要がある</label>
+    <label style="display:flex;gap:6px;align-items:center;font-size:13px;margin-bottom:10px"><input type="checkbox" id="ss-adj-ptn"> ${SS_PARTNER}へ連絡する必要がある</label>
+    <div style="display:flex;gap:8px"><button class="az-btn" style="flex:1" onclick="ssCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="ssSaveAdjust('${id}')">保存</button></div>`);
+}
+async function ssSaveAdjust(id) {
+  const x = SS.items[id]; if (!x) return;
+  const n = parseInt(document.getElementById('ss-adj-qty').value, 10);
+  if (isNaN(n)) { showToast('数を入力してください'); return; }
+  try {
+    const cur = Number(x.qty) || 0;
+    if (n === cur) { ssCloseModal(); return; }
+    const after = await ssChangeQty(id, n - cur);
+    await ssAddLog({ itemId: id, type: n > cur ? 'add' : 'adjust', qty: n - cur, date: todayStr(), qtyAfter: after,
+      needAmazon: document.getElementById('ss-adj-amz').checked || null, needPartner: document.getElementById('ss-adj-ptn').checked || null });
+    ssCloseModal(); ssRender(); showToast('直しました');
+  } catch (e) { showToast('保存に失敗しました'); }
+}
+
+// ── やることを済みにする ──
+async function ssDoneTodo(key, itemId) {
+  const patch = {};
+  Object.entries(SS.logs).forEach(([k, l]) => { if (l && l[key] && (!itemId || l.itemId === itemId)) { patch[k + '/' + key] = null; delete l[key]; } });
+  if (!Object.keys(patch).length) return;
+  try { await ssPatch('sharedStockLog', patch); ssRender(); showToast('済みにしました'); } catch (e) { showToast('保存に失敗しました'); }
+}
+async function ssMarkInvoiced() {
+  const ids = [...document.querySelectorAll('.ss-inv:checked')].map(c => c.value);
+  if (!ids.length) { showToast('請求済みにするものを選んでください'); return; }
+  const patch = {}; ids.forEach(k => { patch[k + '/invoiced'] = true; patch[k + '/invoicedAt'] = Date.now(); });
+  try { await ssPatch('sharedStockLog', patch); ids.forEach(k => { if (SS.logs[k]) SS.logs[k].invoiced = true; }); ssRender(); showToast('請求済みにしました'); }
+  catch (e) { showToast('保存に失敗しました'); }
+}
+
+// ── アサヒデンキに送る文章（メール・LINEに貼り付ける） ──
+async function ssCopyText(kind) {
+  const now = new Date();
+  const stamp = `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const active = Object.entries(SS.items).map(([id, x]) => ({ id, ...x })).filter(x => x.status !== 'ended');
+  let lines;
+  if (kind === 'partner') {
+    const ids = [...new Set(Object.values(SS.logs).filter(l => l && l.needPartner && !l.cancelled).map(l => l.itemId))];
+    lines = [`${SS_PARTNER} ご担当者様`, '', `在庫数に変更がありましたのでお知らせいたします（${stamp}時点）。`, '',
+      ...ids.map(id => SS.items[id]).filter(Boolean).map(x => `・${x.model || ''}${x.title ? ' ' + x.title : ''}：残り${Math.max(0, Number(x.qty) || 0)}個${Number(x.qty) <= 0 ? '（販売終了をお願いいたします）' : ''}`),
+      '', 'よろしくお願いいたします。', '株式会社KANETAKA'];
+  } else {
+    lines = [`【共有在庫リスト】${stamp}時点`, '', ...active.sort((a, b) => String(a.model || '').localeCompare(String(b.model || '')))
+      .map(x => `・${x.model || ''}${x.title ? ' ' + x.title : ''}：${Math.max(0, Number(x.qty) || 0)}個${x.price ? '（' + ssYen(x.price) + '）' : ''}`)];
+  }
+  const text = lines.join('\n');
+  try { await navigator.clipboard.writeText(text); showToast('コピーしました。メールやLINEに貼り付けてください'); }
+  catch (e) {
+    ssOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:8px">コピーする文章</div><textarea rows="12" style="width:100%" onfocus="this.select()">${ssEsc(text)}</textarea>
+      <div style="display:flex;gap:8px;margin-top:8px"><button class="az-btn" style="flex:1" onclick="ssCloseModal()">閉じる</button></div>`);
+  }
+}
+
+// ── Amazonの注文を共有在庫に反映する ──
+// 全注文レポートの取り込み（azCommit）の最後と、「Amazonの注文を反映」ボタンから呼ぶ。
+// 未出荷・出荷済みの注文は数え、キャンセルになった注文は戻す。共有を始めた日より前の注文は数えない。
+async function ssSyncAmazon() {
+  if (typeof AZ === 'undefined') return '';
+  await ssLoad();
+  const items = Object.entries(SS.items).filter(([, x]) => x && x.status !== 'ended');
+  if (!items.length) return '';
+  let used = 0, back = 0;
+  for (const [oid, o] of Object.entries(AZ.orders || {})) {
+    if (!o) continue;
+    const sku = String(o.sku || '').trim();
+    const hit = items.find(([, x]) => { const s = ssSkus(x); return s.length ? s.includes(sku) : (x.productKey && o.productKey === x.productKey); });
+    if (!hit) continue;
+    const [iid, it] = hit;
+    const pd = String(o.purchaseDate || '').slice(0, 10);
+    if (it.startDate && pd && pd < it.startDate) continue;
+    const logId = 'az_' + azFirebaseKey(oid);
+    const ex = SS.logs[logId];
+    const q = Number(o.qty) || 0;
+    if (!q) continue;
+    if (o.status === 'cancelled') {
+      if (ex && !ex.cancelled) {
+        const after = await ssChangeQty(iid, Math.abs(Number(ex.qty) || q));
+        await ssPatch('sharedStockLog/' + logId, { cancelled: true, needPartner: true, qtyAfter: after });
+        Object.assign(ex, { cancelled: true, needPartner: true, qtyAfter: after }); back++;
+      }
+      continue;
+    }
+    if (ex) continue;
+    const after = await ssChangeQty(iid, -q);
+    await ssAddLog({ itemId: iid, type: 'amazon', qty: -q, date: pd || todayStr(), orderId: o.orderId || '', qtyAfter: after, needPartner: true }, logId);
+    used++;
+  }
+  if (document.getElementById('ss-root') && document.getElementById('wh-body-share') && document.getElementById('wh-body-share').style.display !== 'none') ssRender();
+  else ssUpdateBadge(Object.values(SS.logs).filter(l => l && !l.cancelled && (l.needAmazon || l.needPartner)).length);
+  const msg = [];
+  if (used) msg.push(`共有在庫を${used}件減らしました（${SS_PARTNER}へ連絡してください）`);
+  if (back) msg.push(`共有在庫を${back}件戻しました`);
+  return msg.join('・');
+}
+async function ssSyncAmazonNow() {
+  try {
+    if (typeof azLoad === 'function') await azLoad();
+    const m = await ssSyncAmazon();
+    ssRender();
+    showToast(m || '新しく反映するAmazonの注文はありませんでした');
+  } catch (e) { console.error(e); showToast('反映できませんでした'); }
+}
+</script>
 
 <div id="rt-modal" class="az-modal" onclick="if(event.target===this)rtCloseModal()">
   <div class="az-modal-box" style="max-width:520px" id="rt-modal-box"></div>
