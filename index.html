@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-15c">
+<meta name="app-build" content="2026-11-15d">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -26831,11 +26831,35 @@ async function ercCommit() {
 .ss-log { font-size:12px; display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-top:1px solid var(--border); }
 .ss-log .m { color:var(--text-muted); }
 .ss-btns { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; margin-top:8px; }
+/* 共有ページ（アサヒデンキ側）：1商品1行の一覧 */
+.sp-list { background:var(--white); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+.sp-head { display:flex; justify-content:space-between; padding:9px 12px; font-size:12.5px; font-weight:800; background:var(--surface); border-bottom:1px solid var(--border); }
+.sp-head span:last-child { font-weight:700; color:var(--text-muted); }
+.sp-row { display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:1px solid var(--border); min-height:44px; box-sizing:border-box; }
+.sp-row:last-child { border-bottom:none; }
+.sp-row .m { flex:1; min-width:0; font-weight:800; font-size:14.5px; overflow-wrap:anywhere; }
+.sp-row .m .p { display:block; font-size:11px; font-weight:700; color:#1f5f5b; }
+.sp-row .q { font-size:17px; font-weight:800; min-width:44px; text-align:right; }
+.sp-row .q small { font-size:11px; color:var(--text-muted); margin-left:1px; }
+.sp-row.last1 { background:#fffcf3; }
+.sp-row.out .q { color:#a3261a; }
+.sp-row.ended { opacity:.6; }
+.sp-row .az-btn { flex:none; min-width:64px; }
+.sp-nobtn { display:inline-block; min-width:64px; }
+.sp-tag { flex:none; font-size:11px; font-weight:800; padding:2px 7px; border-radius:999px; }
+.sp-tag.yel { background:#fff1d6; color:#7a4a00; }
+.sp-tag.red { background:#fdecea; color:#a3261a; }
+.sp-tag.gray { background:var(--surface); color:var(--text-muted); }
+.sp-hist { display:flex; justify-content:space-between; gap:10px; padding:8px 12px; border-bottom:1px solid var(--border); font-size:12.5px; }
+.sp-hist:last-child { border-bottom:none; }
+.sp-hist .mt { color:var(--text-muted); }
+.sp-hist .ok { color:#2e7d32; font-weight:700; flex:none; }
+.sp-hist .pend { color:#8a5a00; font-weight:700; flex:none; }
 </style>
 
 <!-- アサヒデンキ用の共有ページ（?share=… で開いたときだけ表示。ログイン不要・匿名認証・暗証番号） -->
 <div id="ss-portal" style="display:none;position:fixed;inset:0;z-index:560;background:var(--bg,#f6f5f2);overflow-y:auto;padding:max(20px,env(safe-area-inset-top)) 16px max(40px,env(safe-area-inset-bottom))">
-  <div style="max-width:760px;margin:0 auto">
+  <div style="max-width:620px;margin:0 auto">
     <div style="margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);font-weight:700">株式会社KANETAKA</div>
       <div style="font-size:19px;font-weight:800">共有在庫のご確認ページ</div></div>
     <div id="ss-portal-body"><div class="az-empty">読み込み中…</div></div>
@@ -27273,11 +27297,13 @@ async function ssCopyPortal() {
 async function ssPublish() {
   SS.dirty = false;
   const pid = SS.meta && SS.meta.portalId; if (!pid) return;
-  const items = Object.entries(SS.items).filter(([, x]) => x).map(([id, x]) => ({ id, model: x.model || '', title: x.title || '', qty: Number(x.qty) || 0, price: Number(x.price) || 0, status: x.status || 'active' }))
+  // 要望：アサヒデンキには型番と個数だけ見せる（買取価格・商品名・KANETAKA側の販売履歴は出さない）
+  const items = Object.entries(SS.items).filter(([, x]) => x).map(([id, x]) => ({ id, model: x.model || x.title || '', qty: Number(x.qty) || 0, status: x.status || 'active' }))
     .sort((a, b) => (a.status === 'ended') - (b.status === 'ended') || String(a.model).localeCompare(String(b.model)));
-  const lbl = l => l.cancelled ? 'Amazonの注文がキャンセル（戻し）' : l.type === 'amazon' ? 'KANETAKA（Amazon）で販売' : l.type === 'partner' ? SS_PARTNER + 'で販売' + (l.via === 'portal' ? '（ご報告）' : '') : l.type === 'add' ? '在庫を追加' : '数を修正';
-  const history = Object.entries(SS.logs).filter(([, l]) => l && SS.items[l.itemId]).sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).slice(0, 80)
-    .map(([, l]) => ({ at: l.reqAt || l.at || 0, model: (SS.items[l.itemId] || {}).model || '', label: lbl(l), qty: l.cancelled ? Math.abs(Number(l.qty) || 0) : Number(l.qty) || 0, qtyAfter: l.qtyAfter != null ? l.qtyAfter : null, orderId: l.type === 'partner' ? (l.orderId || '') : '' }));
+  // 履歴は「アサヒデンキで売れた分（ご報告・KANETAKAで記録した分）」だけを載せる。
+  // Amazonで売れた分・在庫の追加などKANETAKA側の履歴は、KANETAKAの画面だけで見る
+  const history = Object.entries(SS.logs).filter(([, l]) => l && l.type === 'partner' && !l.claim && SS.items[l.itemId] && Number(l.qty)).sort((a, b) => ((b[1].reqAt || b[1].at || 0) - (a[1].reqAt || a[1].at || 0))).slice(0, 80)
+    .map(([, l]) => ({ at: l.reqAt || l.at || 0, model: (SS.items[l.itemId] || {}).model || '', qty: Math.abs(Number(l.qty) || 0), orderId: l.orderId || '', via: l.via === 'portal' ? 'portal' : 'kanetaka', doneAt: l.at || 0 }));
   const processed = Object.values(SS.logs).filter(l => l && l.reqKey).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 100).map(l => l.reqKey);
   const publishedAt = Date.now();
   const snap = { partner: SS_PARTNER, pin: SS.meta.pin || '', publishedAt, amazonSyncedAt: ssAmazonAt() || null, items, history, processed };
@@ -27399,42 +27425,47 @@ function spRender() {
   const pendQty = id => pend.filter(p => p.itemId === id).reduce((s, p) => s + (Number(p.qty) || 0), 0);
   const items = (d.items || []);
   const active = items.filter(x => x.status !== 'ended'), ended = items.filter(x => x.status === 'ended');
+  // 1商品1行：型番・注意の印・個数・報告ボタンだけ（要望：型番と個数が分かればいいので幅を狭く）
   const row = x => {
-    const pq = pendQty(x.id), q = (Number(x.qty) || 0) - pq, show = Math.max(0, q);
-    const tag = x.status === 'ended' ? '<span class="az-tag gray">販売終了</span>' : show <= 0 ? '<span class="az-tag">在庫なし（販売を止めてください）</span>' : show === 1 ? '<span class="az-tag" style="background:#fff1d6;color:#7a4a00">残り1個・同時に売れる可能性があります</span>' : '';
-    return `<div class="ss-item ${x.status === 'ended' ? 'ended' : show <= 0 ? 'out' : show === 1 ? 'last1' : ''}">
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-        <div style="min-width:0"><div style="font-weight:800">${ssEsc(x.model)} ${tag}</div>
-          <div style="font-size:12px;color:var(--text-muted)">${ssEsc(x.title)}${x.price ? '・買取価格 ' + ssYen(x.price) : ''}</div>
-          ${pq ? `<div style="font-size:12px;color:#1f5f5b;font-weight:700;margin-top:4px">ご報告済み ${pq}個（KANETAKAの反映待ち）</div>` : ''}</div>
-        <div class="ss-qty">${show}<small>個</small></div></div>
-      ${x.status !== 'ended' && show > 0 ? `<div class="ss-btns"><button class="az-btn small primary" onclick="spOpenReport('${x.id}')">売れたので報告する</button></div>` : ''}
+    const pq = pendQty(x.id), show = Math.max(0, (Number(x.qty) || 0) - pq);
+    const tag = x.status === 'ended' ? '<span class="sp-tag gray">販売終了</span>' : show <= 0 ? '<span class="sp-tag red">在庫なし・販売停止</span>' : show === 1 ? '<span class="sp-tag yel">残り1個</span>' : '';
+    return `<div class="sp-row ${x.status === 'ended' ? 'ended' : show <= 0 ? 'out' : show === 1 ? 'last1' : ''}">
+      <span class="m">${ssEsc(x.model)}${pq ? `<span class="p">報告済み${pq}個・反映待ち</span>` : ''}</span>
+      ${tag}
+      <span class="q">${show}<small>個</small></span>
+      ${x.status !== 'ended' && show > 0 ? `<button class="az-btn small primary" onclick="spOpenReport('${x.id}')">売れた</button>` : '<span class="sp-nobtn"></span>'}
     </div>`;
   };
+  // ご報告の履歴：この端末で送ってまだ反映されていない分＋反映済みの分
+  const hist = (d.history || []);
+  const pendRows = pend.map(p => ({ at: p.at, model: ((items.find(i => i.id === p.itemId) || {}).model) || '', qty: p.qty, orderId: p.orderId || '', pending: true }));
+  const allHist = [...pendRows, ...hist].sort((a, b) => (b.at || 0) - (a.at || 0));
   spShow(`
     <div class="ss-todo" style="background:#f4fbfa;border-color:#b9d9d6">
-      <div style="font-size:13px;line-height:1.7">
-        ・表示している在庫数は、下の「最終更新」の時点のものです。<br>
-        ・KANETAKAのAmazonで売れた分は、KANETAKAが注文を取り込んだ時点で反映されます（Amazonの注文の最終反映：<b>${d.amazonSyncedAt ? ssStamp(d.amazonSyncedAt) : '—'}</b>）。<br>
+      <div style="font-size:12.5px;line-height:1.7">
+        ・在庫数は「最終更新」の時点のものです。KANETAKAのAmazonで売れた分は、注文を取り込んだ時点で反映されます（最終反映：<b>${d.amazonSyncedAt ? ssStamp(d.amazonSyncedAt) : '—'}</b>）。<br>
         ・残り1個の商品は、同時に売れる可能性があります。<br>
-        ・商品が売れたら、このページの「売れたので報告する」からご報告ください。ご報告の日時は記録に残ります。</div>
+        ・売れたら「売れた」からご報告ください。ご報告の日時は記録に残ります。</div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
         <span style="font-size:12.5px">最終更新：<b>${d.publishedAt ? ssStamp(d.publishedAt) : '—'}</b></span>
         <button class="az-btn small" onclick="spLoad(false)">🔄 最新にする</button></div>
     </div>
-    <div class="az-card"><div class="az-h"><span>在庫一覧</span><span class="az-sub">${active.length}商品</span></div>
+    <div class="sp-list">
+      <div class="sp-head"><span>在庫一覧</span><span>${active.length}商品</span></div>
       ${active.length ? active.map(row).join('') : '<div class="az-empty">現在、共有している商品はありません</div>'}
-      ${ended.length ? `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px">販売終了の商品（${ended.length}件）</summary>${ended.map(row).join('')}</details>` : ''}
     </div>
-    <div class="az-card" style="margin-top:12px"><div class="az-h"><span>増減の履歴</span></div>
-      ${(d.history || []).length ? d.history.map(h => `<div class="ss-log"><span>${h.at ? ssStamp(h.at) : ''}　${ssEsc(h.model)}　${ssEsc(h.label)}${h.orderId ? `<span class="m">（注文 ${ssEsc(h.orderId)}）</span>` : ''}</span><span>${h.qty > 0 ? '+' : ''}${h.qty}${h.qtyAfter != null ? '　→ 残り' + h.qtyAfter : ''}</span></div>`).join('') : '<div class="az-sub">まだ履歴はありません</div>'}
+    ${ended.length ? `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px">販売終了の商品（${ended.length}件）</summary><div class="sp-list" style="margin-top:6px">${ended.map(row).join('')}</div></details>` : ''}
+    <div class="sp-list" style="margin-top:14px">
+      <div class="sp-head"><span>ご報告の履歴</span><span>新しい順</span></div>
+      ${allHist.length ? allHist.map(h => `<div class="sp-hist"><span>${h.at ? ssStamp(h.at) : ''}　<b>${ssEsc(h.model)}</b> × ${h.qty}${h.orderId ? `<span class="mt">（注文 ${ssEsc(h.orderId)}）</span>` : ''}</span>
+        <span class="${h.pending ? 'pend' : 'ok'}">${h.pending ? '反映待ち' : h.via === 'kanetaka' ? 'KANETAKAで記録' : '反映済み'}</span></div>`).join('') : '<div class="az-sub" style="padding:10px 12px">まだご報告はありません</div>'}
     </div>`);
 }
 function spOpenReport(id) {
   const x = (SP.data.items || []).find(i => i.id === id); if (!x) return;
   const max = Math.max(0, (Number(x.qty) || 0) - spPending().filter(p => p.itemId === id).reduce((s, p) => s + (Number(p.qty) || 0), 0));
   ssOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:4px">売れたので報告する</div>
-    <div class="az-sub" style="margin-bottom:10px">${ssEsc(x.model)} ${ssEsc(x.title)}・表示中の在庫 ${max}個</div>
+    <div class="az-sub" style="margin-bottom:10px">${ssEsc(x.model)}・表示中の在庫 ${max}個</div>
     <div class="rt-f"><label>個数</label><input type="number" id="sp-qty" min="1" max="${max}" value="1" inputmode="numeric" style="width:100%;padding:9px;border:1.5px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
     <div class="rt-f"><label>御社の注文番号（任意）</label><input type="text" id="sp-order" style="width:100%;padding:9px;border:1.5px solid var(--border);border-radius:8px;box-sizing:border-box"></div>
     <div class="az-sub" style="margin-bottom:10px">お客様のお名前・ご住所はここには入力しないでください。</div>
@@ -27451,7 +27482,7 @@ async function spSendReport(id, max) {
     const r = await fetch(authedUrl('/sharedRequests/' + SP.pid + '.json'), { method: 'POST', body: JSON.stringify(rec) });
     if (!r.ok) throw new Error('send');
     const j = await r.json();
-    spSetPending([...spPending(), { key: j.name, itemId: id, qty: q, at: rec.at }]);
+    spSetPending([...spPending(), { key: j.name, itemId: id, qty: q, at: rec.at, orderId: rec.orderId }]);
     ssCloseModal(); spRender();
     showToast('ご報告を受け付けました（' + ssStamp(rec.at) + '）');
   } catch (e) { showToast('送信できませんでした。電波の良い場所でもう一度お試しください'); if (btn) { btn.disabled = false; btn.textContent = '報告する'; } }
