@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-16b">
+<meta name="app-build" content="2026-11-16c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -27546,10 +27546,11 @@ async function spSendReport(id, max) {
 // 回収待ちは納品書作成・委託リストの上に取引先ごとに表示され、回収したら「回収した」を押して消す。
 //   /carrybacks/{id} … {client, productKey, model, name, qty, loc, date, status: pending|done, by, createdAt, doneAt, doneBy}
 // ============================================================
-const CB = { list: {}, loaded: false };
+const CB = { list: {}, done: {}, loaded: false, showDone: false };
 async function cbLoad() {
   const all = await fetch(authedUrl('/carrybacks.json')).then(r => r.json()).catch(() => null) || {};
   CB.list = Object.fromEntries(Object.entries(all).filter(([, x]) => x && x.status === 'pending'));
+  CB.done = Object.fromEntries(Object.entries(all).filter(([, x]) => x && x.status === 'done'));
   CB.loaded = true;
 }
 async function cbRender(reload) {
@@ -27558,7 +27559,16 @@ async function cbRender(reload) {
     .sort((a, b) => String(a.client || '').localeCompare(String(b.client || ''), 'ja') || (a.createdAt || 0) - (b.createdAt || 0));
   const clients = [...new Set(items.map(x => x.client || '（取引先未設定）'))];
   const md = d => { if (!d) return ''; const p = String(d).split('-'); return (+p[1]) + '/' + (+p[2]); };
-  const html = items.length ? `<div class="cb-box">
+  // 回収済みの履歴（要望：「回収にした後はどこに表示されますか？」→ 回収待ちの下に開閉式で表示。間違えたときは戻せる）
+  const done = Object.entries(CB.done).map(([id, x]) => ({ id, ...x })).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0)).slice(0, 60);
+  const stamp = ms => { const d = new Date(ms); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const doneHtml = done.length ? `<button type="button" class="az-btn small" style="width:100%;margin-top:${items.length ? 10 : 0}px" onclick="CB.showDone=!CB.showDone;cbRender()">${CB.showDone ? '▲ 回収済みの履歴を閉じる' : `▼ 回収済みの履歴（${done.length}件）`}</button>
+    ${CB.showDone ? done.map(x => `<div class="cb-row">
+      <span><span class="m">${escapeHtmlMain(x.model || x.name || '')}</span> × ${Number(x.qty) || 0}　${escapeHtmlMain(x.client || '')}
+        <span class="s">（${md(x.date)} 商談 → ${x.doneAt ? stamp(x.doneAt) : ''} 回収${x.doneBy ? '・' + escapeHtmlMain(cbName(x.doneBy)) : ''}）</span></span>
+      <span class="b"><button class="az-btn small" onclick="cbUndo('${x.id}')">回収待ちに戻す</button></span></div>`).join('') : ''}` : '';
+  const html = !items.length ? (done.length ? `<div class="cb-box" style="border-color:var(--border);background:var(--white)">${doneHtml}</div>` : '')
+    : `<div class="cb-box">
       <h4><span>🚚 持ち戻り（回収待ち）${items.reduce((s, x) => s + (Number(x.qty) || 0), 0)}個</span><span class="az-sub" style="font-weight:400">取引先から回収したら「回収した」を押してください</span></h4>
       ${clients.map(c => `<div class="cb-client">${escapeHtmlMain(c)}</div>
         ${items.filter(x => (x.client || '（取引先未設定）') === c).map(x => `<div class="cb-row">
@@ -27566,7 +27576,8 @@ async function cbRender(reload) {
             <span class="s">（${md(x.date)} 商談${x.by ? '・' + escapeHtmlMain(cbName(x.by)) : ''}）</span></span>
           <span class="b"><button class="az-btn small" onclick="cbCancel('${x.id}')">取り消し</button><button class="az-btn small primary" onclick="cbDone('${x.id}')">回収した</button></span>
         </div>`).join('')}`).join('')}
-    </div>` : '';
+      ${doneHtml}
+    </div>`;
   ['cb-box-deliv', 'cb-box-consign'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = html; });
 }
 function cbName(email) { try { return (typeof tkName === 'function' ? tkName(email) : '') || String(email).split('@')[0]; } catch (e) { return String(email).split('@')[0]; } }
@@ -27628,8 +27639,18 @@ async function cbDone(id) {
   if (!(await showConfirm(`「${x.model || x.name || ''}」${x.qty}個を回収済みにしますか？`))) return;
   try {
     await fetch(authedUrl('/carrybacks/' + id + '.json'), { method: 'PATCH', body: JSON.stringify({ status: 'done', doneAt: Date.now(), doneBy: cbMe() }) });
-    delete CB.list[id]; cbRender(); showToast('回収済みにしました');
+    CB.done[id] = { ...x, status: 'done', doneAt: Date.now(), doneBy: cbMe() }; delete CB.list[id]; cbRender(); showToast('回収済みにしました');
   } catch (e) { showToast('保存に失敗しました'); }
+}
+// 間違えて「回収した」を押したとき：回収待ちに戻す
+async function cbUndo(id) {
+  const x = CB.done[id]; if (!x) return;
+  if (!(await showConfirm(`「${x.model || x.name || ''}」${x.qty}個を回収待ちに戻しますか？`))) return;
+  try {
+    await fetch(authedUrl('/carrybacks/' + id + '.json'), { method: 'PATCH', body: JSON.stringify({ status: 'pending', doneAt: null, doneBy: null }) });
+    const y = { ...x, status: 'pending' }; delete y.doneAt; delete y.doneBy;
+    CB.list[id] = y; delete CB.done[id]; cbRender(); showToast('回収待ちに戻しました');
+  } catch (e) { showToast('戻せませんでした'); }
 }
 async function cbCancel(id) {
   const x = CB.list[id]; if (!x) return;
