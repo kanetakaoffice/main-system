@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-15d">
+<meta name="app-build" content="2026-11-16a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -2126,6 +2126,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
   </div>
 
   <div id="wh-body-deliv">
+  <!-- 持ち戻り（回収待ち）：商談で卸にも委託にもならず、取引先から回収する商品 -->
+  <div class="cb-box-wrap" id="cb-box-deliv"></div>
   <!-- 要望：「発行済みの納品書が下にあって見にくいので上に表示してほしい。新規作成ボタンは
        1番下ではなく上に欲しい」「新規作成ボタンを押した時に下に移動するのではなく
        アコーディオン式に表示させたい（閉じる時にまた上にスクロールしないといけないのは
@@ -2315,6 +2317,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
 <div id="wh-body-share" style="display:none"><div id="ss-root"></div></div>
 
 <div id="wh-body-consign" style="display:none">
+  <div class="cb-box-wrap" id="cb-box-consign"></div>
   <!-- 要望：「委託リストも納品書作成のように上に新規作成ボタンを作り、その下に取引先に
        預けている商品がわかるようにできますか」への対応。納品書作成画面
        （wh-deliv-create-toggle-row／wh-deliv-create-section）と全く同じ考え方で、
@@ -4624,6 +4627,7 @@ function switchWhTab(tab) {
     if (btn)  btn.classList.toggle('active', t === tab);
   });
   renderWhClientDatalist();
+  if (typeof cbRender === 'function') cbRender(true);
   if (tab === 'share' && typeof ssRender === 'function') ssRender(true);
   if (tab === 'consign') {
     const dateEl = document.getElementById('wh-consign-date');
@@ -5528,7 +5532,8 @@ function renderWhDelivItems() {
         ${(!it._consignMarked && it.qty > 1) ? `<button onclick="splitWhDelivItem(${idx})" style="background:none;border:none;color:var(--text-muted);font-size:11px;text-decoration:underline;cursor:pointer;padding:0">傷・潰れなどで1個だけ単価を変える</button>` : ''}
         ${it._consignMarked
           ? `<button onclick="moveWhDelivItemToConsign(${idx})" style="background:none;border:none;color:var(--text-muted);font-size:11px;text-decoration:underline;cursor:pointer;padding:0">↩︎ 委託の印を解除</button>`
-          : `<button onclick="moveWhDelivItemToConsign(${idx})" style="background:none;border:none;color:var(--text-muted);font-size:11px;text-decoration:underline;cursor:pointer;padding:0">📦 委託リストへ追加</button>`}
+          : `<button onclick="moveWhDelivItemToConsign(${idx})" style="background:none;border:none;color:var(--text-muted);font-size:11px;text-decoration:underline;cursor:pointer;padding:0">📦 委託リストへ追加</button>
+             <button onclick="cbOpenFromRow(${idx})" style="background:none;border:none;color:var(--text-muted);font-size:11px;text-decoration:underline;cursor:pointer;padding:0">🚚 持ち戻り（回収待ちへ）</button>`}
       </div>
       <div id="wh-item-bb-${idx}">${whItemBuybackHtml(it, idx)}</div>
       ${whItemNoteHtml(it, idx)}
@@ -27486,6 +27491,100 @@ async function spSendReport(id, max) {
     ssCloseModal(); spRender();
     showToast('ご報告を受け付けました（' + ssStamp(rec.at) + '）');
   } catch (e) { showToast('送信できませんでした。電波の良い場所でもう一度お試しください'); if (btn) { btn.disabled = false; btn.textContent = '報告する'; } }
+}
+</script>
+
+
+<style>
+/* 持ち戻り（回収待ち） */
+.cb-box { border:1.5px solid #f5c35c; background:#fffaf0; border-radius:12px; padding:12px 14px; margin-bottom:14px; }
+.cb-box h4 { margin:0 0 6px; font-size:14px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.cb-client { font-size:12.5px; font-weight:800; margin:10px 0 2px; }
+.cb-row { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 0; border-top:1px dashed #f0dca8; font-size:13px; flex-wrap:wrap; }
+.cb-row .m { font-weight:700; }
+.cb-row .s { font-size:11.5px; color:var(--text-muted); }
+.cb-row .b { display:flex; gap:6px; flex:none; }
+</style>
+<script>
+// ============================================================
+// 持ち戻り（回収待ち）
+// 要望：「卸売の納品明細で、商談で委託にもならなかったものを持ち戻りになった時、今まではその場で
+//   消していたが、帰りに相手企業から回収するのを忘れることがあったので、委託のように回収のボタンも欲しい」
+// 納品明細の行の「🚚 持ち戻り（回収待ちへ）」を押すと、その行（数量が2以上ならいくつか選んで、その分だけ）を
+// 明細から外し、/carrybacks/{id} に「回収待ち」として記録する。納品書・売上・委託には入らず、在庫も動かさない
+// （明細から外すので、発行済みの納品書を編集している場合も、更新すれば在庫は元に戻る）。
+// 回収待ちは納品書作成・委託リストの上に取引先ごとに表示され、回収したら「回収した」を押して消す。
+//   /carrybacks/{id} … {client, productKey, model, name, qty, loc, date, status: pending|done, by, createdAt, doneAt, doneBy}
+// ============================================================
+const CB = { list: {}, loaded: false };
+async function cbLoad() {
+  const all = await fetch(authedUrl('/carrybacks.json')).then(r => r.json()).catch(() => null) || {};
+  CB.list = Object.fromEntries(Object.entries(all).filter(([, x]) => x && x.status === 'pending'));
+  CB.loaded = true;
+}
+async function cbRender(reload) {
+  if (!CB.loaded || reload) { try { await cbLoad(); } catch (e) { return; } }
+  const items = Object.entries(CB.list).map(([id, x]) => ({ id, ...x })).filter(x => x.status === 'pending')
+    .sort((a, b) => String(a.client || '').localeCompare(String(b.client || ''), 'ja') || (a.createdAt || 0) - (b.createdAt || 0));
+  const clients = [...new Set(items.map(x => x.client || '（取引先未設定）'))];
+  const md = d => { if (!d) return ''; const p = String(d).split('-'); return (+p[1]) + '/' + (+p[2]); };
+  const html = items.length ? `<div class="cb-box">
+      <h4><span>🚚 持ち戻り（回収待ち）${items.reduce((s, x) => s + (Number(x.qty) || 0), 0)}個</span><span class="az-sub" style="font-weight:400">取引先から回収したら「回収した」を押してください</span></h4>
+      ${clients.map(c => `<div class="cb-client">${escapeHtmlMain(c)}</div>
+        ${items.filter(x => (x.client || '（取引先未設定）') === c).map(x => `<div class="cb-row">
+          <span><span class="m">${escapeHtmlMain(x.model || x.name || '')}</span> × ${Number(x.qty) || 0}
+            <span class="s">（${md(x.date)} 商談${x.by ? '・' + escapeHtmlMain(cbName(x.by)) : ''}）</span></span>
+          <span class="b"><button class="az-btn small" onclick="cbCancel('${x.id}')">取り消し</button><button class="az-btn small primary" onclick="cbDone('${x.id}')">回収した</button></span>
+        </div>`).join('')}`).join('')}
+    </div>` : '';
+  ['cb-box-deliv', 'cb-box-consign'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = html; });
+}
+function cbName(email) { try { return (typeof tkName === 'function' ? tkName(email) : '') || String(email).split('@')[0]; } catch (e) { return String(email).split('@')[0]; } }
+function cbMe() { return (typeof currentSessionEmail === 'function' ? currentSessionEmail() : '') || ''; }
+
+// 納品明細の行から持ち戻りにする
+function cbOpenFromRow(idx) {
+  const it = _whDelivItems[idx]; if (!it) return;
+  const client = (document.getElementById('wh-deliv-client') || {}).value || '';
+  if (!client.trim()) { showToast('先に取引先を選んでください（どこから回収するか記録するため）'); return; }
+  ssOpenModal(`<div style="font-size:15px;font-weight:800;margin-bottom:4px">🚚 持ち戻り（回収待ちへ）</div>
+    <div class="az-sub" style="margin-bottom:10px">${escapeHtmlMain(it.model || it.name || '')}（明細の数量：${it.qty}個）・取引先：${escapeHtmlMain(client)}</div>
+    <div class="rt-f"><label>持ち戻りにする数</label><input type="number" id="cb-qty" min="1" max="${it.qty}" value="${it.qty}" inputmode="numeric"></div>
+    <div class="az-sub" style="margin-bottom:10px">この数だけ納品明細から外し、「回収待ち」に入れます。納品書・売上・委託には入りません。</div>
+    <div style="display:flex;gap:8px"><button class="az-btn" style="flex:1" onclick="ssCloseModal()">閉じる</button><button class="az-btn primary" style="flex:1" onclick="cbSaveFromRow(${idx})">回収待ちに入れる</button></div>`);
+}
+async function cbSaveFromRow(idx) {
+  const it = _whDelivItems[idx]; if (!it) { ssCloseModal(); return; }
+  const q = parseInt(document.getElementById('cb-qty').value, 10) || 0;
+  if (q < 1 || q > it.qty) { showToast(`1〜${it.qty}の数を入れてください`); return; }
+  const client = (document.getElementById('wh-deliv-client').value || '').trim();
+  const date = (document.getElementById('wh-deliv-date') || {}).value || todayStr();
+  const rec = { client, productKey: it.productKey || '', model: it.model || '', name: it.name || '', qty: q, loc: it.loc || '', date,
+    status: 'pending', by: cbMe(), createdAt: Date.now() };
+  try {
+    const r = await fetch(authedUrl('/carrybacks.json'), { method: 'POST', body: JSON.stringify(rec) });
+    if (!r.ok) throw new Error('save');
+    const j = await r.json(); CB.list[j.name] = rec;
+    // 明細から外す（全部なら行ごと削除、一部なら数量を減らす）
+    // （removeWhDelivItemは切り分けた行の数を元の行へ戻すため使わず、そのまま取り除く）
+    if (q >= it.qty) { _whDelivItems.splice(idx, 1); renderWhDelivItems(); saveWhDelivDraft(); }
+    else { it.qty -= q; it.amount = it.qty * (it.unitPrice || 0); renderWhDelivItems(); saveWhDelivDraft(); }
+    ssCloseModal(); cbRender();
+    showToast(`「${it.model || it.name || ''}」${q}個を回収待ちに入れました。回収したら「回収した」を押してください`);
+  } catch (e) { showToast('保存に失敗しました'); }
+}
+async function cbDone(id) {
+  const x = CB.list[id]; if (!x) return;
+  try {
+    await fetch(authedUrl('/carrybacks/' + id + '.json'), { method: 'PATCH', body: JSON.stringify({ status: 'done', doneAt: Date.now(), doneBy: cbMe() }) });
+    delete CB.list[id]; cbRender(); showToast('回収済みにしました');
+  } catch (e) { showToast('保存に失敗しました'); }
+}
+async function cbCancel(id) {
+  const x = CB.list[id]; if (!x) return;
+  if (!(await showConfirm(`「${x.model || x.name || ''}」${x.qty}個の回収待ちを取り消しますか？\n（間違えて入れたときや、やっぱり卸・委託になったときに使います。納品明細には戻らないので、必要なら追加し直してください）`))) return;
+  try { await fetch(authedUrl('/carrybacks/' + id + '.json'), { method: 'DELETE' }); delete CB.list[id]; cbRender(); showToast('取り消しました'); }
+  catch (e) { showToast('取り消せませんでした'); }
 }
 </script>
 
