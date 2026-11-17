@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-17a">
+<meta name="app-build" content="2026-11-17b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -24048,9 +24048,9 @@ function azParseReport(text) {
       let status = 'unshipped';
       if (os.startsWith('cancel')) status = 'cancelled';
       else if (is === 'shipped' || os.startsWith('shipped')) status = 'shipped';
-      // 保留中（支払いの確認中など）は出荷できないので、未出荷とは分ける。
-      // 以前は未出荷として扱っていたため、11/10から保留中の注文が「出荷遅れ」として今日の出荷に入っていた（2026-11-17 修正）
-      else if (os.startsWith('pending')) status = 'pending';
+      // ※全注文レポートでは、出品者出荷のふつうの未出荷注文も order-status が「Pending」になるため、
+      //   これだけでは支払い確認中などの「保留中」と見分けられない（2026-11-17 に一度分けたが、未出荷が全部保留中になったので戻した）。
+      //   保留中の注文は、出荷リストの各注文の「⏸ 保留中にする」で手で外す（o.held）。
       rows.push({ itemId, orderId: g('amazon-order-id'), sku: g('sku'), asin: g('asin'), title: g('product-name'),
         qty: parseInt(g('quantity'), 10) || 0, price: Number(g('item-price')) || 0, tax: Number(g('item-tax')) || 0,
         purchaseDate: g('purchase-date'), updated: g('last-updated-date'), status });
@@ -24322,7 +24322,7 @@ async function azSetLoc(id, loc) {
   catch (e) { showToast('保存に失敗しました'); }
 }
 async function azSetGroupLoc(productKey, loc) {
-  const ids = Object.keys(AZ.orders).filter(id => AZ.orders[id].status === 'unshipped' && AZ.orders[id].productKey === productKey);
+  const ids = Object.keys(AZ.orders).filter(id => (AZ.orders[id].status === 'unshipped' || AZ.orders[id].status === 'pending') && AZ.orders[id].productKey === productKey);
   await Promise.all(ids.map(id => azSetLoc(id, loc)));
   azRender();
 }
@@ -24422,7 +24422,7 @@ async function azChooseProduct(productKey) {
         moved++;
       }
       r.productKey = productKey;
-      if (r.status === 'unshipped') r.loc = azSuggestLoc(azProduct(productKey), r.qty || 1);
+      if (r.status === 'unshipped' || r.status === 'pending') r.loc = azSuggestLoc(azProduct(productKey), r.qty || 1);
       if (r.status === 'shipped' && !r.deducted && !r.skipped) { if (await azDeduct(k, r)) deducted++; }
       await azSaveOne(k);
     }
@@ -24448,8 +24448,9 @@ function azSkuLine(o) {
   if (s) bits.push(`仕入 ${s.cost.toLocaleString()}円${s.supplier ? '・' + azEsc(s.supplier) : ''}`);
   return bits.map(b => `<span>${b}</span>`).join('');
 }
+// 'pending' は 2026-11-17 の一時的な版で保存されたもの（中身はふつうの未出荷）。手で保留中にしたもの（held）は除く
 function azUnshippedList() {
-  return Object.keys(AZ.orders).map(id => Object.assign({ _id: id }, AZ.orders[id])).filter(o => o.status === 'unshipped')
+  return Object.keys(AZ.orders).map(id => Object.assign({ _id: id }, AZ.orders[id])).filter(o => (o.status === 'unshipped' || o.status === 'pending') && !o.held)
     .sort((a, b) => String(a.purchaseDate || '').localeCompare(String(b.purchaseDate || '')));
 }
 
@@ -24564,7 +24565,7 @@ function azRender() {
         <div class="az-title">${azEsc(o.title)}</div></div>${o.qty > 1 ? `<span class="az-qtybig">1件で${o.qty}個</span>` : '<div class="az-qty" style="white-space:nowrap">×1</div>'}</div>
       <div class="az-meta"><span>注文 ${azEsc(azFmtTime(o.purchaseDate))}</span>${promise}${azSkuLine(o)}<span>${azEsc(o.orderId)}</span></div>
       <div class="az-row" style="flex-wrap:wrap">${p ? azLocSelect(o.loc, `azSetLoc('${o._id}',this.value)`) : '<span class="az-tag">在庫の商品が見つかりません</span>'}
-        <span style="display:flex;gap:6px;margin-left:auto">${largeBtn(p)}<button class="az-btn small" onclick="azOpenMatch('${o._id}')">${p ? '商品を変更' : '商品を選ぶ'}</button></span></div></div>`;
+        <span style="display:flex;gap:6px;margin-left:auto">${largeBtn(p)}<button class="az-btn small" onclick="azOpenMatch('${o._id}')">${p ? '商品を変更' : '商品を選ぶ'}</button><button class="az-btn small" title="セラーセントラルで保留中（支払いの確認中など）の注文を出荷リストから外す" onclick="azSetHeld('${o._id}',true)">⏸ 保留中にする</button></span></div></div>`;
   };
 
   const sections = azShipSections(unshipped);
@@ -24617,10 +24618,10 @@ function azRender() {
     </div>
     ${azPreviewHtml()}
     ${issues.length ? `<div class="az-card" style="border-color:#e6b35a"><div class="az-h"><span>⚠️ 要確認（出荷済みで在庫を減らせていない注文）${issues.length}件</span></div>${issues.map(issueCard).join('')}</div>` : ''}
-    ${(() => { const pend = Object.keys(AZ.orders).map(id => Object.assign({ _id: id }, AZ.orders[id])).filter(o => o.status === 'pending');
-      return pend.length ? `<div class="az-card" style="border-color:#c9c2e8;background:#f7f5ff"><div class="az-h"><span>⏸ 保留中の注文 ${pend.length}件（まだ出荷しないでください）</span></div>
-        <div class="az-sub" style="margin-bottom:6px">Amazonで支払いの確認中などのため、出荷通知を送れない注文です。セラーセントラルで「未出荷」に変わると、次の取り込みで出荷リストに入ります。</div>
-        ${pend.map(o => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:6px 0;border-top:1px solid var(--border)"><span><b>${azEsc(azModelOf(o) || o.title || '')}</b> ×${Number(o.qty) || 1}</span><span class="az-sub">注文 ${azEsc(String(o.purchaseDate || '').slice(5, 10).replace('-', '/'))}・${azEsc(o.orderId || '')}</span></div>`).join('')}</div>` : ''; })()}
+    ${(() => { const pend = Object.keys(AZ.orders).map(id => Object.assign({ _id: id }, AZ.orders[id])).filter(o => o.held && (o.status === 'unshipped' || o.status === 'pending'));
+      return pend.length ? `<div class="az-card" style="border-color:#c9c2e8;background:#f7f5ff"><div class="az-h"><span>⏸ 保留中にした注文 ${pend.length}件（まだ出荷しないでください）</span></div>
+        <div class="az-sub" style="margin-bottom:6px">セラーセントラルで「保留中」（支払いの確認中など）になっている注文です。出荷リストから外しています。「未出荷」に変わったら「出荷リストに戻す」を押してください（出荷済み・キャンセルになれば取り込み時に自動で消えます）。</div>
+        ${pend.map(o => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;padding:6px 0;border-top:1px solid var(--border);flex-wrap:wrap"><span><b>${azEsc(azModelOf(o) || o.title || '')}</b> ×${Number(o.qty) || 1}　<span class="az-sub">注文 ${azEsc(String(o.purchaseDate || '').slice(5, 10).replace('-', '/'))}・${azEsc(o.orderId || '')}</span></span><button class="az-btn small" onclick="azSetHeld('${o._id}',false)">出荷リストに戻す</button></div>`).join('')}</div>` : ''; })()}
     <div class="az-cols"><div>
     ${unshipped.length ? sections.filter(x => x.day <= today).map(sectionHtml).join('') : '<div class="az-card"><div class="az-h"><span>📦 梱包リスト</span></div><div class="az-empty">未出荷の注文はありません</div></div>'}
     </div><div>
@@ -24832,6 +24833,15 @@ async function azSetPacked(ids, val) {
   list.forEach(id => { const o = AZ.orders[id]; if (!o) return; o.packed = val ? Date.now() : null; if (!val) delete o.packed; write[id + '/packed'] = val ? Date.now() : null; });
   azRender();
   try { await fetch(authedUrl('/amazonOrders.json'), { method: 'PATCH', body: JSON.stringify(write) }); }
+  catch (e) { showToast('保存に失敗しました'); }
+}
+// 保留中（支払いの確認中など）の注文を出荷リストから外す／戻す
+async function azSetHeld(id, val) {
+  const o = AZ.orders[id]; if (!o) return;
+  if (val && !(await showConfirm(`「${azModelOf(o) || o.title || ''}」（注文 ${o.orderId || ''}）を保留中にして、出荷リストから外しますか？`))) return;
+  if (val) o.held = Date.now(); else delete o.held;
+  azRender();
+  try { await fetch(authedUrl('/amazonOrders/' + id + '/held.json'), { method: 'PUT', body: JSON.stringify(val ? o.held : null) }); showToast(val ? '保留中にしました' : '出荷リストに戻しました'); }
   catch (e) { showToast('保存に失敗しました'); }
 }
 function azToggleDay(day) { if (AZ.openDays.has(day)) AZ.openDays.delete(day); else AZ.openDays.add(day); azRender(); }
@@ -25924,7 +25934,7 @@ function hkaShipDay(o) {
   return ymdKey(d);
 }
 function hkaUnshipped() {
-  return Object.keys(HKA.orders).map(id => ({ _id: id, ...HKA.orders[id] })).filter(o => o.status === 'unshipped')
+  return Object.keys(HKA.orders).map(id => ({ _id: id, ...HKA.orders[id] })).filter(o => o.status === 'unshipped' || o.status === 'pending')
     .sort((a, b) => String(a.purchaseDate || '').localeCompare(String(b.purchaseDate || '')));
 }
 
