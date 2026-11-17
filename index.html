@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-16d">
+<meta name="app-build" content="2026-11-17a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -24048,6 +24048,9 @@ function azParseReport(text) {
       let status = 'unshipped';
       if (os.startsWith('cancel')) status = 'cancelled';
       else if (is === 'shipped' || os.startsWith('shipped')) status = 'shipped';
+      // 保留中（支払いの確認中など）は出荷できないので、未出荷とは分ける。
+      // 以前は未出荷として扱っていたため、11/10から保留中の注文が「出荷遅れ」として今日の出荷に入っていた（2026-11-17 修正）
+      else if (os.startsWith('pending')) status = 'pending';
       rows.push({ itemId, orderId: g('amazon-order-id'), sku: g('sku'), asin: g('asin'), title: g('product-name'),
         qty: parseInt(g('quantity'), 10) || 0, price: Number(g('item-price')) || 0, tax: Number(g('item-tax')) || 0,
         purchaseDate: g('purchase-date'), updated: g('last-updated-date'), status });
@@ -24165,7 +24168,7 @@ function azBuildPlan(parsed) {
     const ex = AZ.orders[id] || null;
     // 古いレポートを後から取り込んでも、新しい状態を巻き戻さない
     if (ex && ex.updated && r.updated && new Date(r.updated) < new Date(ex.updated)) { nSame++; return; }
-    if (ex && r.status === 'unshipped' && (ex.status === 'shipped' || ex.status === 'cancelled')) { nSame++; return; }
+    if (ex && (r.status === 'unshipped' || r.status === 'pending') && (ex.status === 'shipped' || ex.status === 'cancelled')) { nSame++; return; }
     const rec = Object.assign({}, ex || {});
     rec.orderId = r.orderId || rec.orderId || '';
     rec.sku = r.sku || rec.sku || '';
@@ -24245,7 +24248,7 @@ async function azCommit() {
     const cutoff = Date.now() - AZ_KEEP_DAYS * 86400000;
     Object.keys(AZ.orders).forEach(id => {
       const o = AZ.orders[id];
-      if (write[id] || !o || o.status === 'unshipped') return;
+      if (write[id] || !o || o.status === 'unshipped' || o.status === 'pending') return;
       const t = new Date(o.purchaseDate || o.updated || 0).getTime();
       if (t && t < cutoff) write[id] = null;
     });
@@ -24614,6 +24617,10 @@ function azRender() {
     </div>
     ${azPreviewHtml()}
     ${issues.length ? `<div class="az-card" style="border-color:#e6b35a"><div class="az-h"><span>⚠️ 要確認（出荷済みで在庫を減らせていない注文）${issues.length}件</span></div>${issues.map(issueCard).join('')}</div>` : ''}
+    ${(() => { const pend = Object.keys(AZ.orders).map(id => Object.assign({ _id: id }, AZ.orders[id])).filter(o => o.status === 'pending');
+      return pend.length ? `<div class="az-card" style="border-color:#c9c2e8;background:#f7f5ff"><div class="az-h"><span>⏸ 保留中の注文 ${pend.length}件（まだ出荷しないでください）</span></div>
+        <div class="az-sub" style="margin-bottom:6px">Amazonで支払いの確認中などのため、出荷通知を送れない注文です。セラーセントラルで「未出荷」に変わると、次の取り込みで出荷リストに入ります。</div>
+        ${pend.map(o => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:6px 0;border-top:1px solid var(--border)"><span><b>${azEsc(azModelOf(o) || o.title || '')}</b> ×${Number(o.qty) || 1}</span><span class="az-sub">注文 ${azEsc(String(o.purchaseDate || '').slice(5, 10).replace('-', '/'))}・${azEsc(o.orderId || '')}</span></div>`).join('')}</div>` : ''; })()}
     <div class="az-cols"><div>
     ${unshipped.length ? sections.filter(x => x.day <= today).map(sectionHtml).join('') : '<div class="az-card"><div class="az-h"><span>📦 梱包リスト</span></div><div class="az-empty">未出荷の注文はありません</div></div>'}
     </div><div>
@@ -25937,7 +25944,7 @@ function hkaBuildPlan(parsed) {
   parsed.rows.forEach(r => {
     const id = azFirebaseKey(r.itemId), ex = HKA.orders[id] || null;
     if (ex && ex.updated && r.updated && new Date(r.updated) < new Date(ex.updated)) { nSame++; return; }
-    if (ex && r.status === 'unshipped' && (ex.status === 'shipped' || ex.status === 'cancelled')) { nSame++; return; }
+    if (ex && (r.status === 'unshipped' || r.status === 'pending') && (ex.status === 'shipped' || ex.status === 'cancelled')) { nSame++; return; }
     const rec = Object.assign({}, ex || {});
     rec.orderId = r.orderId || rec.orderId || ''; rec.sku = r.sku || rec.sku || '';
     if (r.asin) rec.asin = r.asin;
@@ -25977,7 +25984,7 @@ async function hkaCommit() {
       write[id] = rec;
     }
     const cutoff = Date.now() - 90 * 86400000;
-    Object.keys(HKA.orders).forEach(id => { const o = HKA.orders[id]; if (write[id] || !o || o.status === 'unshipped') return; const t = new Date(o.purchaseDate || o.updated || 0).getTime(); if (t && t < cutoff) write[id] = null; });
+    Object.keys(HKA.orders).forEach(id => { const o = HKA.orders[id]; if (write[id] || !o || o.status === 'unshipped' || o.status === 'pending') return; const t = new Date(o.purchaseDate || o.updated || 0).getTime(); if (t && t < cutoff) write[id] = null; });
     if (Object.keys(write).length) await hkReq('hak/amazonOrders', 'PATCH', write);
     Object.keys(write).forEach(k => { if (write[k] === null) delete HKA.orders[k]; else HKA.orders[k] = write[k]; });
     // 売上：最初の取り込みでは6日前から（レポートが過去7日分のため）。以後は取り込んだ注文の注文日を計算し直す
