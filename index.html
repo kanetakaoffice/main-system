@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-17b">
+<meta name="app-build" content="2026-11-17c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -24607,21 +24607,29 @@ function azRender() {
 
   root.innerHTML = `
     <input type="file" id="az-file" accept=".txt,.tsv,.csv,text/plain" style="display:none" onchange="azOnFile(this)">
-    <div class="az-card">
-      <div class="az-h"><span>Amazonの注文を取り込む</span><button class="az-btn primary" onclick="azPickFile()">📥 レポートを選ぶ</button></div>
+    <!-- 「Amazonの注文を取り込む」と「保留中にした注文」は横に半分ずつ並べ、それぞれタップで開閉する（要望：横に長くて気になる） -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;align-items:start;margin-bottom:12px">
+    <div class="az-card" style="margin-bottom:0">
+      <div class="az-h" style="margin-bottom:0;cursor:pointer" role="button" tabindex="0" aria-expanded="${AZ.openImport ? 'true' : 'false'}" onclick="AZ.openImport=!AZ.openImport;azRender()" onkeydown="if(event.key==='Enter'){AZ.openImport=!AZ.openImport;azRender()}">
+        <span>${AZ.openImport ? '▼' : '▶'} Amazonの注文を取り込む${meta.lastImportAt ? `<span class="az-sub" style="font-weight:400;margin-left:8px">前回 ${azEsc(azFmtTime(new Date(meta.lastImportAt).toISOString()))}</span>` : ''}</span>
+        <button class="az-btn primary" onclick="event.stopPropagation();azPickFile()">📥 レポートを選ぶ</button></div>
+      ${AZ.openImport ? `<div style="margin-top:10px">
       <div class="az-sub">セラーセントラル →「注文レポート」→「全注文レポート」（レポートの種類：最終更新日・過去7日）をダウンロードして選んでください。毎日取り込んでも二重にはなりません。</div>
-      ${meta.lastImportAt ? `<div class="az-sub" style="margin-top:6px">前回の取り込み：${azEsc(azFmtTime(new Date(meta.lastImportAt).toISOString()))}</div>` : ''}
       ${isAdmin() ? `<div class="az-sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">売上の自動記録：${meta.salesFrom ? `<b>${azEsc(meta.salesFrom.slice(5).replace('-', '/'))}の注文から</b>` : '次の取り込みから始まります'}
         ${meta.salesFrom ? `<button class="az-btn small" onclick="AZ.editFrom=!AZ.editFrom;azRender()">${AZ.editFrom ? '閉じる' : '開始日を変える'}</button>` : ''}
         ${AZ.editFrom ? `<input type="date" class="az-loc" value="${azEsc(meta.salesFrom || '')}" onchange="AZ.editFrom=false;azSetSalesFrom(this.value)">` : ''}</div>` : ''}
       <div class="az-sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">当日出荷の締め：${cutSel}までの注文はその日に出荷。大型の商品（西濃運輸）は土日祝日を除いて出荷日を決めます。それ以外はヤマト運輸です。</div>
+      </div>` : ''}
+    </div>
+    ${(() => { const pend = Object.keys(AZ.orders).map(id => Object.assign({ _id: id }, AZ.orders[id])).filter(o => o.held && (o.status === 'unshipped' || o.status === 'pending'));
+      return pend.length ? `<div class="az-card" style="border-color:#c9c2e8;background:#f7f5ff;margin-bottom:0">
+        <div class="az-h" style="margin-bottom:0;cursor:pointer;min-height:38px" role="button" tabindex="0" aria-expanded="${AZ.openHeld ? 'true' : 'false'}" onclick="AZ.openHeld=!AZ.openHeld;azRender()" onkeydown="if(event.key==='Enter'){AZ.openHeld=!AZ.openHeld;azRender()}">
+          <span>${AZ.openHeld ? '▼' : '▶'} ⏸ 保留中にした注文 ${pend.length}件<span class="az-sub" style="font-weight:400;margin-left:8px">まだ出荷しないでください</span></span></div>
+        ${AZ.openHeld ? `<div style="margin-top:10px"><div class="az-sub" style="margin-bottom:6px">セラーセントラルで「保留中」（支払いの確認中など）になっている注文です。出荷リストから外しています。「未出荷」に変わったら「出荷リストに戻す」を押してください（出荷済み・キャンセルになれば取り込み時に自動で消えます）。</div>
+        ${pend.map(o => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;padding:6px 0;border-top:1px solid var(--border);flex-wrap:wrap"><span><b>${azEsc(azModelOf(o) || o.title || '')}</b> ×${Number(o.qty) || 1}　<span class="az-sub">注文 ${azEsc(String(o.purchaseDate || '').slice(5, 10).replace('-', '/'))}・${azEsc(o.orderId || '')}</span></span><button class="az-btn small" onclick="azSetHeld('${o._id}',false)">出荷リストに戻す</button></div>`).join('')}</div>` : ''}</div>` : ''; })()}
     </div>
     ${azPreviewHtml()}
     ${issues.length ? `<div class="az-card" style="border-color:#e6b35a"><div class="az-h"><span>⚠️ 要確認（出荷済みで在庫を減らせていない注文）${issues.length}件</span></div>${issues.map(issueCard).join('')}</div>` : ''}
-    ${(() => { const pend = Object.keys(AZ.orders).map(id => Object.assign({ _id: id }, AZ.orders[id])).filter(o => o.held && (o.status === 'unshipped' || o.status === 'pending'));
-      return pend.length ? `<div class="az-card" style="border-color:#c9c2e8;background:#f7f5ff"><div class="az-h"><span>⏸ 保留中にした注文 ${pend.length}件（まだ出荷しないでください）</span></div>
-        <div class="az-sub" style="margin-bottom:6px">セラーセントラルで「保留中」（支払いの確認中など）になっている注文です。出荷リストから外しています。「未出荷」に変わったら「出荷リストに戻す」を押してください（出荷済み・キャンセルになれば取り込み時に自動で消えます）。</div>
-        ${pend.map(o => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;padding:6px 0;border-top:1px solid var(--border);flex-wrap:wrap"><span><b>${azEsc(azModelOf(o) || o.title || '')}</b> ×${Number(o.qty) || 1}　<span class="az-sub">注文 ${azEsc(String(o.purchaseDate || '').slice(5, 10).replace('-', '/'))}・${azEsc(o.orderId || '')}</span></span><button class="az-btn small" onclick="azSetHeld('${o._id}',false)">出荷リストに戻す</button></div>`).join('')}</div>` : ''; })()}
     <div class="az-cols"><div>
     ${unshipped.length ? sections.filter(x => x.day <= today).map(sectionHtml).join('') : '<div class="az-card"><div class="az-h"><span>📦 梱包リスト</span></div><div class="az-empty">未出荷の注文はありません</div></div>'}
     </div><div>
