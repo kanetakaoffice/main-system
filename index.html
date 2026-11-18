@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-17c">
+<meta name="app-build" content="2026-11-18a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -21221,6 +21221,21 @@ function tkNextDue(due, repeat) {
 // その設定から、昨日〜明日の分のタスクを「シリーズID_日付」のIDで作る。前回分を完了したかどうかに
 // 関係なく、その日になれば表示される。同じIDで作るため、複数の端末が同時に作っても重複しない。
 function tkInstId(sid, ymd) { return sid + '_' + String(ymd).replace(/-/g, ''); }
+// すでにある繰り返しの回（「シリーズID|日付」）の一覧。
+// 回の期限日を編集で動かしても、元の日付の回として数える（元の日付は t.occ、なければIDの末尾の日付）。
+// 以前は期限日だけで見ていたため、未完了の回の日付を延ばすと、元の日付の回がもう一度作られてしまい、
+// 「日付を延ばそうと編集してもできない（元の『○/○分・未完了』が残る）」状態になっていた（2026-11-18 修正）
+function tkHaveSet() {
+  const have = new Set();
+  Object.entries(TK.tasks || {}).forEach(([id, t]) => {
+    if (!t || !t.seriesId) return;
+    have.add(t.seriesId + '|' + t.due);
+    if (t.occ) have.add(t.seriesId + '|' + t.occ);
+    const m = String(id).match(/_(\d{4})(\d{2})(\d{2})$/);
+    if (m && String(id).startsWith(t.seriesId + '_')) have.add(t.seriesId + '|' + m[1] + '-' + m[2] + '-' + m[3]);
+  });
+  return have;
+}
 function tkRepeatMatches(sr, ymd) {
   if (!sr || !sr.anchor || ymd < sr.anchor) return false;
   const d = tkParse(ymd), a = tkParse(sr.anchor);
@@ -21285,7 +21300,7 @@ async function tkEnsureRepeatInstances() {
       writes.push(['tasks/' + id, 'PATCH', { seriesId: sid }]);
     });
     const today = tkToday();
-    const have = new Set(Object.values(TK.tasks || {}).filter(t => t && t.seriesId).map(t => t.seriesId + '|' + t.due));
+    const have = tkHaveSet();
     Object.entries(TK.tasks || {}).forEach(([sid, sr]) => {
       if (!sr || !sr.isSeries || sr.active === false) return;
       // 作る回：期限日が昨日〜明日の回に加え、開始日のあるタスク（期間が span 日）は「開始日が明日まで」に来た回も作る。
@@ -21504,6 +21519,8 @@ async function tkSaveTask(id) {
     const t = TK.tasks[id];
     if (!t) return;
     const prev = { ...t };
+    // 繰り返しの回の期限日を動かしたら、元の日付を覚えておく（同じ回がもう一度作られないように）
+    if (t.seriesId && rec.due && rec.due !== t.due && !t.occ) rec.occ = t.due;
     // 「完了」への変更はチェックボタンと同じ処理（二重完了の確認・繰り返しの次回作成）に任せる
     const toDone = newStatus === 'done' && t.status !== 'done';
     if (!toDone) tkApplyStatusChange(id, newStatus, rec);
@@ -21774,7 +21791,7 @@ async function tkOffToggleWeekday(wd) {
 // 明後日以降の繰り返しタスクを「予定」として見せる（まだ作られていない回。操作はその日になってから）
 function tkSeriesPreviewOn(day) {
   if (day <= tkAddDays(tkToday(), 1)) return [];
-  const have = new Set(Object.values(TK.tasks || {}).filter(t => t && t.seriesId).map(t => t.seriesId + '|' + t.due));
+  const have = tkHaveSet();
   return Object.entries(TK.tasks || {}).filter(([sid, sr]) => sr && sr.isSeries && sr.active !== false
       && tkRepeatMatches(sr, day) && !(sr.skip && sr.skip[day.replace(/-/g, '')]) && !have.has(sid + '|' + day)
       && (TK.filter !== 'mine' || TK.tab === 'cal' || tkInvolved(sr, tkMe())))
