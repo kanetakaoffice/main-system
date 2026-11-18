@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-18g">
+<meta name="app-build" content="2026-11-18h">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -3110,6 +3110,11 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <div class="field-divider"></div>
     <div class="field" style="padding-top:12px"><div class="field-label">備考</div>
       <input type="text" id="prod-edit-memo"></div>
+    <!-- 要望：大型（西濃運輸）の印を、注文が入る前から商品に付けておけるようにしてほしい -->
+    <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13.5px;color:var(--text);cursor:pointer">
+      <input type="checkbox" id="prod-edit-large" style="width:18px;height:18px">
+      <span>🚛 大型（Amazonの出荷は西濃運輸・土日祝日は出荷しない）</span>
+    </label>
     <div style="display:flex;gap:10px;margin-top:16px">
       <button onclick="saveProductEdit()" style="flex:1;padding:13px;background:linear-gradient(135deg,#d8d8d8,#a8a8a8);color:#1a1a1a;border:none;border-radius:var(--radius-sm);font-size:15px;font-weight:700;cursor:pointer">保存</button>
       <button onclick="closeProductEdit()" style="flex:1;padding:13px;background:var(--surface);color:var(--text);border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:15px;cursor:pointer">キャンセル</button>
@@ -10979,6 +10984,7 @@ function openProductEdit(key) {
   populateSubcatSelect('prod-edit-subcategory', p.category || '家電', p.subcategory || '');
   document.getElementById('prod-edit-location').value = p.location || '';
   document.getElementById('prod-edit-memo').value = p.memo || '';
+  const lg = document.getElementById('prod-edit-large'); if (lg) lg.checked = !!p.large;
   modal.style.display = 'flex';
 }
 
@@ -11036,6 +11042,7 @@ async function saveProductEdit() {
     memo:     document.getElementById('prod-edit-memo').value.trim(),
     homeLoc:  editHomeLoc,
     locQty:   Object.keys(editState.locQty).length ? editState.locQty : null,
+    large:    document.getElementById('prod-edit-large')?.checked ? true : null,
   };
   patch.stock = editState.stock;
   rememberMakerIfNew(patch.maker);
@@ -24769,7 +24776,7 @@ function azRender() {
 
   const recentRow = o => `<div class="az-grp"><div><div><b>${azEsc(azModelOf(o))}</b> ×${o.qty} <span class="az-sub">${azEsc(locName(o.deductLoc))}から</span></div>
       <div class="az-sub">${azEsc(o.shipDate || '')} 出荷・${azEsc(o.orderId)}</div></div>
-      <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="az-btn small" onclick="azOpenMatch('${o._id}')">商品を変更</button><button class="az-btn small" onclick="azUndo('${o._id}')">在庫を戻す</button></span></div>`;
+      <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${largeBtn(azProduct(o.productKey))}<button class="az-btn small" onclick="azOpenMatch('${o._id}')">商品を変更</button><button class="az-btn small" onclick="azUndo('${o._id}')">在庫を戻す</button></span></div>`;
 
   const cutSel = `<select class="az-loc" onchange="azSetCutoff(this.value)">${[10, 11, 12, 13, 14, 15, 16, 17].map(h => `<option value="${h}" ${h === azCutoff() ? 'selected' : ''}>${h}時</option>`).join('')}</select>`;
 
