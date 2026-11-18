@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-18c">
+<meta name="app-build" content="2026-11-18d">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -1235,7 +1235,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px">請求書・インボイスのPDFから登録
         <button type="button" class="btn btn-secondary" style="flex:none;padding:7px 12px;font-size:13px" onclick="document.getElementById('fi-file').click()">📄 PDFを選ぶ</button></div>
       <input type="file" id="fi-file" accept="application/pdf,.pdf" multiple style="display:none" onchange="fiOnFiles(this)">
-      <div style="font-size:12px;color:var(--text-muted);line-height:1.7;padding:0 16px 10px">freeeで作った請求書（国内）や、輸出用のインボイス（国外）のPDFを選ぶと（何枚でも）、取引先・日付・番号・金額を読み取って売上として登録します。同じ請求書番号は二重に登録しません。PDFはアプリに保存しません。</div>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.7;padding:0 16px 10px">freeeで作った請求書（国内）や、輸出用のインボイス（国外）のPDFを選ぶと（何枚でも）、取引先・日付・番号・金額を読み取って売上として登録します。同じ請求書番号は二重に登録しません。freeeの請求書は明細と元のPDFも保存し、卸売管理の「納品書・請求書」で見られます（登録済みの請求書を読み込み直しても、売上は増えずに請求書だけ保存されます）。</div>
       <div id="fi-review" style="padding:0 16px 6px"></div>
     </div>
     <div class="card">
@@ -7501,7 +7501,12 @@ function renderWhDelivHistory() {
   const filterActive = !!(f.q || f.client || f.dateStart || f.dateEnd);
 
   if (!slips.length) {
-    listEl.innerHTML = `<div style="font-size:12px;color:var(--text-muted)">${filterActive ? '条件に一致する納品書が見つかりませんでした' : 'まだ発行した納品書はありません'}</div>`;
+    // 表示中の種類（すべて／納品書／請求書）に合わせて文言を変える。請求書は売上のPDF読み込みで保存される
+    const _k = typeof _whDocKind !== 'undefined' ? _whDocKind : 'all';
+    const _docName = _k === 'invoice' ? '請求書' : _k === 'slip' ? '納品書' : '納品書・請求書';
+    const _emptyMsg = _k === 'invoice' ? 'まだ保存した請求書はありません。売上の「📄 PDFを選ぶ」でfreeeの請求書を読み込むと、ここに並びます'
+      : _k === 'slip' ? 'まだ発行した納品書はありません' : 'まだ発行した納品書・請求書はありません';
+    listEl.innerHTML = `<div style="font-size:12px;color:var(--text-muted)">${filterActive ? `条件に一致する${_docName}が見つかりませんでした` : _emptyMsg}</div>`;
     updateFreeeInvoiceSelectBar();
     if (typeof renderWhDelivSidePanel === 'function') renderWhDelivSidePanel(null);
     return;
