@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-18d">
+<meta name="app-build" content="2026-11-18e">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -26404,21 +26404,48 @@ function fiLinesTol(items) {
 // 「数量×単価＝明細金額」になる行だけを明細とみなす。「委託分」の見出しより下は委託の品目として印を付ける。
 // 摘要の最後に13桁の数字があればJANとして分ける（例：「65Z875R 4580652114356」）
 function fiParseItems(lines) {
-  const items = []; let consign = false;
-  lines.forEach(l => {
-    const s = l.trim();
-    if (/^委託分$/.test(s.replace(/\s/g, ''))) { consign = true; return; }
-    const m = s.match(/^(.+?)\s+(\d{1,4})\s+([\d,]+)\s+([\d,]+)$/);
-    if (!m) return;
-    const qty = Number(m[2]), price = Number(m[3].replace(/,/g, '')), amount = Number(m[4].replace(/,/g, ''));
-    if (!qty || qty * price !== amount) return;
-    let model = m[1].trim(), jan = '';
+  // 「数量 単価 明細金額」の並び（値引き・減額のマイナスも含む）
+  const NUM = /^(-?\d{1,4})\s+(-?[\d,]+)\s+(-?[\d,]+)$/;
+  const FULL = /^(.+?)\s+(-?\d{1,4})\s+(-?[\d,]+)\s+(-?[\d,]+)$/;
+  const toN = v => Number(String(v).replace(/,/g, ''));
+  const okRow = (q, p, a) => q && q * p === a;
+  const isFooter = s => /^(内訳|小計|備考|合計|消費税|請求金額|摘要|\d+%|\d+\s*\/\s*\d+$)/.test(s);
+  const items = []; let consign = false; const used = new Set();
+  const push = (model, qty, price, amount) => {
+    model = model.replace(/\s+/g, ' ').trim(); let jan = '';
     const mj = model.match(/\s(\d{13})$/);
     if (mj) { jan = mj[1]; model = model.slice(0, mj.index).trim(); }
     const it = { model, qty, price, amount };
     if (jan) it.jan = jan;
     if (consign) it.consign = true;
     items.push(it);
+  };
+  lines.forEach((l, i) => {
+    if (used.has(i)) return;
+    const s = l.trim();
+    if (/^委託分$/.test(s.replace(/\s/g, ''))) { consign = true; return; }
+    let m = s.match(FULL);
+    if (m && !NUM.test(s)) {
+      const q = toN(m[2]), p = toN(m[3]), a = toN(m[4]);
+      if (okRow(q, p, a)) { used.add(i); push(m[1], q, p, a); }
+      return;
+    }
+    // 品名が長くて折り返した行：数字だけの行の上下に品名が分かれている
+    // （例：「VLOGCAM … ブラック 454873616」／「21 123,500 2,593,500」／「0866」）
+    m = s.match(NUM);
+    if (!m) return;
+    const q = toN(m[1]), p = toN(m[2]), a = toN(m[3]);
+    if (!okRow(q, p, a)) return;
+    const prev = i > 0 && !used.has(i - 1) ? lines[i - 1].trim() : '';
+    if (!prev || isFooter(prev) || FULL.test(prev)) return;
+    let model = prev; used.add(i - 1); used.add(i);
+    const next = i + 1 < lines.length ? lines[i + 1].trim() : '';
+    if (next && !isFooter(next) && !FULL.test(next) && !NUM.test(next) && next.length <= 40 && !/^委託分$/.test(next.replace(/\s/g, ''))) {
+      // JANが途中で切れているとき（…454873616 ＋ 0866）は間を空けずにつなぐ
+      model = /\d$/.test(model) && /^\d+$/.test(next) ? model + next : model + ' ' + next;
+      used.add(i + 1);
+    }
+    push(model, q, p, a);
   });
   return items;
 }
