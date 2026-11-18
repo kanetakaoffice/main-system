@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-18f">
+<meta name="app-build" content="2026-11-18g">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -2299,7 +2299,8 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
              追加要望：「型番や期間での検索はできるが、取引先の検索ができないので、取引先毎で
              見れるようにしてほしい」への対応で、取引先名（部分一致）の検索欄も追加した -->
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-          <input type="text" id="wh-deliv-history-client-search" placeholder="🔍 取引先で検索" oninput="filterWhDelivHistory()" style="flex:1;min-width:130px;padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px;box-sizing:border-box">
+          <!-- 要望：「取引先で検索を入力ではなく選択できるようにしてほしい」への対応。選択肢は発行済みの納品書・請求書にある取引先から作る（renderWhDelivHistory） -->
+          <select id="wh-deliv-history-client-search" onchange="filterWhDelivHistory()" style="flex:1;min-width:130px;padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px;box-sizing:border-box;background:var(--white);color:var(--text)"><option value="">🏢 取引先：すべて</option></select>
           <input type="text" id="wh-deliv-history-search" placeholder="🔍 型番で検索" oninput="filterWhDelivHistory()" style="flex:1;min-width:130px;padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px;box-sizing:border-box">
           <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--text-muted);white-space:nowrap">期間
             <input type="date" id="wh-deliv-history-date-start" onchange="filterWhDelivHistory()" aria-label="期間の開始日" style="padding:7px 9px;border:1.2px solid var(--border);border-radius:8px;font-size:12.5px">
@@ -7464,6 +7465,19 @@ function renderWhDelivHistory() {
   }).sort((a,b) => b.createdAt - a.createdAt);
   // 請求書（freee）も一緒に並べる。日付の新しい順（同じ日は作った順）
   const invDocs = invDocsForList();
+  // 取引先の選択肢：納品書・請求書に出てくる取引先（件数付き）。よく取引する（件数の多い）順に並べる
+  const clientSel = document.getElementById('wh-deliv-history-client-search');
+  if (clientSel && clientSel.tagName === 'SELECT') {
+    const cnt = {};
+    slips.concat(invDocs).forEach(x => { const c = String(x.client || '').trim(); if (c) cnt[c] = (cnt[c] || 0) + 1; });
+    const key = c => c.replace(/株式会社|有限会社|合同会社|\(株\)|（株）|\s/g, '');
+    const names = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || key(a).localeCompare(key(b), 'ja'));
+    const cur = _whDelivHistoryFilter.client || '';
+    if (cur && !cnt[cur]) names.unshift(cur);
+    const html = '<option value="">🏢 取引先：すべて</option>' + names.map(c => `<option value="${escapeHtmlMain(c)}"${c === cur ? ' selected' : ''}>${escapeHtmlMain(c)}（${cnt[c] || 0}）</option>`).join('');
+    if (clientSel.dataset.h !== html) { clientSel.innerHTML = html; clientSel.dataset.h = html; }
+    clientSel.value = cur;
+  }
   slips = (_whDocKind === 'invoice' ? [] : slips).concat(_whDocKind === 'slip' ? [] : invDocs)
     .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.createdAt - a.createdAt));
   const kindBar = document.getElementById('wh-doc-kind-bar');
@@ -7497,7 +7511,7 @@ function renderWhDelivHistory() {
   // 単純に小文字化したうえでの部分一致にしている
   const clientNorm = (f.client || '').trim().toLowerCase();
   if (clientNorm) {
-    slips = slips.filter(s => (s.client || '').toLowerCase().includes(clientNorm));
+    slips = slips.filter(s => String(s.client || '').trim().toLowerCase() === clientNorm);
   }
   if (f.dateStart || f.dateEnd) {
     slips = slips.filter(s => {
