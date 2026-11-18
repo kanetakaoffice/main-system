@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-18e">
+<meta name="app-build" content="2026-11-18f">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -7315,6 +7315,16 @@ let _whDelivHistoryPage = 1;
 // 展開状態（どのslipIdを開いているか）はrenderWhDelivHistory()の再描画をまたいでも保持する
 // （委託リストの_whConsignExpandedClientsと同じ考え方）
 let _whDelivHistoryExpanded = new Set();
+// 発行済みの一覧を月ごとに畳む（検索していないとき）。開け閉めした月だけ覚え、
+// それ以外は「今月と先月だけ開く」を初期状態にする
+const _whDelivMonthOpen = {};
+function whDelivMonthIsOpen(ym) {
+  if (ym in _whDelivMonthOpen) return _whDelivMonthOpen[ym];
+  const d = new Date(); const cur = d.getFullYear() * 12 + d.getMonth();
+  const m = ym.match(/^(\d{4})-(\d{2})$/); if (!m) return false;
+  return Number(m[1]) * 12 + Number(m[2]) - 1 >= cur - 1;
+}
+function toggleWhDelivMonth(ym) { _whDelivMonthOpen[ym] = !whDelivMonthIsOpen(ym); renderWhDelivHistory(); }
 function isWhDelivWideLayout() {
   return !!(window.matchMedia && window.matchMedia('(min-width:1280px)').matches);
 }
@@ -7512,15 +7522,29 @@ function renderWhDelivHistory() {
     return;
   }
 
+  // 検索・期間の絞り込みをしていないときは月ごとに畳んで並べる（ページ分けはしない）。
+  // 検索したときは月に関係なく全期間から一致したものを日付順にそのまま並べる
+  const grouped = !filterActive;
   const totalCount = slips.length;
-  const totalPages = Math.max(1, Math.ceil(totalCount / WH_DELIV_HISTORY_PAGE_SIZE));
+  const totalPages = grouped ? 1 : Math.max(1, Math.ceil(totalCount / WH_DELIV_HISTORY_PAGE_SIZE));
   // 絞り込みの結果ページ数が減った場合など、現在のページ番号が範囲外にならないよう調整する
   if (_whDelivHistoryPage > totalPages) _whDelivHistoryPage = totalPages;
   if (_whDelivHistoryPage < 1) _whDelivHistoryPage = 1;
   const pageStart = (_whDelivHistoryPage - 1) * WH_DELIV_HISTORY_PAGE_SIZE;
-  const visibleSlips = slips.slice(pageStart, pageStart + WH_DELIV_HISTORY_PAGE_SIZE);
+  let visibleSlips = grouped ? slips : slips.slice(pageStart, pageStart + WH_DELIV_HISTORY_PAGE_SIZE);
+  const monthGroups = [];
+  if (grouped) {
+    slips.forEach(s => {
+      const ym = String(s.date || '').slice(0, 7) || '日付なし';
+      let g = monthGroups[monthGroups.length - 1];
+      if (!g || g.ym !== ym) { g = { ym, list: [] }; monthGroups.push(g); }
+      g.list.push(s);
+    });
+    // 右側に最初に出すのは、開いている月の先頭
+    visibleSlips = [].concat(...monthGroups.filter(g => whDelivMonthIsOpen(g.ym)).map(g => g.list));
+  }
 
-  listEl.innerHTML = visibleSlips.map(s => {
+  const rowHtml = s => {
     if (s.kind === 'invoice') {
       const matchedI = matchedItemsBySlip[s.slipId];
       const isOpenI = _whDelivHistoryExpanded.has(s.slipId);
@@ -7567,7 +7591,26 @@ function renderWhDelivHistory() {
         </div>
       </div>
     </div>`;
-  }).join('');
+  };
+  if (grouped) {
+    listEl.innerHTML = monthGroups.map(g => {
+      const open = whDelivMonthIsOpen(g.ym);
+      const m = g.ym.match(/^(\d{4})-(\d{2})$/);
+      const label = m ? `${m[1]}年${Number(m[2])}月` : g.ym;
+      const nSlip = g.list.filter(x => x.kind !== 'invoice').length, nInv = g.list.length - nSlip;
+      const breakdown = _whDocKind === 'all' && nSlip && nInv ? `（納品書 ${nSlip}・請求書 ${nInv}）` : '';
+      return `<div class="wh-month-group">
+        <div class="wh-month-head" onclick="toggleWhDelivMonth('${g.ym}')">
+          <span class="accordion-arrow${open ? ' open' : ''}" style="font-size:10px;color:var(--text-muted)">▼</span>
+          <span class="wh-month-label">${label}</span>
+          <span class="wh-month-count">${g.list.length}件${breakdown}</span>
+        </div>
+        ${open ? g.list.map(rowHtml).join('') : ''}
+      </div>`;
+    }).join('');
+  } else {
+    listEl.innerHTML = visibleSlips.map(rowHtml).join('');
+  }
 
   if (totalPages > 1) {
     const rangeStart = pageStart + 1;
@@ -7579,7 +7622,7 @@ function renderWhDelivHistory() {
 
   updateFreeeInvoiceSelectBar();
   // 右側の内容表示：まだ選んでいない（または選んでいたものが今の一覧に無い）ときは、一覧の先頭を表示する
-  if (!_whDelivSideSlipId || !slips.some(s => s.slipId === _whDelivSideSlipId)) {
+  if (!_whDelivSideSlipId || !visibleSlips.some(s => s.slipId === _whDelivSideSlipId)) {
     _whDelivSideSlipId = visibleSlips[0] ? visibleSlips[0].slipId : null;
     listEl.querySelectorAll('.wh-deliv-row').forEach((el, i) => el.classList.toggle('sel', i === 0));
   }
@@ -27057,6 +27100,10 @@ async function ercCommit() {
 .rt-st { display:inline-block; font-size:10.5px; font-weight:700; padding:2px 6px; border-radius:4px; background:#3a3a3a; color:#fff; }
 .rt-st.done { background:#e8f5e9; color:#2e7d32; }
 /* 検品（商品の状態）・要注意・対応ルール */
+.wh-month-head { display:flex; align-items:center; gap:8px; padding:10px 4px; margin-top:4px; border-bottom:1.5px solid var(--border); cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent; }
+.wh-month-label { font-size:13.5px; font-weight:800; color:var(--text); }
+.wh-month-count { font-size:11.5px; color:var(--text-muted); }
+.wh-month-group .wh-deliv-row { padding-left:6px; }
 .wh-doc-kind-bar { display:flex; gap:6px; flex-wrap:wrap; margin:-2px 0 10px; }
 .wh-doc-kind-bar button { font-size:12px; padding:5px 12px; border-radius:999px; border:1.2px solid var(--border); background:var(--white); color:var(--text-sub); cursor:pointer; }
 .wh-doc-kind-bar button.on { background:#3a3a3a; border-color:#3a3a3a; color:#fff; font-weight:700; }
