@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-18h">
+<meta name="app-build" content="2026-11-19a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -192,7 +192,12 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Hira
   #pack-list-sp > * { margin:0 !important; }
 }
 .wh-deliv-side { display:none; }
+@media (min-width:1100px) {
+  .wh-consign-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); column-gap:18px; align-items:start; }
+}
 @media (min-width:1280px) {
+  .wh-deliv-hist-wrap.creating { display:block; }
+  .wh-deliv-hist-wrap.creating .wh-deliv-side { display:none; }
   .wh-deliv-hist-wrap { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.05fr); gap:16px; align-items:start; }
   .wh-deliv-side { display:block; position:sticky; top:calc(var(--side-nav-top, 60px) + 12px); max-height:calc(100vh - var(--side-nav-top, 60px) - 24px); overflow-y:auto; }
   /* 一覧は1件を2行（1行目：取引先・日付・件名／2行目：No.・数量・合計）にまとめる */
@@ -2141,6 +2146,10 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
        フォームが開閉するだけなので、開くときも閉じるときもスクロールの移動は発生しない。
        フォームは下書きが残っている場合や編集中の場合は自動で開く
        （toggleWhDelivCreateSection参照） -->
+    <div class="wh-deliv-hist-wrap" id="wh-deliv-hist-wrap"><div class="wh-deliv-hist-main">
+  <!-- 要望：「パソコンで広げたとき、納品書を作成のボタンが右の明細の上まで広がるのは変。発行済みの一覧の上だけにしたい」
+       → ボタンと作成フォームを左の列（一覧と同じ列）に入れた。作成フォームを開いている間は、フォームが狭くならないよう
+       右の明細欄を隠して全幅で表示する（.creating）。「請求書」だけを表示しているときはボタンを出さない -->
   <div id="wh-deliv-create-toggle-row" style="display:flex;justify-content:flex-end;margin-bottom:14px">
     <button type="button" id="wh-deliv-create-toggle-btn" class="btn btn-gold" onclick="toggleWhDelivCreateSection()" style="padding:10px 18px;font-size:13px">＋ 納品書を作成</button>
   </div>
@@ -2281,7 +2290,7 @@ textarea { resize: none; height: 72px; line-height: 1.5; }
     <!-- 要望「パソコンで発行済みの納品書一覧が横に伸びて見にくい。タップすると下に伸びるだけなので、
          右側に内容を表示させたい」への対応。パソコン幅（1280px以上）では、左に一覧、右に選んだ納品書の
          プレビュー（「明細」に切り替え可）を並べる。狭い幅では右側は出さず、今まで通り下に開く -->
-    <div class="wh-deliv-hist-wrap"><div class="wh-deliv-hist-main">
+
     <div style="margin-bottom:16px;background:var(--surface);border-radius:10px;padding:10px 12px">
       <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAccordion('wh-deliv-history')">
         <div style="display:flex;align-items:center;gap:6px">
@@ -6063,6 +6072,8 @@ function toggleWhDelivCreateSection(forceOpen) {
   if (shouldOpen === isOpen) return;
   section.style.display = shouldOpen ? 'block' : 'none';
   if (btn) btn.textContent = shouldOpen ? '－ 閉じる' : '＋ 納品書を作成';
+  const wrap = document.getElementById('wh-deliv-hist-wrap'); if (wrap) wrap.classList.toggle('creating', shouldOpen);
+  whDelivSyncCreateBtn();
   // 開いた直後に右側のプレビューを描き直す（閉じている間に計算した大きさのままにしない）
   if (shouldOpen) setTimeout(() => { try { renderWhDelivLivePreview(); } catch (e) {} }, 50);
 }
@@ -7403,7 +7414,14 @@ async function invLoad() {
   INV.loading = false;
 }
 let _whDocKind = 'all'; // 一覧の表示：all＝すべて／slip＝納品書だけ／invoice＝請求書だけ
-function setWhDocKind(k) { _whDocKind = k; _whDelivHistoryPage = 1; renderWhDelivHistory(); }
+function setWhDocKind(k) { _whDocKind = k; _whDelivHistoryPage = 1; renderWhDelivHistory(); whDelivSyncCreateBtn(); }
+// 「請求書」だけを表示しているときは「＋ 納品書を作成」を出さない（作成フォームを開いている間は出したまま）
+function whDelivSyncCreateBtn() {
+  const row = document.getElementById('wh-deliv-create-toggle-row'), sec = document.getElementById('wh-deliv-create-section');
+  if (!row) return;
+  const open = sec && sec.style.display !== 'none';
+  row.style.display = _whDocKind === 'invoice' && !open ? 'none' : 'flex';
+}
 async function openInvoicePdf(key) {
   const w = window.open('', '_blank');
   try {
@@ -7438,7 +7456,8 @@ function invItemsTableHtml(s) {
       ${s.subtotal ? `<div style="text-align:right;font-size:11.5px;color:var(--text-muted);margin-top:4px">小計 ¥${Number(s.subtotal).toLocaleString('ja-JP')}／消費税 ¥${Number(s.tax || 0).toLocaleString('ja-JP')}</div>` : ''}`;
 }
 function invButtonsHtml(s) {
-  return `${s.hasPdf ? `<button type="button" onclick="event.stopPropagation();openInvoicePdf('${s.key}')" style="padding:6px 12px;background:var(--surface);border:1px solid var(--border);border-radius:20px;font-size:11.5px;color:var(--text);cursor:pointer">📄 元のPDFを開く</button>` : ''}
+  return `${typeof isAdmin === 'function' && isAdmin() ? `<button type="button" onclick="event.stopPropagation();ilOpenSaved('${s.key}')" style="padding:6px 12px;background:var(--surface);border:1px solid var(--border);border-radius:20px;font-size:11.5px;color:var(--text);cursor:pointer">🔗 納品書・在庫</button>` : ''}
+    ${s.hasPdf ? `<button type="button" onclick="event.stopPropagation();openInvoicePdf('${s.key}')" style="padding:6px 12px;background:var(--surface);border:1px solid var(--border);border-radius:20px;font-size:11.5px;color:var(--text);cursor:pointer">📄 元のPDFを開く</button>` : ''}
     ${typeof isAdmin === 'function' && isAdmin() ? `<button type="button" onclick="event.stopPropagation();deleteInvoiceDoc('${s.key}')" style="padding:6px 12px;background:var(--white);border:1px solid var(--border);border-radius:20px;font-size:11.5px;color:var(--text-muted);cursor:pointer">削除</button>` : ''}`;
 }
 function renderWhDelivHistory() {
@@ -7575,7 +7594,7 @@ function renderWhDelivHistory() {
           <div class="wh-deliv-row-meta" style="color:var(--text-muted);font-size:11px;margin-top:2px">No.${escapeHtmlMain(s.slipNo)}／${s.items.length}品目・数量合計 ${s.itemQty}個／合計 ¥${s.total.toLocaleString('ja-JP')}（税込）</div>
           ${matchedI ? `<div class="wh-deliv-row-matched" style="margin-top:4px;font-size:11px;color:var(--gold-dark)">該当：${matchedI.map(it => `${escapeHtmlMain(it.model)} ${it.qty}個 @¥${(Number(it.price) || 0).toLocaleString('ja-JP')}`).join('／')}</div>` : ''}
         </div>
-        <div class="wh-deliv-row-status-cell"></div>
+        <div class="wh-deliv-row-status-cell">${(() => { const t = ilStatusText(s.key); return t ? `<span style="font-size:11px;color:var(--success);font-weight:700;white-space:nowrap">${escapeHtmlMain(t)}</span>` : ''; })()}</div>
         <span class="accordion-arrow${isOpenI ? ' open' : ''}" style="font-size:10px;color:var(--text-muted);flex-shrink:0;margin-top:3px">▼</span>
       </div>
       <div class="accordion-body${isOpenI ? ' open' : ''}" style="padding:0 0 10px">
@@ -8349,7 +8368,9 @@ function renderWhConsignClientItemsList(idx) {
   }
   const btn = (label, onclick, flex) => `<button onclick="event.stopPropagation();${onclick}" style="flex:${flex || 1};padding:6px 8px;font-size:12px;font-weight:600;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer;white-space:nowrap">${label}</button>`;
   const costInput = m => `<label onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);flex-shrink:0">原価<input type="number" min="0" value="${m.costPrice != null ? m.costPrice : ''}" placeholder="任意" oninput="updateWhConsignCostPrice('${m._key}', this.value)" style="width:84px;padding:4px 6px;font-size:12px;border:1.2px solid var(--border);border-radius:6px;text-align:right"></label>`;
-  root.innerHTML = tabsHtml + groups.map(g => {
+  // 要望：「昇輝は委託の型番が多く下にスクロールするのが大変。在庫一覧のように並べたい（2列）」
+  // → パソコンの広い画面では型番の行を2列に並べる（.wh-consign-grid）
+  root.innerHTML = tabsHtml + '<div class="wh-consign-grid">' + groups.map(g => {
     const items = g.items.slice().sort((a, b) => ((a.date || '').localeCompare(b.date || '')) || ((a.createdAt || 0) - (b.createdAt || 0)));
     const keys = items.map(m => m._key);
     const pending = (consignRequests || []).filter(r => r.status === 'pending' && keys.includes(r.moveKey));
@@ -8409,7 +8430,7 @@ function renderWhConsignClientItemsList(idx) {
         </div>
         ${isOpen ? `<div style="padding:4px 4px 12px;${items.length > 1 && newItems.some(isLatestNew) ? 'background:#fff;' : ''}">${(() => { const h = bbHitForProduct(prodOf(items[0])); return h ? `<div class="inv-row-detail" style="font-size:12px;margin:0 0 6px;padding:0;border-top:none">${bbDetailHtml(h, items[0].costPrice || prodOf(items[0]).cost || 0, items[0].costPrice ? '原価' : '仕入値')}</div>` : ''; })()}${pendingQty > 0 ? `<div style="font-size:11.5px;font-weight:700;color:#b8860b;margin-bottom:8px">このうち${pendingQty}個は取引先から${pendingLabel}の申請中です（確認すると正式にお預かり数から引かれます）</div>` : ''}${detail}</div>` : ''}
       </div>`;
-  }).join('');
+  }).join('') + '</div>';
 }
 
 let _whConsignSubcatTab = {}; // { [client]: 'サブカテゴリー名' }（空なら「すべて」）
@@ -26545,6 +26566,8 @@ async function fiOnFiles(input) {
   const rows = [];
   // 請求書の明細・PDFを保存済みかどうか（売上を二重に登録せず、明細だけ後から保存できるようにするため）
   const invSaved = await invLoadKeys();
+  // 納品書とのひも付け・在庫の確認に使う（在庫・納品書・請求書を読み込んでおく）
+  try { if (!(products || []).length || !(stockMoves || []).length) await loadInventory(); if (!INV.loaded) await invLoad(); } catch (e) {}
   for (const f of files) {
     try {
       const buf = await f.arrayBuffer();
@@ -26568,6 +26591,7 @@ async function fiOnFiles(input) {
         r.pdf = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => res(''); fr.readAsDataURL(new Blob([buf], { type: 'application/pdf' })); });
         r.invSaved = !!(r.no && invSaved.has(invKey(r.no)));
         r.saveInv = !!(r.items && r.items.length && !r.invSaved);
+        if (r.saveInv && r.no) { try { r.il = ilDefaultPlan(fiIlInv(r)); } catch (e) { console.error(e); } }
       }
       if (!r.no || !r.date || !r.total) { r.err = '読み取れない項目があります'; }
       // 請求書番号が同じ売上があれば登録済み。メモの中を探すときは、番号の一部だけが重なるもの
@@ -26603,6 +26627,7 @@ function fiRender() {
           ${r.status === 'maybe' ? '<div style="font-size:11.5px;color:#b35400">取引先・日付・金額が同じ売上がすでにあります（手入力した分かもしれません）。二重にならないよう、確認してから登録してください</div>' : ''}
           ${r.salesType === '国内（請求書）' && r.status !== 'err' && r.status !== 'dup' ? `<div style="font-size:11.5px;margin-top:2px;color:${r.invSaved ? 'var(--text-muted)' : r.items && r.items.length ? '#1a56b0' : '#b35400'}">${r.invSaved ? '📋 明細・PDFは卸売管理に保存済み'
             : r.items && r.items.length ? `📋 明細 ${r.items.length}品目とPDFを卸売管理に保存します${r.itemsSum !== r.total ? `<span style="color:#b35400">（明細の合計 ¥${(r.itemsSum || 0).toLocaleString('ja-JP')} が請求金額と合いません。一部読み取れていない行があるかもしれません）</span>` : ''}` : '明細を読み取れませんでした（売上だけ登録します）'}</div>` : ''}
+          ${r.il && r.saveInv ? `<div style="font-size:11.5px;margin-top:3px;color:var(--text-sub);display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>${escapeHtmlMain(ilSummary(fiIlInv(r), r.il))}</span><button type="button" onclick="event.preventDefault();event.stopPropagation();fiIlOpen(${i})" style="padding:3px 10px;border:1px solid var(--border);border-radius:14px;background:var(--white);font-size:11px;cursor:pointer">確認・変更</button></div>` : ''}
         </div></label></div>`; }).join('')}
     <div style="display:flex;gap:8px;margin-top:10px">
       <button type="button" class="btn btn-secondary" style="flex:1" onclick="_fiRows=[];fiRender()">やめる</button>
@@ -26620,11 +26645,328 @@ async function fiCommit() {
       await window._fbPushSales({ type: 'sales', date: r.date, salesType: r.salesType || '国内（請求書）', client: r.client, amount: r.total, due: r.due || '',
         note: (ovs ? 'インボイス ' : 'freee請求書 ') + r.no, invoiceNo: r.no, payStatus: '未入金', submittedAt: new Date().toLocaleDateString('ja-JP'), enteredBy: currentSessionEmail(), fromFreeePdf: true });
     }
-    for (const r of invRows) await invSaveFromImport(r);
+    let ilErr = 0;
+    for (const r of invRows) {
+      await invSaveFromImport(r);
+      if (r.il) { try { await ilExecute(fiIlInv(r), r.il); } catch (e) { console.error(e); ilErr++; } }
+    }
+    if (invRows.some(r => r.il)) { try { await loadInventory(); } catch (e) {} }
+    if (ilErr) showToast(`${ilErr}件の請求書で納品書とのひも付け・在庫の直しができませんでした。卸売管理の請求書から「🔗 納品書・在庫」でやり直してください`);
     _fiRows = []; fiRender();
     showToast([rows.length ? `${rows.length}件の売上を登録しました` : '', invRows.length ? `請求書${invRows.length}件を卸売管理に保存しました` : ''].filter(Boolean).join('・'));
   } catch (e) { console.error(e); showToast('登録に失敗しました。もう一度お試しください'); }
 }
+// ============================================================
+// 請求書（freee）と納品書のひも付け・在庫を請求書の数に合わせる
+// 要望：
+//  ・納品書を作って請求書を作ったあと「請求書作成済みにする」→「この内容で一つの請求書にまとめる」→
+//    請求書No.の入力を毎回手でしていた。請求書PDFを読み込んだときに自動でひも付けたい
+//  ・納品書は代表が商談で使うもので、商談確定後の数量で請求書を作るため、数量が違うことがある
+//    → 在庫は請求書の数に合わせたい
+//  ・納品書を作るのは ピュアクリエイト・昇輝・サプライズ・旭デンキ だけ。それ以外は請求書だけ
+//    → 請求書だけの取引先は、請求書の数だけ在庫を減らしたい
+//  ・環盛・RISE はいつも昇輝の納品書（通常・委託の精算分）を分けて請求している
+// 仕組み：
+//  ・ひも付けは今までと同じ freeeInvoiceGroups（{slipIds, memo, createdAt}）に
+//    invoiceKeys（ひも付いた請求書）と stockAdj（{商品キー: 合わせた数}）を足して記録する
+//  ・在庫の差＝（ひも付いた請求書すべての数）−（納品書で減らした数）−（すでに合わせた数）
+//    分けた請求書を何回かに分けて読み込んでも、二重に直らない
+//  ・請求書だけの取引先は /invoices/{key}/stockDone に減らした数を記録する
+//  ・在庫は勝手に変えない：「在庫を請求書の数に合わせる」にチェックがあるときだけ変える
+// ============================================================
+const IL_SLIP_CLIENTS = ['ピュアクリエイト', '昇輝', 'サプライズ', '旭デンキ'];
+const IL_SPLIT_OF = { '環盛': '昇輝', 'RISE': '昇輝' };
+function ilNorm(c) { return String(c || '').normalize('NFKC').replace(/株式会社|有限会社|合同会社|\(株\)|[\s　]/g, '').toUpperCase(); }
+function ilMode(client) {
+  const n = ilNorm(client);
+  for (const k of Object.keys(IL_SPLIT_OF)) if (n.includes(ilNorm(k))) return { mode: 'slip', src: IL_SPLIT_OF[k], split: true };
+  for (const c of IL_SLIP_CLIENTS) if (n.includes(ilNorm(c))) return { mode: 'slip', src: c, split: false };
+  return { mode: 'direct' };
+}
+function ilDaysBetween(a, b) { return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000); }
+// 請求書の明細1行がどの商品か：JAN → 型番が同じ → 型番が摘要に含まれる（いちばん長いもの）
+function ilProdOf(it) {
+  const ps = products || [];
+  if (it.jan) { const p = ps.find(p => p.jan && String(p.jan) === String(it.jan)); if (p) return p; }
+  const m = normalizeModelStr(it.model || ''); if (!m) return null;
+  let p = ps.find(p => p.model && normalizeModelStr(p.model) === m); if (p) return p;
+  let best = null;
+  ps.forEach(q => { const qm = q.model ? normalizeModelStr(q.model) : ''; if (qm.length >= 4 && m.includes(qm) && (!best || qm.length > normalizeModelStr(best.model).length)) best = q; });
+  return best;
+}
+function ilInvQty(items) {
+  const by = {}, unmatched = [];
+  (items || []).forEach(it => {
+    const q = Number(it.qty) || 0; if (!q || (Number(it.price) || 0) < 0) return; // 減額・値引きの行は数に入れない
+    const p = ilProdOf(it);
+    if (p) by[p._key] = (by[p._key] || 0) + q; else unmatched.push(it);
+  });
+  return { by, unmatched };
+}
+// 納品書（通常・精算分）を slipId ごとにまとめる
+function ilSlips() {
+  const by = {};
+  (stockMoves || []).forEach(m => {
+    if (!m.slipId) return;
+    const ok = (m.type === 'out' && (m.channel === '卸売' || m.channel === CONSIGN_INVOICE_CHANNEL)) || m.type === 'consign';
+    if (!ok) return;
+    const s = by[m.slipId] || (by[m.slipId] = { slipId: m.slipId, client: m.client || '', date: m.date || '', slipNo: m.slipNo || '', moves: [], byProd: {}, total: 0, cslip: String(m.slipId).startsWith('cslip_') });
+    s.moves.push(m); s.total += Number(m.amount) || 0;
+    if (m.productKey) s.byProd[m.productKey] = (s.byProd[m.productKey] || 0) + (Number(m.qty) || 0);
+  });
+  return Object.values(by);
+}
+function ilGroupOfSlip(slipId) { return findFreeeInvoiceGroupForSlip(slipId); }
+function ilGroupHasInv(g, inv) { return !!g && (((g.invoiceKeys || []).includes(inv.key)) || (!!inv.no && String(g.memo || '').includes(inv.no))); }
+// 候補の納品書（同じ取引先〈環盛・RISEは昇輝〉の、請求日より前60日以内）
+function ilCandidates(inv) {
+  const md = ilMode(inv.client); if (md.mode !== 'slip') return [];
+  const src = ilNorm(md.src), iq = ilInvQty(inv.items).by;
+  return ilSlips().filter(s => ilNorm(s.client).includes(src) && s.date && inv.date && s.date <= inv.date && ilDaysBetween(s.date, inv.date) <= 60)
+    .map(s => {
+      const g = ilGroupOfSlip(s.slipId);
+      const overlap = Object.keys(s.byProd).filter(k => iq[k]).length;
+      const mine = ilGroupHasInv(g, inv);
+      return { ...s, group: g, mine, overlap, other: !!g && !mine };
+    })
+    // ほかの請求書にひも付いた納品書は、分けて請求する昇輝の分（環盛・RISE・昇輝）だけ出す
+    // 型番が重ならなくても、まだ請求していない14日以内の納品書は（チェックなしで）出しておく
+    .filter(s => s.mine || (s.overlap && (!s.other || md.src === '昇輝')) || (!s.group && ilDaysBetween(s.date, inv.date) <= 14))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+// 読み込み・ボタンから開いたときの初めの状態
+function ilDefaultPlan(inv) {
+  const md = ilMode(inv.client), cands = ilCandidates(inv);
+  const sel = new Set(cands.filter(c => c.mine || (!c.other && c.overlap) || (c.other && md.split && c.overlap)).map(c => c.slipId));
+  const already = cands.some(c => c.mine);
+  const recent = inv.date && ilDaysBetween(inv.date, todayStr()) <= 14;
+  // 分けた請求書（環盛・RISE）は全部そろうまで数が合わないので、在庫は初めは合わせない
+  const unchecked = cands.filter(c => !c.other && !sel.has(c.slipId)).length;
+  // チェックしていない候補の納品書があるときは、二重に減らさないよう在庫は初めは直さない（確認画面で選んでから）
+  return { sel, applyStock: !!recent && !md.split && !unchecked, link: md.mode === 'slip' && !already, preDone: {} };
+}
+// 在庫の差（+は在庫から減らす数、-は在庫に戻す数）
+function ilDiff(inv, plan) {
+  const md = ilMode(inv.client);
+  const own = ilInvQty(inv.items);
+  const rows = {};
+  const add = (k, f, v) => { (rows[k] = rows[k] || { inv: 0, slip: 0, done: 0 })[f] += v; };
+  if (md.mode === 'slip') {
+    // 選んだ納品書がすでに（分けた）請求書にひも付いているときは、そのまとめに入っている納品書もすべて含めて比べる
+    // （分けた請求書は、納品書をまたいで型番を組み合わせているため、まとめ全体で数を比べる）
+    const groups = [...new Set([...plan.sel].map(ilGroupOfSlip).filter(Boolean))];
+    const allIds = new Set([...plan.sel, ...groups.flatMap(g => g.slipIds || [])]);
+    const slips = ilSlips().filter(s => allIds.has(s.slipId));
+    const invKeys = new Set([inv.key]); groups.forEach(g => (g.invoiceKeys || []).forEach(k => invKeys.add(k)));
+    invKeys.forEach(k => {
+      const it = k === inv.key ? inv.items : (INV.list[k] && INV.list[k].items);
+      const q = k === inv.key ? own.by : ilInvQty(Array.isArray(it) ? it : Object.values(it || {})).by;
+      Object.entries(q).forEach(([p, v]) => add(p, 'inv', v));
+    });
+    slips.forEach(s => Object.entries(s.byProd).forEach(([p, v]) => add(p, 'slip', v)));
+    groups.forEach(g => Object.entries(g.stockAdj || {}).forEach(([p, v]) => add(p, 'done', Number(v) || 0)));
+    invKeys.forEach(k => Object.entries((INV.list[k] && INV.list[k].stockDone) || {}).forEach(([p, v]) => add(p, 'done', Number(v) || 0)));
+    Object.entries(plan.preDone || {}).forEach(([p, v]) => add(p, 'done', Number(v) || 0));
+    return { rows, unmatched: own.unmatched, siblings: [...invKeys].filter(k => k !== inv.key), groups, slipCount: slips.length };
+  }
+  Object.entries(own.by).forEach(([p, v]) => add(p, 'inv', v));
+  const done = (INV.list[inv.key] && INV.list[inv.key].stockDone) || {};
+  Object.entries(done).forEach(([p, v]) => add(p, 'done', Number(v) || 0));
+  Object.entries(plan.preDone || {}).forEach(([p, v]) => add(p, 'done', Number(v) || 0));
+  return { rows, unmatched: own.unmatched, siblings: [], groups: [] };
+}
+function ilChanges(d) { return Object.entries(d.rows).map(([k, r]) => ({ key: k, ...r, delta: r.inv - r.slip - r.done })).filter(x => x.delta); }
+function ilSummary(inv, plan) {
+  const md = ilMode(inv.client), d = ilDiff(inv, plan), ch = ilChanges(d);
+  const parts = [];
+  if (md.mode === 'slip') parts.push(plan.sel.size ? `🔗 納品書${d.slipCount}枚にひも付け${d.siblings.length ? `（分けた請求書 ${d.siblings.length}枚と一緒）` : ''}` : ilCandidates(inv).length ? '🔗 まだ納品書を選んでいません' : '🔗 ひも付ける納品書が見つかりません');
+  const out = ch.filter(x => x.delta > 0).reduce((t, x) => t + x.delta, 0), back = ch.filter(x => x.delta < 0).reduce((t, x) => t - x.delta, 0);
+  if (!ch.length) parts.push('📦 在庫は請求書の数と同じです');
+  else parts.push(`📦 ${plan.applyStock ? '' : '（合わせない）'}在庫の差：${out ? `${out}個減らす` : ''}${out && back ? '・' : ''}${back ? `${back}個戻す` : ''}`);
+  if (d.unmatched.length) parts.push(`在庫にない品目 ${d.unmatched.length}`);
+  if (md.mode === 'slip') {
+    const un = ilCandidates(inv).filter(c => !c.other && !plan.sel.has(c.slipId)).length;
+    if (un) parts.unshift(`⚠️ チェックしていない納品書が${un}枚あります（確認・変更から確かめてください）`);
+  }
+  return parts.join('　');
+}
+
+// ---- 確認画面 ----
+let _il = null; // { inv, plan, onDone, saveNow }
+function ilModalEl() {
+  let m = document.getElementById('il-modal');
+  if (!m) {
+    m = document.createElement('div'); m.id = 'il-modal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;padding:16px';
+    m.onclick = e => { if (e.target === m) ilClose(); };
+    document.body.appendChild(m);
+  }
+  return m;
+}
+function ilOpen(inv, plan, opts) { _il = { inv, plan: plan || ilDefaultPlan(inv), ...(opts || {}) }; ilRenderModal(); ilModalEl().style.display = 'flex'; }
+function ilClose() { ilModalEl().style.display = 'none'; _il = null; }
+function ilToggleSlip(id, on) { if (on) _il.plan.sel.add(id); else _il.plan.sel.delete(id); ilRenderModal(); }
+function ilSetApply(on) { _il.plan.applyStock = on; ilRenderModal(); }
+function ilRenderModal() {
+  if (!_il) return;
+  const { inv, plan } = _il, md = ilMode(inv.client), e = escapeHtmlMain;
+  const cands = ilCandidates(inv), d = ilDiff(inv, plan), ch = ilChanges(d);
+  const pName = k => { const p = (products || []).find(x => x._key === k); return p ? (p.model || p.name || '') : '（削除された商品）'; };
+  const candHtml = md.mode !== 'slip' ? '' : `<div style="font-size:12.5px;font-weight:700;margin:12px 0 6px">🔗 ひも付ける納品書（${e(md.src)}${md.split ? '・分けて請求' : ''}）</div>
+    ${cands.length ? cands.map(c => `<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px;cursor:pointer">
+      <input type="checkbox" ${plan.sel.has(c.slipId) ? 'checked' : ''} onchange="ilToggleSlip('${c.slipId}',this.checked)" style="width:16px;height:16px;margin-top:2px;flex-shrink:0">
+      <span style="flex:1;min-width:0"><span style="color:var(--text-muted)">［${c.cslip ? '精算分' : '納品書'}］</span>${e(c.client)}／${fmtDateJP(c.date)}${c.slipNo ? '／No.' + e(c.slipNo) : ''}／¥${c.total.toLocaleString('ja-JP')}
+        <span style="display:block;font-size:11px;color:var(--text-muted)">同じ型番 ${c.overlap}品目${c.mine ? '・この請求書にひも付け済み' : c.other ? `・${e(c.group.memo || 'ほかの請求書')}にひも付け済み（分けた請求書ならチェック）` : ''}</span></span></label>`).join('')
+      : '<div style="font-size:12px;color:var(--text-muted)">候補の納品書がありません（請求日より前の60日間に、同じ型番の納品書がありません）。ひも付けないと、請求書の数だけ在庫から減らします</div>'}`;
+  const rowsHtml = ch.length ? `<table class="wh-deliv-side-table" style="margin-top:6px"><thead><tr><th>型番</th>${md.mode === 'slip' ? '<th>納品書</th>' : ''}<th>請求書</th><th>合わせ済み</th><th>今回</th></tr></thead><tbody>${ch.map(x => `<tr><td>${e(pName(x.key))}</td>${md.mode === 'slip' ? `<td class="n">${x.slip}</td>` : ''}<td class="n">${x.inv}</td><td class="n">${x.done || ''}</td><td class="n" style="font-weight:700;color:${x.delta > 0 ? '#c0392b' : '#2e7d32'}">${x.delta > 0 ? x.delta + '個減らす' : (-x.delta) + '個戻す'}</td></tr>`).join('')}</tbody></table>`
+    : '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">在庫は請求書の数と同じです（直すものはありません）</div>';
+  const catOpts = (document.getElementById('wh-qr-category') || {}).innerHTML || '<option value="家電">家電</option>';
+  const unm = d.unmatched.length ? `<div style="font-size:12px;font-weight:700;color:#b35400;margin-top:10px">在庫に登録がない品目（登録するまで在庫は変えません）</div>
+    ${d.unmatched.map((it, j) => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span>${e(it.model)}${it.jan ? ` <span style="color:var(--text-muted);font-size:11px">${e(it.jan)}</span>` : ''} ×${it.qty}</span>
+      ${_il.reg === j ? '' : `<button type="button" onclick="_il.reg=${j};ilRenderModal()" style="padding:4px 10px;border:1px solid var(--border);border-radius:14px;background:var(--white);font-size:11.5px;cursor:pointer;white-space:nowrap">＋ 登録する</button>`}</div>
+      ${_il.reg === j ? `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-top:6px;font-size:12px">
+        <span>型番</span><input id="il-reg-model" value="${e(String(it.model || '').replace(/【[^】]*】/g, '').trim())}" style="padding:6px">
+        <span>JAN</span><input id="il-reg-jan" value="${e(it.jan || '')}" style="padding:6px">
+        <span>商品名</span><input id="il-reg-name" value="" placeholder="空欄でも登録できます" style="padding:6px">
+        <span>カテゴリー</span><select id="il-reg-cat" style="padding:6px">${catOpts}</select>
+        <span>今の在庫数</span><span><input id="il-reg-stock" type="number" value="0" style="width:80px;padding:6px;text-align:center"> 個<span style="display:block;font-size:10.5px;color:var(--text-muted)">この請求書の分を出荷したあとの数（請求書の分はここから減らしません）</span></span>
+      </div><div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end"><button type="button" onclick="_il.reg=null;ilRenderModal()" style="padding:5px 12px;border:1px solid var(--border);border-radius:14px;background:var(--white);font-size:12px;cursor:pointer">やめる</button><button type="button" onclick="ilRegister(${j})" style="padding:5px 14px;border:none;border-radius:14px;background:#3a3a3a;color:#fff;font-size:12px;font-weight:700;cursor:pointer">登録する</button></div>` : ''}
+    </div>`).join('')}` : '';
+  const splitNote = md.split || d.siblings.length ? `<div style="font-size:11.5px;color:#b35400;margin-top:6px">昇輝の納品書を分けた請求書は、全部の請求書を合計した数で比べます。まだ読み込んでいない分けた請求書があるときは、全部読み込んでから合わせてください（途中で合わせても、残りの差だけが後で出ます）</div>` : '';
+  ilModalEl().innerHTML = `<div style="background:var(--white);border-radius:14px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:16px 18px">
+    <div style="font-size:15px;font-weight:800">請求書と納品書・在庫の確認</div>
+    <div style="font-size:12.5px;color:var(--text-sub);margin-top:2px">${e(inv.client)}／${fmtDateJP(inv.date)}／No.${e(inv.no || '')}</div>
+    ${md.mode === 'direct' ? '<div style="font-size:12px;color:var(--text-muted);margin-top:8px">納品書を作らない取引先です。請求書の数だけ在庫から減らします</div>' : ''}
+    ${candHtml}
+    <div style="font-size:12.5px;font-weight:700;margin:14px 0 2px">📦 在庫を請求書の数に合わせる</div>
+    ${rowsHtml}${unm}${splitNote}
+    ${ch.length ? `<label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px;cursor:pointer"><input type="checkbox" ${plan.applyStock ? 'checked' : ''} onchange="ilSetApply(this.checked)" style="width:17px;height:17px">この差のとおり在庫を直す</label>` : ''}
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button type="button" class="btn btn-secondary" style="flex:1" onclick="ilClose()">${_il.saveNow ? 'やめる' : '閉じる'}</button>
+      <button type="button" class="btn btn-primary" style="flex:2" onclick="ilConfirm()">${_il.saveNow ? '保存する' : 'この内容にする'}</button>
+    </div></div>`;
+}
+async function ilConfirm() {
+  const s = _il; if (!s) return;
+  if (s.saveNow) {
+    try { await ilExecute(s.inv, s.plan); ilClose(); await loadInventory(); renderWhDelivHistory(); showToast('保存しました'); }
+    catch (e) { console.error(e); showToast('保存に失敗しました'); }
+  } else { s.plan.touched = true; ilClose(); if (s.onDone) s.onDone(); }
+}
+// ひも付けと在庫の直しを実行する
+async function ilExecute(inv, plan) {
+  const md = ilMode(inv.client);
+  let group = null;
+  if (md.mode === 'slip' && plan.sel.size) {
+    const sel = [...plan.sel];
+    const groups = [...new Set(sel.map(ilGroupOfSlip).filter(Boolean))];
+    const slipIds = [...new Set(groups.flatMap(g => g.slipIds || []).concat(sel))];
+    const invoiceKeys = [...new Set(groups.flatMap(g => g.invoiceKeys || []).concat([inv.key]))];
+    const stockAdj = {}; groups.forEach(g => Object.entries(g.stockAdj || {}).forEach(([k, v]) => { stockAdj[k] = (stockAdj[k] || 0) + (Number(v) || 0); }));
+    const nos = invoiceKeys.map(k => k === inv.key ? inv.no : (INV.list[k] && INV.list[k].no)).filter(Boolean);
+    groups.forEach(g => String(g.memo || '').split(/[・、,\s]+/).forEach(t => { const x = t.replace(/^No\.?/i, ''); if (x && /\d/.test(x) && !nos.includes(x)) nos.push(x); }));
+    const rec = { slipIds, invoiceKeys, stockAdj, memo: 'No.' + nos.join('・'), createdAt: groups[0] ? (groups[0].createdAt || Date.now()) : Date.now(), auto: true };
+    const keep = groups[0];
+    if (keep) await fetch(authedUrl('/freeeInvoiceGroups/' + keep._key + '.json'), { method: 'PUT', body: JSON.stringify(rec) });
+    else { const j = await fetch(authedUrl('/freeeInvoiceGroups.json'), { method: 'POST', body: JSON.stringify(rec) }).then(r => r.json()); rec._key = j && j.name; }
+    for (const g of groups.slice(1)) await fetch(authedUrl('/freeeInvoiceGroups/' + g._key + '.json'), { method: 'DELETE' });
+    freeeInvoiceGroups = (freeeInvoiceGroups || []).filter(g => !groups.includes(g));
+    group = Object.assign(rec, { _key: keep ? keep._key : rec._key });
+    freeeInvoiceGroups.push(group);
+  }
+  // 読み込み画面でその場登録した商品の「合わせ済み」の数を、保存した請求書に記録する
+  if (plan.preDone && Object.keys(plan.preDone).length) {
+    const cur = Object.assign({}, (INV.list[inv.key] && INV.list[inv.key].stockDone) || {});
+    Object.entries(plan.preDone).forEach(([k, v]) => { cur[k] = (cur[k] || 0) + v; });
+    await fetch(authedUrl('/invoices/' + inv.key + '/stockDone.json'), { method: 'PUT', body: JSON.stringify(cur) });
+    if (INV.list[inv.key]) INV.list[inv.key].stockDone = cur;
+    plan.preDone = {};
+  }
+  if (!plan.applyStock) return;
+  const ch = ilChanges(ilDiff(inv, plan));
+  if (!ch.length) return;
+  const slipLoc = {}; ilSlips().filter(s => plan.sel.has(s.slipId)).forEach(s => s.moves.forEach(m => { if (m.productKey && m.loc) slipLoc[m.productKey] = m.loc; }));
+  const applied = {};
+  for (const x of ch) {
+    const prod = (products || []).find(p => p._key === x.key); if (!prod) continue;
+    const before = Number(prod.stock) || 0;
+    if (x.delta > 0) {
+      const loc = slipLoc[x.key] && stockLocations.some(l => l.id === slipLoc[x.key]) ? slipLoc[x.key] : azSuggestLoc(prod, x.delta);
+      const st = locStateAfterDelta(prod, loc, -x.delta);
+      await saveProductLocState(prod, st.stock, st.locQty);
+      await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
+        productKey: prod._key, productName: prod.name || '', jan: prod.jan || '', type: 'out', channel: '卸売', client: inv.client, qty: x.delta, date: inv.date || todayStr(), loc,
+        memo: `請求書 No.${inv.no}${md.mode === 'slip' && plan.sel.size ? '（納品書より多い分）' : ''}`, invoiceKey: inv.key, stockBefore: before, stockAfter: st.stock, createdAt: Date.now() }) });
+    } else {
+      const loc = slipLoc[x.key] && stockLocations.some(l => l.id === slipLoc[x.key]) ? slipLoc[x.key] : getHomeLoc(prod);
+      const st = locStateAfterDelta(prod, loc, -x.delta);
+      await saveProductLocState(prod, st.stock, st.locQty);
+      const after = computeLocBreakdown(prod).byLoc[loc] || 0;
+      await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({
+        productKey: prod._key, productName: prod.name || '', jan: prod.jan || '', type: 'adjust', qty: after, loc, date: inv.date || todayStr(), client: inv.client,
+        memo: `請求書 No.${inv.no}：納品書より${-x.delta}個少ないため在庫に戻す`, invoiceKey: inv.key, invAdjDelta: -x.delta, stockBefore: before, stockAfter: st.stock, createdAt: Date.now() }) });
+    }
+    applied[x.key] = x.delta;
+  }
+  if (group) {
+    Object.entries(applied).forEach(([k, v]) => { group.stockAdj[k] = (group.stockAdj[k] || 0) + v; });
+    await fetch(authedUrl('/freeeInvoiceGroups/' + group._key + '/stockAdj.json'), { method: 'PUT', body: JSON.stringify(group.stockAdj) });
+  } else {
+    const cur = Object.assign({}, (INV.list[inv.key] && INV.list[inv.key].stockDone) || {});
+    Object.entries(applied).forEach(([k, v]) => { cur[k] = (cur[k] || 0) + v; });
+    await fetch(authedUrl('/invoices/' + inv.key + '/stockDone.json'), { method: 'PUT', body: JSON.stringify(cur) });
+    if (INV.list[inv.key]) INV.list[inv.key].stockDone = cur;
+  }
+}
+// 在庫にない品目をその場で登録する。入力した在庫数は「この請求書の分を出荷したあと」の数なので、
+// この請求書の分は「合わせ済み」として記録し、あとで二重に減らさないようにする
+async function ilRegister(j) {
+  const s = _il; if (!s) return;
+  const it = ilDiff(s.inv, s.plan).unmatched[j]; if (!it) return;
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const model = v('il-reg-model').trim(), jan = v('il-reg-jan').trim().replace(/\D/g, '');
+  if (!model && !jan) { showToast('型番かJANコードを入力してください'); return; }
+  if (jan && (products || []).some(p => String(p.jan) === jan)) { showToast('このJANコードの商品はすでに登録されています'); return; }
+  const stock = parseInt(v('il-reg-stock')) || 0;
+  const data = { maker: '', name: v('il-reg-name').trim(), model, jan, stock, lowStock: null, cost: 0, category: v('il-reg-cat') || '家電', subcategory: '',
+    location: '', memo: `請求書 No.${s.inv.no} の読み込みから登録`, image: '', createdAt: Date.now() };
+  try {
+    const j2 = await fetch(authedUrl('/products.json'), { method: 'POST', body: JSON.stringify(data) }).then(r => r.json());
+    const key = j2 && j2.name; if (!key) throw new Error('no key');
+    if (stock > 0) await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify({ productKey: key, productName: data.name, jan, type: 'in', qty: stock, date: todayStr(), memo: '新規登録（請求書の読み込み）', stockBefore: 0, stockAfter: stock, createdAt: Date.now() }) });
+    products.push(Object.assign({ _key: key }, data));
+    // この請求書でこの商品として数える数（同じ商品になる行をまとめて）
+    const q = ilInvQty(s.inv.items).by[key] || 0;
+    if (q) {
+      if (s.saveNow && INV.list[s.inv.key]) {
+        const cur = Object.assign({}, INV.list[s.inv.key].stockDone || {}); cur[key] = (cur[key] || 0) + q;
+        await fetch(authedUrl('/invoices/' + s.inv.key + '/stockDone.json'), { method: 'PUT', body: JSON.stringify(cur) });
+        INV.list[s.inv.key].stockDone = cur;
+      } else { s.plan.preDone = s.plan.preDone || {}; s.plan.preDone[key] = (s.plan.preDone[key] || 0) + q; }
+    }
+    s.reg = null; ilRenderModal(); showToast(`${model || jan} を登録しました`);
+    try { await loadInventory(); } catch (e) {}
+    if (_il) ilRenderModal();
+  } catch (e) { console.error(e); showToast('登録に失敗しました'); }
+}
+// 卸売管理の請求書から開く（あとから・読み込み済みの請求書でも）
+async function ilOpenSaved(key) {
+  const x = INV.list[key]; if (!x) return;
+  if (!(products || []).length) await loadInventory();
+  const inv = { key, client: x.client || '', date: x.date || '', no: x.no || '', items: (Array.isArray(x.items) ? x.items : Object.values(x.items || {})).filter(Boolean) };
+  ilOpen(inv, null, { saveNow: true });
+}
+// 一覧に出す状態（ひも付いた納品書の数・在庫を合わせたか）
+function ilStatusText(key) {
+  const x = INV.list[key]; if (!x) return '';
+  const g = (freeeInvoiceGroups || []).find(g => (g.invoiceKeys || []).includes(key) || (x.no && String(g.memo || '').includes(x.no)));
+  if (g) return `🔗 納品書${(g.slipIds || []).length}枚${g.stockAdj && Object.keys(g.stockAdj).length ? '・在庫を合わせ済み' : ''}`;
+  if (x.stockDone && Object.keys(x.stockDone).length) return '📦 在庫から減らし済み';
+  return '';
+}
+function fiIlInv(r) { return { key: invKey(r.no), client: r.client || '', date: r.date || '', no: r.no || '', items: r.items || [] }; }
+function fiIlOpen(i) { const r = _fiRows[i]; if (!r || !r.il) return; ilOpen(fiIlInv(r), r.il, { onDone: fiRender }); }
 </script>
 <script>
 // ============================================================
