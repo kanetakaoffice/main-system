@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-19a">
+<meta name="app-build" content="2026-11-19b">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -8771,7 +8771,7 @@ function renderWhConsignHistorySection() {
     if (m.status === 'settled') {
       if (m.invoicedSlipId) {
         return `<div class="wh-hrow"><span class="wh-hcells">${cells}</span>
-          <span style="font-size:11px;font-weight:700;color:var(--gold-dark);flex-shrink:0;min-width:28px;text-align:right">請求済み</span>
+          <span style="font-size:11px;font-weight:700;color:var(--gold-dark);flex-shrink:0;min-width:28px;text-align:right">${String(m.invoicedSlipId).startsWith('inv:') ? `請求済み（請求書${m.invoiceNo ? ' No.' + escapeHtmlMain(m.invoiceNo) : ''}）` : '請求済み'}</span>
         </div>`;
       }
       return `<div class="wh-hrow-wrap"><div class="wh-hrow">
@@ -9910,7 +9910,7 @@ function openEditSettleAmount(key) {
   const m = (stockMoves || []).find(x => x._key === key);
   if (!m) { showToast('対象の記録が見つかりません'); return; }
   if (m.invoicedSlipId) {
-    showToast('すでに精算分の納品書を発行済みのため編集できません。先に「精算分の納品書」からその納品書を取り消してください');
+    showToast(String(m.invoicedSlipId).startsWith('inv:') ? '請求書の読み込みで精算した分です。卸売管理の請求書にある「🔗 納品書・在庫」から精算を取り消してください' : 'すでに精算分の納品書を発行済みのため編集できません。先に「精算分の納品書」からその納品書を取り消してください');
     return;
   }
   _settleAmountEditKey = key;
@@ -9934,7 +9934,7 @@ async function confirmEditSettleAmount() {
   const m = (stockMoves || []).find(x => x._key === key);
   if (!m) { closeEditSettleAmount(); return; }
   if (m.invoicedSlipId) {
-    showToast('すでに精算分の納品書を発行済みのため編集できません');
+    showToast(String(m.invoicedSlipId).startsWith('inv:') ? '請求書の読み込みで精算した分です。卸売管理の請求書にある「🔗 納品書・在庫」から精算を取り消してください' : 'すでに精算分の納品書を発行済みのため編集できません');
     closeEditSettleAmount();
     return;
   }
@@ -9966,7 +9966,7 @@ function confirmUndoSettleConsign(key) {
   const m = (stockMoves || []).find(x => x._key === key);
   if (!m) { showToast('対象の記録が見つかりません'); return; }
   if (m.invoicedSlipId) {
-    showToast('すでに精算分の納品書を発行済みのため取り消せません。先に「精算分の納品書」からその納品書を取り消してください');
+    showToast(String(m.invoicedSlipId).startsWith('inv:') ? '請求書の読み込みで精算した分です。卸売管理の請求書にある「🔗 納品書・在庫」から精算を取り消してください' : 'すでに精算分の納品書を発行済みのため取り消せません。先に「精算分の納品書」からその納品書を取り消してください');
     return;
   }
   showConfirm(`${m.client || ''}／${consignItemModel(m)}の精算を取り消し、预け中に戻しますか？`).then(async ok => {
@@ -10022,7 +10022,7 @@ function confirmDeleteConsignHistory(key) {
   if (!m) { showToast('対象の記録が見つかりません'); return; }
   if (m.status === 'settled') {
     if (m.invoicedSlipId) {
-      showToast('すでに精算分の納品書を発行済みのため削除できません。先に「精算分の納品書」からその納品書を取り消してください');
+      showToast(String(m.invoicedSlipId).startsWith('inv:') ? '請求書の読み込みで精算した分です。卸売管理の請求書にある「🔗 納品書・在庫」から精算を取り消してください' : 'すでに精算分の納品書を発行済みのため削除できません。先に「精算分の納品書」からその納品書を取り消してください');
       return;
     }
     showConfirm(`${m.client || ''}／${consignItemModel(m)}の精算記録を完全に削除しますか？この操作は元に戻せません。${m.salesKey ? '（関連する売上記録も削除されます）' : ''}`).then(async ok => {
@@ -26694,9 +26694,12 @@ function ilProdOf(it) {
   ps.forEach(q => { const qm = q.model ? normalizeModelStr(q.model) : ''; if (qm.length >= 4 && m.includes(qm) && (!best || qm.length > normalizeModelStr(best.model).length)) best = q; });
   return best;
 }
-function ilInvQty(items) {
+// 在庫と比べる数（「委託分」の見出しより下の品目は、預けたときにもう在庫から減っているので数えない。
+// 委託分は ilInvConsign で委託リストの精算として扱う）。withConsign=true のときは委託分も含める（候補の納品書探し用）
+function ilInvQty(items, withConsign) {
   const by = {}, unmatched = [];
   (items || []).forEach(it => {
+    if (it.consign && !withConsign) return;
     const q = Number(it.qty) || 0; if (!q || (Number(it.price) || 0) < 0) return; // 減額・値引きの行は数に入れない
     const p = ilProdOf(it);
     if (p) by[p._key] = (by[p._key] || 0) + q; else unmatched.push(it);
@@ -26710,9 +26713,12 @@ function ilSlips() {
     if (!m.slipId) return;
     const ok = (m.type === 'out' && (m.channel === '卸売' || m.channel === CONSIGN_INVOICE_CHANNEL)) || m.type === 'consign';
     if (!ok) return;
-    const s = by[m.slipId] || (by[m.slipId] = { slipId: m.slipId, client: m.client || '', date: m.date || '', slipNo: m.slipNo || '', moves: [], byProd: {}, total: 0, cslip: String(m.slipId).startsWith('cslip_') });
+    const s = by[m.slipId] || (by[m.slipId] = { slipId: m.slipId, client: m.client || '', date: m.date || '', slipNo: m.slipNo || '', moves: [], byProd: {}, allProd: {}, total: 0, cslip: String(m.slipId).startsWith('cslip_') });
     s.moves.push(m); s.total += Number(m.amount) || 0;
-    if (m.productKey) s.byProd[m.productKey] = (s.byProd[m.productKey] || 0) + (Number(m.qty) || 0);
+    if (!m.productKey) return;
+    s.allProd[m.productKey] = (s.allProd[m.productKey] || 0) + (Number(m.qty) || 0);
+    // 在庫と比べるのは、納品書で在庫から減らした通常の行だけ（委託で預けた行・精算分の納品書は、預けたときに減らし済み）
+    if (m.type === 'out' && m.channel === '卸売') s.byProd[m.productKey] = (s.byProd[m.productKey] || 0) + (Number(m.qty) || 0);
   });
   return Object.values(by);
 }
@@ -26721,11 +26727,11 @@ function ilGroupHasInv(g, inv) { return !!g && (((g.invoiceKeys || []).includes(
 // 候補の納品書（同じ取引先〈環盛・RISEは昇輝〉の、請求日より前60日以内）
 function ilCandidates(inv) {
   const md = ilMode(inv.client); if (md.mode !== 'slip') return [];
-  const src = ilNorm(md.src), iq = ilInvQty(inv.items).by;
+  const src = ilNorm(md.src), iq = ilInvQty(inv.items, true).by;
   return ilSlips().filter(s => ilNorm(s.client).includes(src) && s.date && inv.date && s.date <= inv.date && ilDaysBetween(s.date, inv.date) <= 60)
     .map(s => {
       const g = ilGroupOfSlip(s.slipId);
-      const overlap = Object.keys(s.byProd).filter(k => iq[k]).length;
+      const overlap = Object.keys(s.allProd).filter(k => iq[k]).length;
       const mine = ilGroupHasInv(g, inv);
       return { ...s, group: g, mine, overlap, other: !!g && !mine };
     })
@@ -26743,7 +26749,7 @@ function ilDefaultPlan(inv) {
   // 分けた請求書（環盛・RISE）は全部そろうまで数が合わないので、在庫は初めは合わせない
   const unchecked = cands.filter(c => !c.other && !sel.has(c.slipId)).length;
   // チェックしていない候補の納品書があるときは、二重に減らさないよう在庫は初めは直さない（確認画面で選んでから）
-  return { sel, applyStock: !!recent && !md.split && !unchecked, link: md.mode === 'slip' && !already, preDone: {} };
+  return { sel, applyStock: !!recent && !md.split && !unchecked, link: md.mode === 'slip' && !already, preDone: {}, settleConsign: true };
 }
 // 在庫の差（+は在庫から減らす数、-は在庫に戻す数）
 function ilDiff(inv, plan) {
@@ -26775,6 +26781,75 @@ function ilDiff(inv, plan) {
   Object.entries(plan.preDone || {}).forEach(([p, v]) => add(p, 'done', Number(v) || 0));
   return { rows, unmatched: own.unmatched, siblings: [], groups: [] };
 }
+// ---- 委託分（請求書の「委託分」の見出しより下の品目）→ 委託リストの精算 ----
+// 要望：「昇輝以外は、売れた委託分をメールで知らせてくれて、納品した商品と委託分を1枚の請求書にしている。
+//  請求書PDFを読み込んだときに委託リストの数も減らしてほしい」
+// 昇輝（環盛・RISE）は取引先が精算ボタンを押して精算分の納品書を作るので、ここでは扱わない
+function ilConsignAllowed(client) { return !(ilMode(client).src === '昇輝'); }
+function ilHoldingOf(client, productKey) {
+  const n = ilNorm(client);
+  return (stockMoves || []).filter(m => m.type === 'consign' && m.status === 'holding' && m.productKey === productKey && ilNorm(m.client) === n)
+    .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || (a.createdAt || 0) - (b.createdAt || 0));
+}
+function ilInvConsign(inv) {
+  const done = (INV.list[inv.key] && INV.list[inv.key].consignSettled) || null;
+  const lines = (inv.items || []).filter(it => it.consign && (Number(it.qty) || 0) > 0 && (Number(it.price) || 0) >= 0).map(it => {
+    const p = ilProdOf(it);
+    const hold = p ? ilHoldingOf(inv.client, p._key) : [];
+    const avail = hold.reduce((t, m) => t + (Number(m.qty) || 0), 0);
+    return { it, prod: p, hold, avail, qty: Math.min(Number(it.qty) || 0, avail) };
+  });
+  return { lines, done, allowed: ilConsignAllowed(inv.client) };
+}
+async function ilSettleConsign(inv) {
+  const c = ilInvConsign(inv);
+  if (!c.allowed || c.done || !c.lines.length) return 0;
+  const settledAt = new Date((inv.date || todayStr()) + 'T00:00:00').getTime();
+  const keys = []; let n = 0;
+  for (const ln of c.lines) {
+    let remain = ln.qty; const unitPrice = Number(ln.it.price) || 0;
+    for (const m of ln.hold) {
+      if (remain <= 0) break;
+      const q = Math.min(Number(m.qty) || 0, remain); remain -= q; n += q;
+      const rec = { status: 'settled', unitPrice, amount: unitPrice * q, settledAt, invoicedSlipId: 'inv:' + inv.key, invoiceNo: inv.no || '' };
+      if (q === m.qty) {
+        await fetch(authedUrl('/stockMoves/' + m._key + '.json'), { method: 'PATCH', body: JSON.stringify(rec) });
+        keys.push({ k: m._key, whole: true });
+      } else {
+        const j = await fetch(authedUrl('/stockMoves.json'), { method: 'POST', body: JSON.stringify(Object.assign({
+          productKey: m.productKey, productName: m.productName || '', jan: m.jan || '', type: 'consign', client: m.client, qty: q, loc: m.loc || '',
+          date: m.date, memo: m.memo || '', createdAt: Date.now(), costPrice: m.costPrice != null ? m.costPrice : null }, rec)) }).then(r => r.json());
+        await fetch(authedUrl('/stockMoves/' + m._key + '.json'), { method: 'PATCH', body: JSON.stringify({ qty: m.qty - q }) });
+        keys.push({ k: j && j.name, from: m._key, q });
+        m.qty -= q;
+      }
+    }
+  }
+  await fetch(authedUrl('/invoices/' + inv.key + '/consignSettled.json'), { method: 'PUT', body: JSON.stringify({ at: Date.now(), keys }) });
+  if (INV.list[inv.key]) INV.list[inv.key].consignSettled = { at: Date.now(), keys };
+  return n;
+}
+// 間違えて精算したときの取り消し（預け中に戻す。分けた分は元の行に数を戻す）
+async function ilUndoConsign(key) {
+  const x = INV.list[key]; const cs = x && x.consignSettled; if (!cs) return;
+  const ok = await showConfirm('この請求書で精算した委託分を、預け中に戻しますか？'); if (!ok) return;
+  try {
+    for (const e of (cs.keys || [])) {
+      if (!e.k) continue;
+      if (e.whole) await fetch(authedUrl('/stockMoves/' + e.k + '.json'), { method: 'PATCH', body: JSON.stringify({ status: 'holding', unitPrice: null, amount: null, settledAt: null, invoicedSlipId: null, invoiceNo: null }) });
+      else {
+        const orig = (stockMoves || []).find(m => m._key === e.from);
+        if (orig && orig.status === 'holding') {
+          await fetch(authedUrl('/stockMoves/' + e.from + '.json'), { method: 'PATCH', body: JSON.stringify({ qty: (Number(orig.qty) || 0) + (Number(e.q) || 0) }) });
+          await fetch(authedUrl('/stockMoves/' + e.k + '.json'), { method: 'DELETE' });
+        } else await fetch(authedUrl('/stockMoves/' + e.k + '.json'), { method: 'PATCH', body: JSON.stringify({ status: 'holding', unitPrice: null, amount: null, settledAt: null, invoicedSlipId: null, invoiceNo: null }) });
+      }
+    }
+    await fetch(authedUrl('/invoices/' + key + '/consignSettled.json'), { method: 'DELETE' });
+    delete x.consignSettled;
+    await loadInventory(); if (_il) ilRenderModal(); showToast('預け中に戻しました');
+  } catch (e) { console.error(e); showToast('取り消しに失敗しました'); }
+}
 function ilChanges(d) { return Object.entries(d.rows).map(([k, r]) => ({ key: k, ...r, delta: r.inv - r.slip - r.done })).filter(x => x.delta); }
 function ilSummary(inv, plan) {
   const md = ilMode(inv.client), d = ilDiff(inv, plan), ch = ilChanges(d);
@@ -26784,6 +26859,11 @@ function ilSummary(inv, plan) {
   if (!ch.length) parts.push('📦 在庫は請求書の数と同じです');
   else parts.push(`📦 ${plan.applyStock ? '' : '（合わせない）'}在庫の差：${out ? `${out}個減らす` : ''}${out && back ? '・' : ''}${back ? `${back}個戻す` : ''}`);
   if (d.unmatched.length) parts.push(`在庫にない品目 ${d.unmatched.length}`);
+  const cs = ilInvConsign(inv);
+  if (cs.allowed && cs.lines.length) {
+    const n = cs.lines.reduce((t, l) => t + l.qty, 0), want = cs.lines.reduce((t, l) => t + (Number(l.it.qty) || 0), 0);
+    parts.push(cs.done ? '🤝 委託分は精算済み' : `🤝 ${plan.settleConsign ? '' : '（精算しない）'}委託分 ${n}個を精算${n < want ? `（${want - n}個は委託リストにありません）` : ''}`);
+  }
   if (md.mode === 'slip') {
     const un = ilCandidates(inv).filter(c => !c.other && !plan.sel.has(c.slipId)).length;
     if (un) parts.unshift(`⚠️ チェックしていない納品書が${un}枚あります（確認・変更から確かめてください）`);
@@ -26834,6 +26914,12 @@ function ilRenderModal() {
       </div><div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end"><button type="button" onclick="_il.reg=null;ilRenderModal()" style="padding:5px 12px;border:1px solid var(--border);border-radius:14px;background:var(--white);font-size:12px;cursor:pointer">やめる</button><button type="button" onclick="ilRegister(${j})" style="padding:5px 14px;border:none;border-radius:14px;background:#3a3a3a;color:#fff;font-size:12px;font-weight:700;cursor:pointer">登録する</button></div>` : ''}
     </div>`).join('')}` : '';
   const splitNote = md.split || d.siblings.length ? `<div style="font-size:11.5px;color:#b35400;margin-top:6px">昇輝の納品書を分けた請求書は、全部の請求書を合計した数で比べます。まだ読み込んでいない分けた請求書があるときは、全部読み込んでから合わせてください（途中で合わせても、残りの差だけが後で出ます）</div>` : '';
+  const cs = ilInvConsign(inv);
+  const csHtml = !(cs.allowed && cs.lines.length) ? '' : `<div style="font-size:12.5px;font-weight:700;margin:14px 0 2px">🤝 委託分（委託リストの数を減らして精算・請求済みにする）</div>
+    <table class="wh-deliv-side-table" style="margin-top:6px"><thead><tr><th>型番</th><th>請求書</th><th>預け中</th><th>精算する</th><th>単価</th></tr></thead><tbody>${cs.lines.map(l => `<tr><td>${e(l.it.model)}</td><td class="n">${l.it.qty}</td><td class="n">${l.prod ? l.avail : '—'}</td><td class="n" style="font-weight:700">${cs.done ? '済' : l.qty}</td><td class="n">¥${(Number(l.it.price) || 0).toLocaleString('ja-JP')}</td></tr>`).join('')}</tbody></table>
+    ${cs.lines.some(l => l.qty < (Number(l.it.qty) || 0)) && !cs.done ? '<div style="font-size:11.5px;color:#b35400;margin-top:4px">預け中の数が請求書より少ない（または委託リストにない）型番があります。あるだけ精算します</div>' : ''}
+    ${cs.done ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;font-size:12px;color:var(--success);font-weight:700">この請求書の委託分は精算済みです${_il.saveNow ? `<button type="button" onclick="ilUndoConsign('${inv.key}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:14px;background:var(--white);font-size:11.5px;color:var(--text);cursor:pointer">精算を取り消す</button>` : ''}</div>`
+      : `<label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:13px;cursor:pointer"><input type="checkbox" ${_il.plan.settleConsign ? 'checked' : ''} onchange="_il.plan.settleConsign=this.checked;ilRenderModal()" style="width:17px;height:17px">委託リストで精算する（売れた日＝請求日・確定価格＝請求書の単価）</label>`}`;
   ilModalEl().innerHTML = `<div style="background:var(--white);border-radius:14px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:16px 18px">
     <div style="font-size:15px;font-weight:800">請求書と納品書・在庫の確認</div>
     <div style="font-size:12.5px;color:var(--text-sub);margin-top:2px">${e(inv.client)}／${fmtDateJP(inv.date)}／No.${e(inv.no || '')}</div>
@@ -26842,6 +26928,7 @@ function ilRenderModal() {
     <div style="font-size:12.5px;font-weight:700;margin:14px 0 2px">📦 在庫を請求書の数に合わせる</div>
     ${rowsHtml}${unm}${splitNote}
     ${ch.length ? `<label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px;cursor:pointer"><input type="checkbox" ${plan.applyStock ? 'checked' : ''} onchange="ilSetApply(this.checked)" style="width:17px;height:17px">この差のとおり在庫を直す</label>` : ''}
+    ${csHtml}
     <div style="display:flex;gap:8px;margin-top:14px">
       <button type="button" class="btn btn-secondary" style="flex:1" onclick="ilClose()">${_il.saveNow ? 'やめる' : '閉じる'}</button>
       <button type="button" class="btn btn-primary" style="flex:2" onclick="ilConfirm()">${_il.saveNow ? '保存する' : 'この内容にする'}</button>
@@ -26883,6 +26970,7 @@ async function ilExecute(inv, plan) {
     if (INV.list[inv.key]) INV.list[inv.key].stockDone = cur;
     plan.preDone = {};
   }
+  if (plan.settleConsign) await ilSettleConsign(inv);
   if (!plan.applyStock) return;
   const ch = ilChanges(ilDiff(inv, plan));
   if (!ch.length) return;
@@ -26961,8 +27049,9 @@ async function ilOpenSaved(key) {
 function ilStatusText(key) {
   const x = INV.list[key]; if (!x) return '';
   const g = (freeeInvoiceGroups || []).find(g => (g.invoiceKeys || []).includes(key) || (x.no && String(g.memo || '').includes(x.no)));
-  if (g) return `🔗 納品書${(g.slipIds || []).length}枚${g.stockAdj && Object.keys(g.stockAdj).length ? '・在庫を合わせ済み' : ''}`;
-  if (x.stockDone && Object.keys(x.stockDone).length) return '📦 在庫から減らし済み';
+  if (g) return `🔗 納品書${(g.slipIds || []).length}枚${g.stockAdj && Object.keys(g.stockAdj).length ? '・在庫を合わせ済み' : ''}${x.consignSettled ? '・委託分精算済み' : ''}`;
+  if (x.stockDone && Object.keys(x.stockDone).length) return '📦 在庫から減らし済み' + (x.consignSettled ? '・委託分精算済み' : '');
+  if (x.consignSettled) return '🤝 委託分精算済み';
   return '';
 }
 function fiIlInv(r) { return { key: invKey(r.no), client: r.client || '', date: r.date || '', no: r.no || '', items: r.items || [] }; }
