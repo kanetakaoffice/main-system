@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-20a">
+<meta name="app-build" content="2026-11-20c">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -26508,7 +26508,8 @@ function fiParseItems(lines) {
   lines.forEach((l, i) => {
     if (used.has(i)) return;
     const s = l.trim();
-    if (/^委託分$/.test(s.replace(/\s/g, ''))) { consign = true; return; }
+    // 見出し「委託分」のほか「預かり分」「預り分」「委託」「【委託分】」なども委託の見出しとして扱う
+    if (/^[【\[(（]?(委託分?|預か?り分?)[】\])）]?$/.test(s.replace(/\s/g, ''))) { consign = true; return; }
     let m = s.match(FULL);
     if (m && !NUM.test(s)) {
       const q = toN(m[2]), p = toN(m[3]), a = toN(m[4]);
@@ -26721,6 +26722,8 @@ function ilSlips() {
     s.allProd[m.productKey] = (s.allProd[m.productKey] || 0) + (Number(m.qty) || 0);
     // 在庫と比べるのは、納品書で在庫から減らした通常の行だけ（委託で預けた行・精算分の納品書は、預けたときに減らし済み）
     if (m.type === 'out' && m.channel === '卸売') s.byProd[m.productKey] = (s.byProd[m.productKey] || 0) + (Number(m.qty) || 0);
+    // 精算分の納品書（昇輝が精算した委託の商品）。在庫は預けたときに減らし済みなので、請求書に同じ数があれば差は0になる
+    if (m.type === 'out' && m.channel === CONSIGN_INVOICE_CHANNEL) { s.cProd = s.cProd || {}; s.cProd[m.productKey] = (s.cProd[m.productKey] || 0) + (Number(m.qty) || 0); }
   });
   return Object.values(by);
 }
@@ -26782,7 +26785,10 @@ function ilDefaultPlan(inv) {
 // 在庫の差（+は在庫から減らす数、-は在庫に戻す数）
 function ilDiff(inv, plan) {
   const md = ilMode(inv.client);
-  const own = ilInvQty(inv.items);
+  // 昇輝のまとまり（昇輝・環盛・RISE）は、請求書の委託分（＝精算分の納品書の商品）も精算分の納品書と比べる。
+  // それ以外の取引先の委託分は、委託リストの精算（ilSettleConsign）で扱うので在庫の比べ方には入れない
+  const shoki = md.mode === 'slip' && md.src === '昇輝';
+  const own = ilInvQty(inv.items, shoki);
   const rows = {};
   const add = (k, f, v) => { (rows[k] = rows[k] || { inv: 0, slip: 0, done: 0 })[f] += v; };
   if (md.mode === 'slip') {
@@ -26792,12 +26798,18 @@ function ilDiff(inv, plan) {
     const allIds = new Set([...plan.sel, ...groups.flatMap(g => g.slipIds || [])]);
     const slips = ilSlips().filter(s => allIds.has(s.slipId));
     const invKeys = new Set([inv.key]); groups.forEach(g => (g.invoiceKeys || []).forEach(k => invKeys.add(k)));
+    // 昇輝のまとまりで同じ日に分けた請求書（例：環盛とRISE、昇輝の2枚）は、まだひも付ける前（まとめて読み込んだとき）でも合計で比べる
+    if (shoki) ilGroupInvoices(inv).filter(x => x.date === inv.date).forEach(x => invKeys.add(x.key));
     invKeys.forEach(k => {
-      const it = k === inv.key ? inv.items : (INV.list[k] && INV.list[k].items);
-      const q = k === inv.key ? own.by : ilInvQty(Array.isArray(it) ? it : Object.values(it || {})).by;
+      const b = (_ilBatch || []).find(x => x.key === k);
+      const it = k === inv.key ? inv.items : ((INV.list[k] && INV.list[k].items) || (b && b.items));
+      const q = k === inv.key ? own.by : ilInvQty(Array.isArray(it) ? it : Object.values(it || {}), shoki).by;
       Object.entries(q).forEach(([p, v]) => add(p, 'inv', v));
     });
-    slips.forEach(s => Object.entries(s.byProd).forEach(([p, v]) => add(p, 'slip', v)));
+    slips.forEach(s => {
+      Object.entries(s.byProd).forEach(([p, v]) => add(p, 'slip', v));
+      if (shoki) Object.entries(s.cProd || {}).forEach(([p, v]) => add(p, 'slip', v));
+    });
     groups.forEach(g => Object.entries(g.stockAdj || {}).forEach(([p, v]) => add(p, 'done', Number(v) || 0)));
     invKeys.forEach(k => Object.entries((INV.list[k] && INV.list[k].stockDone) || {}).forEach(([p, v]) => add(p, 'done', Number(v) || 0)));
     Object.entries(plan.preDone || {}).forEach(([p, v]) => add(p, 'done', Number(v) || 0));
