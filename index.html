@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KANETAKA">
 <!-- アプリ本体の版（更新ボタンで「新しい版が出ているか」を確認するために使う。GitHubにアップロードするたびに値を変える） -->
-<meta name="app-build" content="2026-11-19b">
+<meta name="app-build" content="2026-11-20a">
 <script>
 // 要望「ホーム画面に追加したiPhoneで、画面下のメニュー（出張・設定、商品登録・買取価格など）の
 // 両端が画面の角の丸みで見切れる」への対応。ホーム画面から開いたiPhone/iPadの場合だけ目印の
@@ -26591,7 +26591,6 @@ async function fiOnFiles(input) {
         r.pdf = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => res(''); fr.readAsDataURL(new Blob([buf], { type: 'application/pdf' })); });
         r.invSaved = !!(r.no && invSaved.has(invKey(r.no)));
         r.saveInv = !!(r.items && r.items.length && !r.invSaved);
-        if (r.saveInv && r.no) { try { r.il = ilDefaultPlan(fiIlInv(r)); } catch (e) { console.error(e); } }
       }
       if (!r.no || !r.date || !r.total) { r.err = '読み取れない項目があります'; }
       // 請求書番号が同じ売上があれば登録済み。メモの中を探すときは、番号の一部だけが重なるもの
@@ -26607,6 +26606,9 @@ async function fiOnFiles(input) {
   }
   // 選んだ順ではなく、請求日の古い順に並べる（読めなかったものは最後）
   rows.sort((a, b) => (a.date || '9999') .localeCompare(b.date || '9999') || String(a.no || '').localeCompare(String(b.no || '')));
+  // まとめて読み込んだ請求書どうしで「前回の請求日」を見分けるため、全部読み終えてから決める
+  _ilBatch = rows.filter(r => r.no && r.client && r.date && r.items && r.items.length).map(fiIlInv);
+  rows.forEach(r => { if (r.saveInv && r.no) { try { r.il = ilDefaultPlan(fiIlInv(r)); } catch (e) { console.error(e); } } });
   _fiRows = rows; fiRender();
 }
 function fiRender() {
@@ -26725,31 +26727,57 @@ function ilSlips() {
 function ilGroupOfSlip(slipId) { return findFreeeInvoiceGroupForSlip(slipId); }
 function ilGroupHasInv(g, inv) { return !!g && (((g.invoiceKeys || []).includes(inv.key)) || (!!inv.no && String(g.memo || '').includes(inv.no))); }
 // 候補の納品書（同じ取引先〈環盛・RISEは昇輝〉の、請求日より前60日以内）
+// 不具合の修正（11/20）：何枚もまとめて読み込んだとき、同じ納品書が複数の請求書に選ばれたり、
+// 60日前までの昔の納品書まで選ばれて「230個戻す」のような大きな差が出ていた。
+// → その取引先（昇輝・環盛・RISEは1つのまとまり）の「前回の請求日の翌日〜今回の請求日」の納品書を、
+//   今回の請求書の分として選ぶようにした。前回の請求日は、保存済みの請求書と今回まとめて読み込んだ請求書から探す
+let _ilBatch = [];
+function ilGroupKey(client) { const md = ilMode(client); return md.mode === 'slip' ? ilNorm(md.src) : ''; }
+function ilGroupInvoices(inv) {
+  const g = ilGroupKey(inv.client); if (!g) return [];
+  const all = Object.entries(INV.list || {}).map(([k, v]) => ({ key: k, client: v.client, date: v.date }))
+    .concat((_ilBatch || []).map(b => ({ key: b.key, client: b.client, date: b.date })));
+  const seen = new Set();
+  return all.filter(x => x.date && x.key !== inv.key && ilGroupKey(x.client) === g && !seen.has(x.key) && seen.add(x.key));
+}
+function ilPrevDate(inv) {
+  const prev = ilGroupInvoices(inv).map(x => x.date).filter(d => d < inv.date).sort().pop();
+  if (prev) return prev;
+  const d = new Date(inv.date + 'T00:00:00'); d.setDate(d.getDate() - 31);
+  return d.toISOString().slice(0, 10);
+}
+function ilSameDaySiblings(inv) { return ilGroupInvoices(inv).filter(x => x.date === inv.date).length; }
 function ilCandidates(inv) {
   const md = ilMode(inv.client); if (md.mode !== 'slip') return [];
   const src = ilNorm(md.src), iq = ilInvQty(inv.items, true).by;
+  const prev = ilPrevDate(inv);
   return ilSlips().filter(s => ilNorm(s.client).includes(src) && s.date && inv.date && s.date <= inv.date && ilDaysBetween(s.date, inv.date) <= 60)
     .map(s => {
       const g = ilGroupOfSlip(s.slipId);
       const overlap = Object.keys(s.allProd).filter(k => iq[k]).length;
       const mine = ilGroupHasInv(g, inv);
-      return { ...s, group: g, mine, overlap, other: !!g && !mine };
+      const inWindow = s.date > prev && s.date <= inv.date;
+      return { ...s, group: g, mine, overlap, inWindow, other: !!g && !mine };
     })
     // ほかの請求書にひも付いた納品書は、分けて請求する昇輝の分（環盛・RISE・昇輝）だけ出す
     // 型番が重ならなくても、まだ請求していない14日以内の納品書は（チェックなしで）出しておく
-    .filter(s => s.mine || (s.overlap && (!s.other || md.src === '昇輝')) || (!s.group && ilDaysBetween(s.date, inv.date) <= 14))
+    .filter(s => s.mine || (s.inWindow && (!s.other || md.src === '昇輝')) || (!s.group && ilDaysBetween(s.date, inv.date) <= 14))
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 // 読み込み・ボタンから開いたときの初めの状態
 function ilDefaultPlan(inv) {
   const md = ilMode(inv.client), cands = ilCandidates(inv);
-  const sel = new Set(cands.filter(c => c.mine || (!c.other && c.overlap) || (c.other && md.split && c.overlap)).map(c => c.slipId));
+  // 前回の請求日の翌日〜今回の請求日の納品書を選ぶ（型番が1つも重ならなくても、商談で全部なくなった分として選ぶ）。
+  // 昇輝のまとまり（昇輝・環盛・RISE）は、同じ日に分けた請求書どうしで同じ納品書を使う
+  const sel = new Set(cands.filter(c => c.mine || (c.inWindow && (!c.other || md.src === '昇輝'))).map(c => c.slipId));
   const already = cands.some(c => c.mine);
   const recent = inv.date && ilDaysBetween(inv.date, todayStr()) <= 14;
   // 分けた請求書（環盛・RISE）は全部そろうまで数が合わないので、在庫は初めは合わせない
-  const unchecked = cands.filter(c => !c.other && !sel.has(c.slipId)).length;
+  const unchecked = cands.filter(c => c.inWindow && !c.other && !sel.has(c.slipId)).length;
+  // 同じ日に分けた請求書がある（昇輝のまとまり）ときも、全部そろうまで数が合わないので在庫は初めは直さない
+  const splitDay = md.src === '昇輝' && ilSameDaySiblings(inv) > 0;
   // チェックしていない候補の納品書があるときは、二重に減らさないよう在庫は初めは直さない（確認画面で選んでから）
-  return { sel, applyStock: !!recent && !md.split && !unchecked, link: md.mode === 'slip' && !already, preDone: {}, settleConsign: true };
+  return { sel, applyStock: !!recent && !md.split && !splitDay && !unchecked, link: md.mode === 'slip' && !already, preDone: {}, settleConsign: true };
 }
 // 在庫の差（+は在庫から減らす数、-は在庫に戻す数）
 function ilDiff(inv, plan) {
@@ -26865,7 +26893,7 @@ function ilSummary(inv, plan) {
     parts.push(cs.done ? '🤝 委託分は精算済み' : `🤝 ${plan.settleConsign ? '' : '（精算しない）'}委託分 ${n}個を精算${n < want ? `（${want - n}個は委託リストにありません）` : ''}`);
   }
   if (md.mode === 'slip') {
-    const un = ilCandidates(inv).filter(c => !c.other && !plan.sel.has(c.slipId)).length;
+    const un = ilCandidates(inv).filter(c => c.inWindow && !c.other && !plan.sel.has(c.slipId)).length;
     if (un) parts.unshift(`⚠️ チェックしていない納品書が${un}枚あります（確認・変更から確かめてください）`);
   }
   return parts.join('　');
@@ -26892,11 +26920,12 @@ function ilRenderModal() {
   const { inv, plan } = _il, md = ilMode(inv.client), e = escapeHtmlMain;
   const cands = ilCandidates(inv), d = ilDiff(inv, plan), ch = ilChanges(d);
   const pName = k => { const p = (products || []).find(x => x._key === k); return p ? (p.model || p.name || '') : '（削除された商品）'; };
-  const candHtml = md.mode !== 'slip' ? '' : `<div style="font-size:12.5px;font-weight:700;margin:12px 0 6px">🔗 ひも付ける納品書（${e(md.src)}${md.split ? '・分けて請求' : ''}）</div>
+  const candHtml = md.mode !== 'slip' ? '' : `<div style="font-size:12.5px;font-weight:700;margin:12px 0 2px">🔗 ひも付ける納品書（${e(md.src)}${md.split ? '・分けて請求' : ''}）</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">前回の請求日（${fmtDateJP(ilPrevDate(inv))}）の翌日〜今回の請求日の納品書にチェックを入れています</div>
     ${cands.length ? cands.map(c => `<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px;cursor:pointer">
       <input type="checkbox" ${plan.sel.has(c.slipId) ? 'checked' : ''} onchange="ilToggleSlip('${c.slipId}',this.checked)" style="width:16px;height:16px;margin-top:2px;flex-shrink:0">
       <span style="flex:1;min-width:0"><span style="color:var(--text-muted)">［${c.cslip ? '精算分' : '納品書'}］</span>${e(c.client)}／${fmtDateJP(c.date)}${c.slipNo ? '／No.' + e(c.slipNo) : ''}／¥${c.total.toLocaleString('ja-JP')}
-        <span style="display:block;font-size:11px;color:var(--text-muted)">同じ型番 ${c.overlap}品目${c.mine ? '・この請求書にひも付け済み' : c.other ? `・${e(c.group.memo || 'ほかの請求書')}にひも付け済み（分けた請求書ならチェック）` : ''}</span></span></label>`).join('')
+        <span style="display:block;font-size:11px;color:var(--text-muted)">${c.inWindow ? '今回の期間・' : '前回の請求より前・'}同じ型番 ${c.overlap}品目${c.mine ? '・この請求書にひも付け済み' : c.other ? `・${e(c.group.memo || 'ほかの請求書')}にひも付け済み（分けた請求書ならチェック）` : ''}</span></span></label>`).join('')
       : '<div style="font-size:12px;color:var(--text-muted)">候補の納品書がありません（請求日より前の60日間に、同じ型番の納品書がありません）。ひも付けないと、請求書の数だけ在庫から減らします</div>'}`;
   const rowsHtml = ch.length ? `<table class="wh-deliv-side-table" style="margin-top:6px"><thead><tr><th>型番</th>${md.mode === 'slip' ? '<th>納品書</th>' : ''}<th>請求書</th><th>合わせ済み</th><th>今回</th></tr></thead><tbody>${ch.map(x => `<tr><td>${e(pName(x.key))}</td>${md.mode === 'slip' ? `<td class="n">${x.slip}</td>` : ''}<td class="n">${x.inv}</td><td class="n">${x.done || ''}</td><td class="n" style="font-weight:700;color:${x.delta > 0 ? '#c0392b' : '#2e7d32'}">${x.delta > 0 ? x.delta + '個減らす' : (-x.delta) + '個戻す'}</td></tr>`).join('')}</tbody></table>`
     : '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">在庫は請求書の数と同じです（直すものはありません）</div>';
